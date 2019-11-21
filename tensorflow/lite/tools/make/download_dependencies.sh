@@ -30,9 +30,9 @@ if [ ! -f $BZL_FILE_PATH ]; then
 fi
 
 EIGEN_URL="$(grep -o 'https://source.codeaurora.org/mirrored_source/quic/le/external/eigen/eigen/get/.*tar\.gz' "${BZL_FILE_PATH}" | head -n1)"
-GEMMLOWP_URL="$(grep -o 'http://mirror.tensorflow.org/github.com/google/gemmlowp/.*zip' "${BZL_FILE_PATH}" | head -n1)"
+GEMMLOWP_URL="$(grep -o 'https://source.codeaurora.org/mirrored_source/quic/le/external/gemmlowp/.*zip' "${BZL_FILE_PATH}" | head -n1)"
 GOOGLETEST_URL="https://source.codeaurora.org/mirrored_source/quic/chrome4sdp/external/github.com/google/googletest/archive/release-1.8.0.tar.gz"
-ABSL_URL="$(grep -o 'https://github.com/abseil/abseil-cpp/.*tar.gz' "${BZL_FILE_PATH}" | head -n1)"
+ABSL_URL="$(grep -o 'https://source.codeaurora.org/mirrored_source/quic/lc/external/github.com/abseil/abseil-cpp/.*tar.gz' "${BZL_FILE_PATH}" | head -n1)"
 NEON_2_SSE_URL="https://github.com/intel/ARM_NEON_2_x86_SSE/archive/master.zip"
 FARMHASH_URL="http://mirror.tensorflow.org/github.com/google/farmhash/archive/816a4ae622e964763ca0862d9dbd19324a1eaf45.tar.gz"
 FLATBUFFERS_URL="https://source.codeaurora.org/mirrored_source/quic/lc/external/github.com/google/flatbuffers/archive/v1.11.0.tar.gz"
@@ -87,9 +87,9 @@ download_and_extract() {
 
 download_and_extract "${EIGEN_URL}" "${DOWNLOADS_DIR}/eigen"
 download_and_extract "${GEMMLOWP_URL}" "${DOWNLOADS_DIR}/gemmlowp"
-download_and_extract "${GOOGLETEST_URL}" "${DOWNLOADS_DIR}/googletest"
+# download_and_extract "${GOOGLETEST_URL}" "${DOWNLOADS_DIR}/googletest"
 download_and_extract "${ABSL_URL}" "${DOWNLOADS_DIR}/absl"
-download_and_extract "${NEON_2_SSE_URL}" "${DOWNLOADS_DIR}/neon_2_sse"
+# download_and_extract "${NEON_2_SSE_URL}" "${DOWNLOADS_DIR}/neon_2_sse"
 download_and_extract "${FARMHASH_URL}" "${DOWNLOADS_DIR}/farmhash"
 download_and_extract "${FLATBUFFERS_URL}" "${DOWNLOADS_DIR}/flatbuffers"
 download_and_extract "${FFT2D_URL}" "${DOWNLOADS_DIR}/fft2d"
