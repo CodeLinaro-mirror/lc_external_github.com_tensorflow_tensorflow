@@ -79,13 +79,7 @@ void* LoadFunction(void* handle, const char* name, bool optional) {
 #ifndef __ANDROID__
 // Add /dev/shm implementation of shared memory for non-Android platforms
 int ASharedMemory_create(const char* name, size_t size) {
-  size_t pid = getpid();
-  size_t tid = pthread_self();
-  static size_t cnt = 0;
-  std::stringstream file_name;
-  file_name << name << '_' << pid << '_' << tid <<  '_' << cnt++;
-
-  int fd = shm_open(file_name.str().c_str(), O_RDWR | O_CREAT, 0644);
+  int fd = shm_open(name, O_RDWR | O_CREAT, 0644);
   if (fd < 0) {
     return fd;
   }
@@ -187,7 +181,13 @@ const NnApi LoadNnApi() {
     }
   }
 #else
-  nnapi.ASharedMemory_create = ASharedMemory_create;
+  // Mock ASharedMemory_create only if libneuralnetworks.so was successfully
+  // loaded. This ensures identical behaviour on platforms which use this
+  // implementation, but don't have libneuralnetworks.so library, and
+  // platforms which use nnapi_implementation_disabled.cc stub.
+  if (libneuralnetworks != nullptr) {
+    nnapi.ASharedMemory_create = ASharedMemory_create;
+  }
 #endif  // __ANDROID__
 
   // API 28 (NN 1.1) methods.
@@ -223,6 +223,14 @@ const NnApi LoadNnApi() {
                          ANeuralNetworksExecution_setMeasureTiming);
   LOAD_FUNCTION_OPTIONAL(libneuralnetworks,
                          ANeuralNetworksExecution_getDuration);
+  LOAD_FUNCTION_OPTIONAL(libneuralnetworks,
+                         ANeuralNetworksDevice_getExtensionSupport);
+  LOAD_FUNCTION_OPTIONAL(libneuralnetworks,
+                         ANeuralNetworksModel_getExtensionOperandType);
+  LOAD_FUNCTION_OPTIONAL(libneuralnetworks,
+                         ANeuralNetworksModel_getExtensionOperationType);
+  LOAD_FUNCTION_OPTIONAL(libneuralnetworks,
+                         ANeuralNetworksModel_setOperandExtensionData);
   return nnapi;
 }
 

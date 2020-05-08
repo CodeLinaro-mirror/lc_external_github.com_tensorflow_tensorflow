@@ -3,8 +3,7 @@
 set(ENV_TIME_TARGET_NAME env_time)
 
 set(ENV_TIME_SOURCE_FILES
-  env_time.cc
-  posix/env_time.cc
+  default/env_time.cc
 )
 
 add_library(${ENV_TIME_TARGET_NAME} SHARED ${ENV_TIME_SOURCE_FILES})
@@ -28,7 +27,7 @@ set(TF_LOGGING_SOURCE_FILES
 add_library(${TF_LOGGING_TARGET_NAME} SHARED ${TF_LOGGING_SOURCE_FILES})
 
 target_link_libraries(${TF_LOGGING_TARGET_NAME}
-  absl
+  absl::base
   ${ENV_TIME_TARGET_NAME}
 )
 
