@@ -579,9 +579,7 @@ void RunInference(Settings* s) {
       break;
     default:
       LOG(FATAL) << "Unsupported parser: " << s->parser << "\n";
-      exit(-1);
   }
-  if (rc < 0) exit(rc);
 }
 
 void display_usage() {
