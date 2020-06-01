@@ -514,12 +514,6 @@ void RunInference(Settings* s) {
     }
   }
 
-  // signal for others to quit
-  if (s->num_models > 1) {
-    std::unique_lock<std::mutex> lk(finished_mutex);
-    num_finished++;
-  }
-
   auto mean_std = get_mean_std(times);
   {
     std::unique_lock<std::mutex> lk(print_mutex);
@@ -579,6 +573,14 @@ void RunInference(Settings* s) {
       break;
     default:
       LOG(FATAL) << "Unsupported parser: " << s->parser << "\n";
+  }
+
+  // signal and wait for others to quit
+  if (s->num_models > 1) {
+    std::unique_lock<std::mutex> lk(finished_mutex);
+    num_finished++;
+    finished_cv.notify_one();
+    finished_cv.wait(lk, [&s] { return num_finished == s->num_models; });
   }
 }
 
