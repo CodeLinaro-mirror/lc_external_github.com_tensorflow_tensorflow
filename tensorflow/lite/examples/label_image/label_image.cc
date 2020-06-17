@@ -223,6 +223,107 @@ std::vector<string> parse_comma_separated(const std::string& str) {
   return out;
 }
 
+int ParseClassification(tflite::Interpreter *interpreter, Settings* s) {
+  int input = interpreter->inputs()[0];
+
+  std::vector<std::pair<float, int>> top_results;
+
+  int output = interpreter->outputs()[0];
+  TfLiteIntArray* output_dims = interpreter->tensor(output)->dims;
+  // assume output dims to be something like (1, 1, ... ,size)
+
+  auto output_size = output_dims->data[output_dims->size - 1];
+
+  switch (interpreter->tensor(output)->type) {
+    case kTfLiteFloat32:{
+      get_top_n<float>(interpreter->typed_output_tensor<float>(0), output_size,
+                       s->number_of_results, s->threshold, &top_results, true);
+    }
+      break;
+    case kTfLiteUInt8: {
+      get_top_n<uint8_t>(interpreter->typed_output_tensor<uint8_t>(0),
+                         output_size, s->number_of_results, s->threshold,
+                         &top_results, false);
+      break;
+    }
+    default:
+      LOG(FATAL) << "cannot handle output type "
+                 << interpreter->tensor(input)->type << " yet";
+      return -1;
+  }
+
+  std::vector<string> labels;
+  size_t label_count;
+
+  if (ReadLabelsFile(s->labels_file_name, &labels, &label_count) != kTfLiteOk) {
+    return -1;
+  }
+
+  for (const auto& result : top_results) {
+    const float confidence = result.first;
+    const int index = result.second;
+    LOG(INFO) << confidence << ": " << index << " " << labels[index] << "\n";
+  }
+  return 0;
+}
+
+int ParseDetection(tflite::Interpreter *interpreter, Settings* s,
+                   uint32_t image_width, uint32_t image_height) {
+  int input = interpreter->inputs()[0];
+  int output = interpreter->outputs()[0];
+
+  TfLiteIntArray* output_dims = interpreter->tensor(output)->dims;
+  auto output_size = output_dims->data[output_dims->size - 1];
+
+  std::vector<string> labels;
+  size_t label_count;
+
+  if (ReadLabelsFile(s->labels_file_name, &labels, &label_count) != kTfLiteOk) {
+    return -1;
+  }
+
+  switch (interpreter->tensor(output)->type) {
+    case kTfLiteFloat32:{
+      float *detected_boxes = interpreter->typed_output_tensor<float>(0);
+      float *detected_classes = interpreter->typed_output_tensor<float>(1);
+      float *detected_scores = interpreter->typed_output_tensor<float>(2);
+      float *num_boxes = interpreter->typed_output_tensor<float>(3);
+
+      float num_box = num_boxes[0];
+      LOG(INFO) << "Found " << num_box << " boxes" << std::endl;
+
+      for (int i = 0; i < num_box; i++) {
+        if (detected_scores[i] < s->threshold) continue;
+
+        uint32_t detected_class = static_cast<uint32_t>(detected_classes[i] + 1);
+        std::string name(labels[detected_class]);
+
+        float score = detected_scores[i];
+        uint32_t x = static_cast<uint32_t>(
+            detected_boxes[i * 4 + 1] * image_width);
+        uint32_t y = static_cast<uint32_t>(
+            detected_boxes[i * 4] * image_height);
+        uint32_t width = static_cast<uint32_t>(
+            detected_boxes[i * 4 + 3] * image_width) - x;
+        uint32_t height = static_cast<uint32_t>(
+            detected_boxes[i * 4 + 2] * image_height) - y;
+
+        LOG(INFO) << "Box idx: " << i << " "
+                  << "bbox: [" << x << " " << y << " "<< width << " " << height << "] "
+                  << "score: " << score << " "
+                  << "class: " << detected_class << " name: " << name << std::endl;
+      }
+      break;
+    }
+    default:
+      LOG(FATAL) << "cannot handle output type "
+                 << interpreter->tensor(input)->type << " yet";
+      return -1;
+  }
+  return 0;
+}
+
+
 void RunInference(Settings* s) {
   if (!s->model_name.c_str()) {
     LOG(ERROR) << "no model file name\n";
@@ -413,30 +514,27 @@ void RunInference(Settings* s) {
         quit = true;
       }
     }
+
+    // this is for limiting inference rate, applicable only when -J valus is set
+    float time_del = time_between_ms - time_ms ;
+    if (time_del > 0) {
+      usleep(time_del * 1000);
+    }
   }
 
-  // signal for others to quit
-  if (s->num_models > 1) {
-    std::unique_lock<std::mutex> lk(finished_mutex);
-    num_finished++;
-  }
-
+  gettimeofday(&stop_time, nullptr);
+  auto time_diff = get_us(stop_time) - get_us(start_time);
   auto mean_std = get_mean_std(times);
   {
     std::unique_lock<std::mutex> lk(print_mutex);
     LOG(INFO) << "Model: " << s->model_name <<
         "\tmean=" << mean_std.first << "ms" <<
         "\tstd=" << mean_std.second << "ms" <<
-        " runs=" << times.size() <<
-        " max freq=" << 1000 / mean_std.first <<
+        "\truns=" << times.size() <<
+        "\nmodel Throughput=" << 1000 / mean_std.first <<
+        "\tThroughput=" << (times.size() * 1000000) / time_diff <<
         "\n";
   }
-
-  gettimeofday(&stop_time, nullptr);
-  LOG(INFO) << "invoked \n";
-  LOG(INFO) << "average time: "
-            << (get_us(stop_time) - get_us(start_time)) / (s->loop_count * 1000)
-            << " ms \n";
 
   if (s->profiling) {
     profiler->StopProfiling();
@@ -453,42 +551,42 @@ void RunInference(Settings* s) {
     }
   }
 
-  const float threshold = 0.001f;
+  if (s->dump_tensors) {
+    for (int i = 0; i < interpreter->outputs().size(); i++) {
+      int outnode = interpreter->outputs()[i];
+      auto tensor = interpreter->tensor(outnode);
 
-  std::vector<std::pair<float, int>> top_results;
+      LOG(INFO) << "OUTNODE: " << outnode << " SIZE: " << tensor->bytes << "\n";
 
-  int output = interpreter->outputs()[0];
-  TfLiteIntArray* output_dims = interpreter->tensor(output)->dims;
-  // assume output dims to be something like (1, 1, ... ,size)
-  auto output_size = output_dims->data[output_dims->size - 1];
-  switch (interpreter->tensor(output)->type) {
-    case kTfLiteFloat32:
-      get_top_n<float>(interpreter->typed_output_tensor<float>(0), output_size,
-                       s->number_of_results, threshold, &top_results, true);
+      std::stringstream filename;
+      filename << "/data/tflite_out_tensor_" << outnode << ".bin";
+
+      std::ofstream tfile(filename.str(), std::ios::out | std::ios::binary);
+
+      char* data = reinterpret_cast<char*>(tensor->data.uint8);
+      tfile.write(data, tensor->bytes);
+    }
+  }
+
+  int rc = 0;
+  switch(s->parser) {
+    case 0:
+      rc = ParseClassification(interpreter.get(), s);
       break;
-    case kTfLiteUInt8:
-      get_top_n<uint8_t>(interpreter->typed_output_tensor<uint8_t>(0),
-                         output_size, s->number_of_results, threshold,
-                         &top_results, false);
+    case 1:
+      rc = ParseDetection(interpreter.get(), s, image_width, image_height);
       break;
     default:
-      LOG(FATAL) << "cannot handle output type "
-                 << interpreter->tensor(output)->type << " yet";
-      return;
+      LOG(FATAL) << "Unsupported parser: " << s->parser << "\n";
   }
 
-  std::vector<string> labels;
-  size_t label_count;
-
-  if (ReadLabelsFile(s->labels_file_name, &labels, &label_count) != kTfLiteOk)
-    return;
-
-  for (const auto& result : top_results) {
-    const float confidence = result.first;
-    const int index = result.second;
-    LOG(INFO) << confidence << ": " << index << " " << labels[index] << "\n";
+  // signal and wait for others to quit
+  if (s->num_models > 1) {
+    std::unique_lock<std::mutex> lk(finished_mutex);
+    num_finished++;
+    finished_cv.notify_all();
+    finished_cv.wait(lk, [&s] { return num_finished == s->num_models; });
   }
-
 }
 
 void display_usage() {
@@ -512,6 +610,10 @@ void display_usage() {
       << "--verbose, -v: [0|1] print more information\n"
       << "--warmup_runs, -w: number of warmup runs\n"
       << "--frequency, -J: [comma-separated] desired frequency for model(s)\n"
+      << "--accelerator_list, -A: [comma-separated] accelrator list where \n\t 0: CPU only \n\t 1: Android NNAPI \n\t 2: Hexagon Delegate \n\t 3: GPU Delegate\n"
+      << "--parser, -n: Select parser type. 0 - classification, 1 - detection\n"
+      << "--dump_tensors, -u: [0|1] Dump output tensors\n"
+      << "--threshold, -y: Threshold float value\n"
       << "\n";
 }
 
@@ -540,13 +642,17 @@ int Main(int argc, char** argv) {
         {"gl_backend", required_argument, nullptr, 'g'},
         {"hexagon_delegate", required_argument, nullptr, 'j'},
         {"frequency", required_argument, nullptr, 'J'},
+        {"accelerator_list", required_argument, nullptr, 'A'},
+        {"parser", required_argument, nullptr, 'n'},
+        {"dump_tensors", required_argument, nullptr, 'u'},
+        {"threshold", required_argument, nullptr, 'y'},
         {nullptr, 0, nullptr, 0}};
 
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
     c = getopt_long(argc, argv,
-                    "a:b:c:d:e:f:g:i:j:l:m:p:r:s:t:v:w:x:J:", long_options,
+                    "a:b:c:d:e:f:g:i:j:l:m:n:p:r:s:t:u:v:w:x:y:J:A:", long_options,
                     &option_index);
 
     /* Detect the end of the options. */
@@ -554,16 +660,23 @@ int Main(int argc, char** argv) {
 
     switch (c) {
       case 'a':
-        s.accel = strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
+        s.accel = strtol(optarg, nullptr, 10);
         break;
       case 'x': {
           auto pref_str = parse_comma_separated(std::string(optarg));
           if (pref_str.size() == 1) {
-            s.preferences =
-              strtol(optarg, nullptr, 16);  // NOLINT(runtime/deprecated_fn)
+            std::stringstream ss;
+            ss << std::hex << pref_str[0];
+            unsigned int preferences;
+            ss >> preferences;
+            s.preferences = preferences;
           } else {
            for (auto pref: pref_str) {
-              s.preferences_list.push_back(strtol(pref.c_str(), nullptr, 16));
+              std::stringstream ss;
+              ss << std::hex << pref;
+              unsigned int preferences;
+              ss >> preferences;
+              s.preferences_list.push_back(preferences);
             }
           }
         }
@@ -603,6 +716,9 @@ int Main(int argc, char** argv) {
       case 'm':
         s.model_name = optarg;
         break;
+      case 'n':
+        s.parser = strtol(optarg, nullptr, 10);
+        break;
       case 'p':
         s.profiling =
             strtol(optarg, nullptr, 10);  // NOLINT(runtime/deprecated_fn)
@@ -617,6 +733,10 @@ int Main(int argc, char** argv) {
       case 't':
         s.number_of_threads = strtol(  // NOLINT(runtime/deprecated_fn)
             optarg, nullptr, 10);
+        break;
+      case 'u':
+        s.dump_tensors =
+            strtol(optarg, nullptr, 10);
         break;
       case 'v':
         s.verbose =
@@ -637,6 +757,13 @@ int Main(int argc, char** argv) {
           }
         }
         break;
+      case 'A':
+        s.accelerator_list = optarg;
+        break;
+      case 'y':
+        s.threshold =
+            std::stof(optarg);
+        break;
       case 'h':
       case '?':
         /* getopt_long already printed an error message. */
@@ -647,10 +774,12 @@ int Main(int argc, char** argv) {
     }
   }
 
-
   // Parse the models if more than one comma separated
   auto models = parse_comma_separated(s.model_name);
   s.num_models = models.size();
+  auto labels_files = parse_comma_separated(s.labels_file_name);
+  int labels_file_count = labels_files.size();
+  auto accel_list = parse_comma_separated(s.accelerator_list);
   LOG(INFO) << "Found " << s.num_models << " models to run.\n";
 
   if (s.num_models == 1) {
@@ -662,6 +791,19 @@ int Main(int argc, char** argv) {
 
     for (int i = 0; i < s.num_models; ++i) {
       ss[i].model_name = models[i];
+      if (labels_file_count > 1) {
+        ss[i].labels_file_name = labels_files[i];
+      }
+      if (accel_list.size() > 1) {
+        int accelerator = strtol(accel_list[i].c_str(), nullptr, 10);
+        if (accelerator == 1) {
+          ss[i].accel = true;
+        } else if (accelerator == 2) {
+          ss[i].hexagon_delegate = true;
+        } else if (accelerator == 3) {
+          ss[i].gl_backend = true;
+        }
+      }
       if (s.preferences_list.size() > i) {
         ss[i].preferences = s.preferences_list[i];
       }
