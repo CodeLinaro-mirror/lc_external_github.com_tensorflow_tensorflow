@@ -14,6 +14,9 @@ target_link_libraries(${TFLITE_INFERENCE_STAGE_TARGET_NAME}
     evaluation_proto
     tf_logging
     tensorflow-lite
+    nnapi_delegate
+    evaluation_utils
+    time
 )
 
 install(

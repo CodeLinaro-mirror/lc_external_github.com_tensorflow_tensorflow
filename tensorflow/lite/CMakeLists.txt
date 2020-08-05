@@ -37,16 +37,11 @@ FILE(GLOB TFLITE_SOURCE_FILES
     tools/make/downloads/fft2d/fftsg.c
     tools/make/downloads/fft2d/fftsg2d.c
     tools/make/downloads/flatbuffers/src/util.cpp
-    tools/evaluation/utils.cc
     tools/optimize/sparsity/*.cc
     nnapi/nnapi_implementation.cc
     nnapi/nnapi_util.cc
     delegates/nnapi/nnapi_delegate.cc
     delegates/nnapi/quant_lstm_sup.cc
-    profiling/time.cc
-    profiling/memory_info.cc
-    profiling/profile_summarizer.cc
-    profiling/profile_summary_formatter.cc
     ../core/util/stats_calculator.cc
     experimental/c/*.c
     experimental/c/*.cc
@@ -93,6 +88,10 @@ list(FILTER TFLITE_SOURCE_FILES EXCLUDE REGEX ".*nnapi/nnapi_implementation_disa
 
 add_library(${TFLITE_TARGET_NAME} SHARED ${TFLITE_SOURCE_FILES})
 
+# Disable RUY_OPT_TUNING
+target_compile_options(${TFLITE_TARGET_NAME}
+    PRIVATE -DRUY_OPT_SET=0xFFFB)
+
 target_link_libraries(${TFLITE_TARGET_NAME} pthread)
 target_link_libraries(${TFLITE_TARGET_NAME} rt)
 target_link_libraries(${TFLITE_TARGET_NAME} dl)
@@ -125,7 +124,13 @@ set(LABEL_IMAGE_SOURCE_FILES
 
 add_executable(${LABEL_IMAGE_TARGET_NAME} ${LABEL_IMAGE_SOURCE_FILES})
 
-target_link_libraries(${LABEL_IMAGE_TARGET_NAME} ${TFLITE_TARGET_NAME})
+target_link_libraries(${LABEL_IMAGE_TARGET_NAME}
+    ${TFLITE_TARGET_NAME}
+    evaluation_utils
+    nnapi_delegate
+    time
+    memory_info
+)
 
 install(
     TARGETS ${LABEL_IMAGE_TARGET_NAME}
@@ -178,7 +183,6 @@ add_subdirectory(tools)
 add_subdirectory(tools/make/downloads/absl)
 add_subdirectory(tools/make/downloads/googletest)
 add_subdirectory(experimental/ruy/profiler)
-
-####################################################################################
-
+add_subdirectory(delegates/nnapi)
 add_subdirectory(experimental/delegates/hexnn/hexagon_nn_interface)
+add_subdirectory(delegates/xnnpack)
