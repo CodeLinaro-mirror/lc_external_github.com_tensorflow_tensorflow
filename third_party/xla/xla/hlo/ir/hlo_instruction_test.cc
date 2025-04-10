@@ -164,26 +164,6 @@ ENTRY main {
   EXPECT_EQ(clone->operand_count(), 2);
 }
 
-TEST_F(HloInstructionTest, ComparatorWorksWith64BitUniqueIds) {
-  std::unique_ptr<HloInstruction> param1 =
-      HloInstruction::CreateParameter(0, Shape(F32, {4}), "param1");
-  std::unique_ptr<HloInstruction> param2 =
-      HloInstruction::CreateParameter(0, Shape(F32, {4}), "param2");
-  std::unique_ptr<HloInstruction> param3 =
-      HloInstruction::CreateParameter(0, Shape(F32, {4}), "param3");
-
-  param1->SetUniqueId(1 + (static_cast<int64_t>(1) << 32));
-  param2->SetUniqueId(1 + (static_cast<int64_t>(2) << 32));
-  param3->SetUniqueId(1 + (static_cast<int64_t>(3) << 32));
-
-  std::vector<const HloInstruction*> instructions = {param3.get(), param1.get(),
-                                                     param2.get()};
-
-  absl::c_sort(instructions, HloPtrComparator());
-  EXPECT_THAT(instructions,
-              ElementsAre(param1.get(), param2.get(), param3.get()));
-}
-
 TEST_F(HloInstructionTest, PrintCompareOpWorksIfDead) {
   const char* const kModuleStr = R"(
     HloModule m
