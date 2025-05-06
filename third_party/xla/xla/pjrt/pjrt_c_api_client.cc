@@ -2048,14 +2048,42 @@ static void CppRecvCallbackListsToC(
   }
 }
 
+absl::StatusOr<size_t> PjRtCApiLoadedExecutable::GetNumOutputs() const {
+  PJRT_Executable_NumOutputs_Args args;
+  args.struct_size = PJRT_Executable_NumOutputs_Args_STRUCT_SIZE;
+  args.extension_start = nullptr;
+  args.executable = c_executable();
+  RETURN_STATUS_IF_PJRT_ERROR(pjrt_c_api()->PJRT_Executable_NumOutputs(&args),
+                              pjrt_c_api());
+  return args.num_outputs;
+}
+
+absl::StatusOr<std::vector<std::vector<PJRT_Buffer*>>>
+PjRtCApiLoadedExecutable::InitializeOutputListsStorage(
+    size_t outer_size) const {
+  TF_ASSIGN_OR_RETURN(size_t inner_size, GetNumOutputs());
+  std::vector<std::vector<PJRT_Buffer*>> c_output_lists_storage(
+      outer_size, std::vector<PJRT_Buffer*>(inner_size));
+  return c_output_lists_storage;
+}
+
+absl::StatusOr<std::vector<PJRT_Buffer**>>
+PjRtCApiLoadedExecutable::InitializeOutputLists(
+    std::vector<std::vector<PJRT_Buffer*>>& c_output_lists_storage) const {
+  size_t outer_size = c_output_lists_storage.size();
+  std::vector<PJRT_Buffer**> c_output_lists(outer_size);
+  for (int i = 0; i < outer_size; ++i) {
+    c_output_lists[i] = c_output_lists_storage[i].data();
+  }
+  return c_output_lists;
+}
+
 absl::StatusOr<PJRT_LoadedExecutable_Execute_Args>
 PjRtCApiLoadedExecutable::GetCommonExecuteArgs(
     absl::Span<const std::vector<PjRtBuffer*>> argument_handles,
     const ExecuteOptions& options, PJRT_ExecuteOptions& c_options,
     std::vector<std::vector<PJRT_Buffer*>>& c_argument_lists_storage,
     std::vector<PJRT_Buffer**>& c_arguments,
-    std::vector<std::vector<PJRT_Buffer*>>& c_output_lists_storage,
-    std::vector<PJRT_Buffer**>& c_output_lists,
     std::optional<std::vector<PJRT_Event*>>& device_complete_events,
     SendRecvCallbackData& callback_data,
     std::vector<int64_t>& non_donatable_input_indices_storage) const {
@@ -2103,25 +2131,6 @@ PjRtCApiLoadedExecutable::GetCommonExecuteArgs(
     c_arguments.push_back(argument_list.data());
   }
   args.argument_lists = c_arguments.data();
-
-  // Allocates memory for output. `c_buffer_lists_storage` and `c_buffer_lists`
-  // needs to stay alive during the call of `PJRT_LoadedExecutable_Execute`.
-
-  PJRT_Executable_NumOutputs_Args numoutputs_args;
-  numoutputs_args.struct_size = PJRT_Executable_NumOutputs_Args_STRUCT_SIZE;
-  numoutputs_args.extension_start = nullptr;
-  numoutputs_args.executable = c_executable();
-  RETURN_STATUS_IF_PJRT_ERROR(
-      pjrt_c_api()->PJRT_Executable_NumOutputs(&numoutputs_args), pjrt_c_api());
-  size_t outer_size = args.num_devices;
-  size_t inner_size = numoutputs_args.num_outputs;
-  c_output_lists_storage.resize(outer_size);
-  c_output_lists.resize(outer_size);
-  for (int i = 0; i < outer_size; ++i) {
-    c_output_lists_storage[i].resize(inner_size);
-    c_output_lists[i] = c_output_lists_storage[i].data();
-  }
-  args.output_lists = c_output_lists.data();
 
   // Allocates memory for callbacks. `callback_data` needs to stay alive during
   // the execution.
@@ -2193,8 +2202,6 @@ PjRtCApiLoadedExecutable::Execute(
     const ExecuteOptions& options,
     std::optional<std::vector<PjRtFuture<>>>& returned_futures) const {
   std::vector<std::vector<PJRT_Buffer*>> c_argument_lists_storage;
-  std::vector<std::vector<PJRT_Buffer*>> c_output_lists_storage;
-  std::vector<PJRT_Buffer**> c_output_lists;
   std::vector<int64_t> non_donatable_input_indices_storage;
   std::vector<PJRT_Buffer**> c_arguments;
   std::optional<std::vector<PJRT_Event*>> device_complete_events;
@@ -2223,9 +2230,17 @@ PjRtCApiLoadedExecutable::Execute(
       PJRT_LoadedExecutable_Execute_Args args,
       GetCommonExecuteArgs(argument_handles, options, c_options,
                            c_argument_lists_storage, c_arguments,
-                           c_output_lists_storage, c_output_lists,
                            device_complete_events, *callback_data,
                            non_donatable_input_indices_storage));
+
+  // Allocates memory for output. `c_output_lists_storage` and `c_output_lists`
+  // need to stay alive during the call of `PJRT_LoadedExecutable_Execute`.
+  TF_ASSIGN_OR_RETURN(
+      std::vector<std::vector<PJRT_Buffer*>> c_output_lists_storage,
+      InitializeOutputListsStorage(args.num_devices));
+  TF_ASSIGN_OR_RETURN(std::vector<PJRT_Buffer**> c_output_lists,
+                      InitializeOutputLists(c_output_lists_storage));
+  args.output_lists = c_output_lists.data();
 
   args.execute_device = nullptr;
   PJRT_Profiler_Extension profiler_extension =
@@ -2278,8 +2293,6 @@ PjRtCApiLoadedExecutable::ExecuteWithSingleDevice(
       {argument_handles.begin(), argument_handles.end()}};
 
   std::vector<std::vector<PJRT_Buffer*>> c_argument_lists_storage;
-  std::vector<std::vector<PJRT_Buffer*>> c_output_lists_storage;
-  std::vector<PJRT_Buffer**> c_output_lists;
   std::vector<int64_t> non_donatable_input_indices_storage;
   std::vector<PJRT_Buffer**> c_arguments;
   std::optional<std::vector<PJRT_Event*>> device_complete_events;
@@ -2294,9 +2307,17 @@ PjRtCApiLoadedExecutable::ExecuteWithSingleDevice(
       PJRT_LoadedExecutable_Execute_Args args,
       GetCommonExecuteArgs(argument_handles_vec, options, c_options,
                            c_argument_lists_storage, c_arguments,
-                           c_output_lists_storage, c_output_lists,
                            device_complete_events, *callback_data,
                            non_donatable_input_indices_storage));
+
+  // Allocates memory for output. `c_output_lists_storage` and `c_output_lists`
+  // need to stay alive during the call of `PJRT_LoadedExecutable_Execute`.
+  TF_ASSIGN_OR_RETURN(
+      std::vector<std::vector<PJRT_Buffer*>> c_output_lists_storage,
+      InitializeOutputListsStorage(args.num_devices));
+  TF_ASSIGN_OR_RETURN(std::vector<PJRT_Buffer**> c_output_lists,
+                      InitializeOutputLists(c_output_lists_storage));
+  args.output_lists = c_output_lists.data();
 
   args.execute_device =
       tensorflow::down_cast<PjRtCApiDevice*>(device)->c_device();
