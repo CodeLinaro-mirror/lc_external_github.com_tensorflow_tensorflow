@@ -802,6 +802,10 @@ HloInstruction* InstructionFusion::AddFusionInstruction(
 
 HloInstruction* InstructionFusion::FuseInstruction(
     HloInstruction* fusion_instruction, HloInstruction* producer) {
+  if (producer->opcode() == HloOpcode::kFusion) {
+    fusion_instruction->MergeFusionInstruction(producer);
+    return fusion_instruction;
+  }
   return fusion_instruction->FuseInstruction(producer);
 }
 
