@@ -256,6 +256,13 @@ absl::StatusOr<bool> HostOffloader::WalkDownHostMemoryOffloadPaths(
         // compute happening on host memory, convert it to host compute.
         need_to_wrap_instruction_as_host_compute = true;
       }
+    } else if (instruction->opcode() == HloOpcode::kCopy) {
+      if (instruction->shape() == instruction->operand(0)->shape()) {
+        need_to_wrap_instruction_as_host_compute = true;
+      } else {
+        // For xpose copies, we'll copy them to device for doing the transpose
+        // in HostOffloadNormalization pass.
+      }
     } else {
       // This is some unaccounted for instruction. Since it is unaccounted for,
       // it must be something which is not legal to do with device compute.
