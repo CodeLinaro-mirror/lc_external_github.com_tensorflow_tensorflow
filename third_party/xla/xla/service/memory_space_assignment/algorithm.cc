@@ -30,6 +30,7 @@ limitations under the License.
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -2006,6 +2007,221 @@ absl::Status MsaAlgorithm::ProcessColoredBuffers() {
   return absl::OkStatus();
 }
 
+int64_t MsaAlgorithm::MaxReservedScopedMemory() {
+  const std::vector<HloInstruction*>& instruction_sequence =
+      hlo_live_range_.flattened_instruction_sequence().instructions();
+  int64_t max_reserved_scoped_memory = 0;
+  for (BreadthFirstMidpointIterator it(0, instruction_sequence.size() - 1);
+       !it.End(); it.Next()) {
+    HloInstruction* instruction = instruction_sequence[it.value()];
+    int64_t reserved_scoped_memory =
+        std::min(options_.reserved_scoped_memory_fn(
+                     instruction, /*operands_in_alternate_memory=*/{},
+                     /*outputs_in_alternate_memory=*/{}),
+                 options_.max_size_in_bytes);
+    max_reserved_scoped_memory =
+        std::max(max_reserved_scoped_memory, reserved_scoped_memory);
+  }
+  VLOG(1) << "Max reserved scoped memory: " << max_reserved_scoped_memory;
+  return max_reserved_scoped_memory;
+}
+
+int64_t MsaAlgorithm::EarliestBlockAllocatedWeightStartTime(
+    int64_t definition_time, int64_t use_time, int64_t buffer_size,
+    int64_t block_allocated_weights_bytes_limit) {
+  int64_t left = definition_time - 1;
+  int64_t right = use_time + 1;
+  while (right - left > 1) {
+    int64_t mid = left + (right - left) / 2;
+    MsaBufferInterval interval = MsaBufferInterval{/*buffer=*/nullptr,
+                                                   /*size=*/buffer_size,
+                                                   /*start=*/mid,
+                                                   /*end=*/use_time,
+                                                   /*colocations=*/{},
+                                                   /*need_allocation=*/true};
+    Chunk chunk_candidate = FindChunkCandidate(interval);
+    if (chunk_candidate.chunk_end() <= block_allocated_weights_bytes_limit) {
+      // If the chunk candidate is within the block allocated weights limit,
+      // then shift the earliest available start time to the left.
+      right = mid;
+    } else {
+      // Shift the search window to the right.
+      left = mid;
+    }
+  }
+  return right;
+}
+
+void MsaAlgorithm::AllocateBlockAllocatedWeights() {
+  if (options_.reserved_bytes_for_block_allocated_weights == 0) {
+    return;
+  }
+  // Get all block allocated weight values in ascending order of first use time.
+  std::vector<const HloValue*> block_allocated_weight_values;
+  for (const HloPosition& position :
+       options_.block_allocated_weights_positions) {
+    const HloValue* value =
+        &alias_analysis_.dataflow_analysis().GetUniqueValueAt(
+            position.instruction, position.index);
+    block_allocated_weight_values.push_back(value);
+  }
+  const auto& instruction_schedule = hlo_live_range_.instruction_schedule();
+  absl::c_sort(block_allocated_weight_values, [&](const HloValue* a,
+                                                  const HloValue* b) {
+    std::vector<HloUse> uses_a(a->GetUses().begin(), a->GetUses().end());
+    absl::c_stable_sort(uses_a, [&](const HloUse& use1, const HloUse& use2) {
+      return instruction_schedule.at(use1.instruction) <
+             instruction_schedule.at(use2.instruction);
+    });
+    std::vector<HloUse> uses_b(b->GetUses().begin(), b->GetUses().end());
+    absl::c_stable_sort(uses_b, [&](const HloUse& use1, const HloUse& use2) {
+      return instruction_schedule.at(use1.instruction) <
+             instruction_schedule.at(use2.instruction);
+    });
+    return instruction_schedule.at(uses_a.front().instruction) <
+           instruction_schedule.at(uses_b.front().instruction);
+  });
+
+  // Block allocations can also happen in the fragmented scoped memory, so we
+  // need to account for the max reserved scoped memory in the block allocated
+  // weights limit.
+  int64_t max_reserved_scoped_memory = MaxReservedScopedMemory();
+  int64_t block_allocated_weights_bytes_limit =
+      max_reserved_scoped_memory +
+      options_.reserved_bytes_for_block_allocated_weights;
+  CHECK_LE(block_allocated_weights_bytes_limit, options_.max_size_in_bytes);
+  VLOG(1) << "Block allocated weights bytes limit: "
+          << block_allocated_weights_bytes_limit;
+
+  // To ensure fifo ordering, we need to ensure that the prefetch start time of
+  // each block allocated weight is greater than or equal to the previous
+  // previewed block allocated weight's prefetch start time. We are traversing
+  // these is ascending order of use time, so the previous weight's prefetch
+  // start time will always be less than or equal to the current weight's use
+  // time.
+  int64_t previous_start_time = -1;
+  int64_t max_in_flight_prefetches_allowed =
+      options_.max_outstanding_prefetches_for_block_allocations;
+  std::vector<int64_t> prefetch_end_times;
+
+  for (const HloValue* value : block_allocated_weight_values) {
+    std::vector<HloUse> uses(value->GetUses().begin(), value->GetUses().end());
+    absl::c_stable_sort(uses, [&](const HloUse& use1, const HloUse& use2) {
+      return instruction_schedule.at(use1.instruction) <
+             instruction_schedule.at(use2.instruction);
+    });
+    int64_t first_use_time = instruction_schedule.at(uses.front().instruction);
+    int64_t last_use_time = instruction_schedule.at(uses.back().instruction);
+    int64_t definition_time =
+        instruction_schedule.at(value->defining_instruction());
+    int64_t end_time = last_use_time;
+    int64_t buffer_size = buffer_intervals_.at(value).size;
+    int64_t earliest_start_time_candidate =
+        std::max(definition_time, previous_start_time);
+
+    // Find the earliest start time for which a chunk can be allocated for the
+    // block allocated weight.
+    int64_t start_time = EarliestBlockAllocatedWeightStartTime(
+        earliest_start_time_candidate, end_time, buffer_size,
+        block_allocated_weights_bytes_limit);
+
+    if (start_time > end_time) {
+      LOG(WARNING) << "Could not find a chunk for block allocated weight: "
+                   << value->defining_position().ToString()
+                   << " buffer size: " << buffer_size
+                   << " within limit: " << block_allocated_weights_bytes_limit;
+      continue;
+    }
+
+    int64_t n_prefetches_scheduled = prefetch_end_times.size();
+    int64_t n_prefetches_finished =
+        std::upper_bound(prefetch_end_times.begin(), prefetch_end_times.end(),
+                         start_time) -
+        prefetch_end_times.begin();
+    int64_t n_in_flight_prefetches =
+        n_prefetches_scheduled - n_prefetches_finished;
+
+    if (n_in_flight_prefetches > max_in_flight_prefetches_allowed) {
+      LOG(WARNING)
+          << "Block allocated weight exceeds max prefetches in flight: "
+          << value->defining_position().ToString() << " "
+          << n_in_flight_prefetches << " " << max_in_flight_prefetches_allowed;
+      continue;
+    }
+
+    // TODO(subhankarshah): This is to check if the start time is found in the
+    // end times of prefetches and test if bisection has equivalent results to
+    // using end times of prefetches. We should perform bisection on the
+    // prefetch_end_times vector itself. Keep this check until then.
+    if (start_time != earliest_start_time_candidate) {
+      auto it = std::lower_bound(prefetch_end_times.begin(),
+                                 prefetch_end_times.end(), start_time - 1);
+      if (it == prefetch_end_times.end() || *it != start_time - 1) {
+        LOG(WARNING) << "Prefetch start time - 1: " << (start_time - 1)
+                     << " not found in the prefetch_end_times list and not"
+                        " equal to the earliest start time candidate: "
+                     << previous_start_time << " " << definition_time;
+      }
+    }
+    MsaBufferInterval interval = MsaBufferInterval{/*buffer=*/value,
+                                                   /*size=*/buffer_size,
+                                                   /*start=*/start_time,
+                                                   /*end=*/end_time,
+                                                   /*colocations=*/{},
+                                                   /*need_allocation=*/true};
+    Chunk chunk_candidate = FindChunkCandidate(interval);
+    // The chunk candidate should always be within the block allocated weights
+    // limit, otherwise we would have returned earlier.
+    CHECK_LE(chunk_candidate.chunk_end(), block_allocated_weights_bytes_limit);
+
+    // Add a pinned allocation in the default memory as the prev allocation
+    // for the copy allocation.
+    allocations_->push_back(std::make_unique<PinnedAllocation>(
+        value->defining_position(), MemorySpace::kDefault, kDummyChunk,
+        definition_time, end_time));
+
+    AddAsyncCopyOrOtherMemOp(
+        /*prev_allocation=*/*(allocations_->back().get()),
+        /*memory_space=*/MemorySpace::kAlternate,
+        /*chunk=*/chunk_candidate,
+        /*exclusive_start_time=*/InclusiveToExclusiveStartTime(start_time),
+        /*end_time=*/end_time,
+        /*copy_done_schedule_before_time=*/first_use_time,
+        /*allocations=*/allocations_,
+        /*aliased_offset=*/nullptr,
+        /*resource=*/0.0);
+
+    previous_start_time = start_time;
+    prefetch_end_times.push_back(end_time);
+
+    // Bookkeeping Checklist:
+    // Commit the chunk to the alternate memory.
+    // Add entries to operands in alternate memory map.
+    // Add the value to the finalized values set.
+    // Add a repack allocation block to the repack allocation blocks list.
+    // Clear the pending chunks.
+
+    // Commit the chunk to the alternate memory.
+    AddToPendingChunks(interval, chunk_candidate);
+    for (const HloUse& use : value->GetUses()) {
+      allocations_->back()->AddUse(use);
+      // Add entries to operands in alternate memory map.
+      operands_in_alternate_memory_map_[use.instruction].insert(
+          std::make_pair(use.operand_number, use.operand_index));
+    }
+    // Add the value to the finalized values set.
+    finalized_values_.insert(value);
+    // Add a repack allocation block to the repack allocation blocks list.
+    repack_allocation_blocks_.push_back(MakeRepackAllocationBlock(
+        start_time, end_time, chunk_candidate.size, chunk_candidate.offset,
+        allocations_->back().get()));
+    repack_allocation_blocks_.back().next_colocated =
+        &(repack_allocation_blocks_.back());
+  }
+  // Clear the pending chunks.
+  ClearPendingChunks();
+}
+
 absl::StatusOr<HeapSimulator::Result<HloValue>> MsaAlgorithm::Finish() {
   // Note: Memory Space Assignment creates a HeapSimulator and passes an
   // MsaAlgorithm object to it. buffer_intervals_ is populated by calling the
@@ -2019,8 +2235,61 @@ absl::StatusOr<HeapSimulator::Result<HloValue>> MsaAlgorithm::Finish() {
                                                                  : "disabled");
 
   AllocateReservedScopedAllocations();
+  AllocateBlockAllocatedWeights();
   std::vector<MsaBufferInterval> sorted_buffer_intervals =
       GetSortedBufferIntervals();
+
+  if (options_.explicit_pinning_mode) {
+    const auto& instruction_schedule = hlo_live_range_.instruction_schedule();
+    auto get_instruction_time = [&](const HloInstruction* inst,
+                                    int64_t default_time) {
+      auto it = instruction_schedule.find(inst);
+      if (it == instruction_schedule.end()) {
+        return default_time;
+      }
+      return it->second;
+    };
+    absl::c_stable_sort(
+        sorted_buffer_intervals,
+        [&](const MsaBufferInterval& a, const MsaBufferInterval& b) {
+          const HloValue* a_value = a.buffer;
+          const HloValue* b_value = b.buffer;
+          bool a_is_colored = a_value->shape().has_layout() &&
+                              a_value->shape().layout().memory_space() ==
+                                  options_.alternate_memory_space;
+          bool b_is_colored = b_value->shape().has_layout() &&
+                              b_value->shape().layout().memory_space() ==
+                                  options_.alternate_memory_space;
+          if (!(a_is_colored && b_is_colored)) {
+            return a_is_colored;
+          }
+          // Both buffers are colored, so we want to sort them by definition
+          // time and last use time in that order.
+          int64_t a_definition_time =
+              get_instruction_time(a_value->defining_instruction(),
+                                   std::numeric_limits<int64_t>::max());
+          int64_t b_definition_time =
+              get_instruction_time(b_value->defining_instruction(),
+                                   std::numeric_limits<int64_t>::max());
+          int64_t a_last_use_time = std::numeric_limits<int64_t>::min();
+          for (const HloUse& use : a_value->GetUses()) {
+            a_last_use_time = std::max(
+                a_last_use_time,
+                get_instruction_time(use.instruction,
+                                     std::numeric_limits<int64_t>::min()));
+          }
+          int64_t b_last_use_time = std::numeric_limits<int64_t>::min();
+          for (const HloUse& use : b_value->GetUses()) {
+            b_last_use_time = std::max(
+                b_last_use_time,
+                get_instruction_time(use.instruction,
+                                     std::numeric_limits<int64_t>::min()));
+          }
+          return std::forward_as_tuple(a_definition_time, a_last_use_time) <
+                 std::forward_as_tuple(b_definition_time, b_last_use_time);
+        });
+  }
+
   memory_space_assignment::CustomizeSortedBufferInterval(
       options_.autotuning_config, sorted_buffer_intervals);
 
@@ -4083,6 +4352,12 @@ void MsaAlgorithm::AllocateCrossProgramPrefetchBuffer(
 void MsaAlgorithm::AllocateReservedScopedAllocations() {
   const std::vector<HloInstruction*>& instruction_sequence =
       hlo_live_range_.flattened_instruction_sequence().instructions();
+  if (options_.allocate_reserved_scoped_memory_at_same_offset) {
+    // If we are co-locating scoped allocations, then we need to make sure that
+    // the repack allocation blocks are empty, because we mark all the repack
+    // allocation blocks as co-located in a loop below.
+    CHECK(repack_allocation_blocks_.empty());
+  }
   for (BreadthFirstMidpointIterator it(0, instruction_sequence.size() - 1);
        !it.End(); it.Next()) {
     HloInstruction* instruction = instruction_sequence[it.value()];
