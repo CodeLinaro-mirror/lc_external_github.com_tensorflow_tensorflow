@@ -301,3 +301,27 @@ strict_cc_test(
         "@local_tsl//tsl/platform:statusor",
     ],
 )
+
+cc_library(
+    name = "offloaded_instruction_wrapper",
+    srcs = ["offloaded_instruction_wrapper.cc"],
+    hdrs = ["offloaded_instruction_wrapper.h"],
+    compatible_with = get_compatible_with_libtpu_portable(),
+    deps = [
+        "//third_party/cppitertools",
+        "//xla:side_effect_util",
+        "//xla:util",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/transforms/simplifiers:hlo_dce",
+        "//xla/tsl/platform:errors",
+        "//xla/tsl/platform/google:casts",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@local_tsl//tsl/platform:errors",
+    ],
+)
