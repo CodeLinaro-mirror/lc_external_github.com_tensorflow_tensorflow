@@ -1679,13 +1679,10 @@ generate_apis(
     output_dir = "_api/v2/",
     output_files = TENSORFLOW_API_INIT_FILES_V2,
     output_package = "tensorflow._api.v2",
-    packages_to_ignore = select({
-        ":disable_tf_lite_py": [
-            "tensorflow.python.framework.test_ops",
-            "tensorflow.lite",
-        ],
-        "//conditions:default": ["tensorflow.python.framework.test_ops"],
-    }),
+    packages_to_ignore = [
+        "tensorflow.python.framework.test_ops",
+        "tensorflow.lite",
+    ],
     root_file_name = "v2.py",
     root_init_template = "api_template.__init__.py",
     visibility = ["//visibility:public"],

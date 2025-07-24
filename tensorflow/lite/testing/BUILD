@@ -157,6 +157,7 @@ py_strict_library(
     ],
 )
 
+# TESTING (to trigger litert presubmit): REMOVE AFTER APPROVAL
 py_strict_library(
     name = "generate_examples_lib",
     srcs = ["generate_examples_lib.py"],
