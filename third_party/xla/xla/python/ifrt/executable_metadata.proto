@@ -1,0 +1,93 @@
+/* Copyright 2025 The OpenXLA Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+==============================================================================*/
+
+syntax = "proto3";
+
+package xla.ifrt;
+
+import "xla/tsl/protobuf/status.proto";
+import "xla/xla_data.proto";
+
+message SerializedExecutableMetadata {
+  // IFRT version
+  fixed64 ifrt_version = 1;
+
+  // Runtime type (Pathways, Stairways, etc). Loading executables across
+  // runtimes are supported.
+  bytes runtime_name = 2;
+
+  // The ID that identifies the platform (CPU/GPU/TPU).
+  fixed64 platform_id = 3;
+
+  // ABI version of the runtime that this executable is compatible with.
+  // Note: Also present within the serialized executable for PjRt TPU.
+  bytes runtime_abi_version = 4;
+
+  // Below fields are artifacts gathered from the compiled executable required
+  // for to be able to construct an IFRT executable without a local PjRtClient
+  // such that executions can be dispatched asynchronously.
+  //
+  // Debug APIs that use information from (unloaded) PjRtExecutable will block
+  // until the executable is loaded on a PjRtClient - HloModules, CostAnalysis
+  // and MemoryAnalysis. Primarily because it is expensive to store HloModule in
+  // serialized executable and the APIs are debug only.
+
+  // Output memory kinds.
+  message MemoryKinds {
+    message MemoryKind {
+      repeated string memory_kind = 1;
+    }
+
+    repeated MemoryKind memory_kinds = 1;
+  }
+
+  oneof memory_kinds_result {
+    MemoryKinds output_memory_kinds = 5;
+    tensorflow.StatusProto output_memory_kinds_error = 6;
+  }
+
+  // Output shapes.
+  message OutputShapes {
+    message Shape {
+      xla.ShapeProto shape = 1;
+      xla.PrimitiveType dtype = 2;
+    }
+    repeated Shape shape = 1;
+  }
+
+  oneof output_shapes_result {
+    OutputShapes output_shapes = 7;
+    tensorflow.StatusProto output_shapes_error = 8;
+  }
+
+  // Shardings.
+  repeated xla.OpSharding parameter_shardings = 9;
+  repeated xla.OpSharding output_shardings = 10;
+
+  // Output and parameter Layouts.
+  message Layouts {
+    repeated xla.LayoutProto layout = 14;
+  }
+
+  oneof output_layouts_result {
+    Layouts output_layouts = 15;
+    tensorflow.StatusProto output_layouts_error = 16;
+  }
+
+  oneof parameter_layouts_result {
+    Layouts parameter_layouts = 17;
+    tensorflow.StatusProto parameter_layouts_error = 18;
+  }
+}

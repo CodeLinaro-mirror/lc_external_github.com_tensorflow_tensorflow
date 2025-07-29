@@ -200,6 +200,20 @@ cc_library(
 )
 
 tf_proto_library(
+    name = "executable_metadata_proto",
+    srcs = ["executable_metadata.proto"],
+    protodeps = [
+        "//xla:xla_data_proto",
+        "//xla/tsl/protobuf:status_proto",
+    ],
+    visibility = internal_visibility([
+        ":friends",
+        ":internal",
+        ":users",
+    ]),
+)
+
+tf_proto_library(
     name = "execute_options_proto",
     srcs = ["execute_options.proto"],
     protodeps = [":attribute_map_proto"],
