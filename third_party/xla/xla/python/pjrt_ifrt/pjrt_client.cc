@@ -931,8 +931,8 @@ absl::StatusOr<ArrayRef> PjRtClient::MakeArrayFromHostBuffer(
     Client::HostBufferSemantics semantics,
     std::function<void()> on_done_with_host_buffer,
     tsl::RCReference<UserContext> user_context) {
-  // Currently the `user_context` parameter is ignored.
   DCHECK(this);
+  UserContextScope user_context_scope(std::move(user_context));
   if (dtype.kind() == DType::kString) {
     return MakeStringArrayFromHostBuffer(this, data, dtype, shape, byte_strides,
                                          sharding, semantics,
@@ -1033,6 +1033,7 @@ absl::StatusOr<std::vector<ArrayRef>> PjRtClient::MakeErrorArrays(
   if (error.ok()) {
     return absl::InvalidArgumentError("Error status must not be OK");
   }
+  UserContextScope user_context_scope(std::move(user_context));
   DCHECK(this);
   std::vector<ArrayRef> arrays;
   arrays.reserve(array_specs.size());

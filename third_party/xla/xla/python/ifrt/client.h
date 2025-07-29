@@ -24,7 +24,6 @@ limitations under the License.
 #include <vector>
 
 #include "absl/base/macros.h"
-#include "absl/base/nullability.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -130,9 +129,11 @@ class Client : public llvm::RTTIExtends<Client, llvm::RTTIRoot> {
       std::optional<absl::Span<const int64_t>> byte_strides,
       ShardingRef sharding, HostBufferSemantics semantics,
       std::function<void()> on_done_with_host_buffer) {
-    return MakeArrayFromHostBuffer(data, dtype, shape, byte_strides, sharding,
-                                   semantics, on_done_with_host_buffer,
-                                   CreateUserContext());
+    return MakeArrayFromHostBuffer(
+        data, dtype, shape, byte_strides, sharding, semantics,
+        on_done_with_host_buffer,
+        (UserContextScope::current() != nullptr ? UserContextScope::current()
+                                                : CreateUserContext()));
   }
   // Represents a host buffer.
   //
