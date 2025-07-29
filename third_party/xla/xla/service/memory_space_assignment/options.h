@@ -394,6 +394,8 @@ struct Options {
   // allocate for post-module operations.
   uint64_t post_module_scoped_alternate_memory_size_in_bytes = 0;
 
+  bool explicit_pinning_mode = false;
+
   std::string ToString() const;
 };
 
