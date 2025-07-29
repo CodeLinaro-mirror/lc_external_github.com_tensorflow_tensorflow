@@ -263,7 +263,9 @@ Array::MakeArraysFromHostBufferShards(
     return xla::ifrt::ClientMakeArraysFromHostBufferShards(
         client, specs, semantics, std::move(user_context));
   }
-  // TODO(b/407104769): Handle `user_context`.
+
+  ifrt::UserContextScope user_context_scope(
+      GetUserContext(client, std::move(user_context)));
 
   absl::InlinedVector<absl::InlinedVector<uint64_t, 1>, 1>
       host_buffer_handles_for_specs;
@@ -384,6 +386,9 @@ absl::StatusOr<std::vector<xla::ifrt::ArrayRef>> Array::MakeErrorArrays(
     xla::ifrt::Client* client, std::shared_ptr<RpcHelper> rpc_helper,
     const absl::Status& error, absl::Span<const ArraySpec> array_specs,
     tsl::RCReference<UserContext> user_context) {
+  UserContextScope user_context_scope(
+      GetUserContext(client, std::move(user_context)));
+
   auto req = std::make_unique<MakeErrorArraysRequest>();
   *req->mutable_error() = tsl::StatusToProto(error);
 
