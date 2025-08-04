@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_SERVICE_SPMD_SHARDY_ROUND_TRIP_COMMON_IMPORT_UNINLINEABLE_FUNC_CALLS_H_
-#define XLA_SERVICE_SPMD_SHARDY_ROUND_TRIP_COMMON_IMPORT_UNINLINEABLE_FUNC_CALLS_H_
+#ifndef XLA_SERVICE_SPMD_SHARDY_ROUND_TRIP_COMMON_IMPORT_FUNC_CALLS_H_
+#define XLA_SERVICE_SPMD_SHARDY_ROUND_TRIP_COMMON_IMPORT_FUNC_CALLS_H_
 
 #include <memory>
 
@@ -23,6 +23,15 @@ limitations under the License.
 namespace xla {
 namespace sdy {
 
+struct ImportFuncCallsPassOptions {
+  bool onlyUninlineable = false;
+};
+
+// Creates a pass that converts a `CallOp` to a `NamedComputationOp` with the
+// function body inlined and name of the callee.
+//
+// 1. In case `options.onlyIninlineable` is true (which is the default):
+//
 // Creates a pass that converts a `CallOp` with a `backend_config` or
 // `inlineable=false` frontend attr to a `NamedComputationOp` with the function
 // body inlined and name of the callee.
@@ -32,12 +41,18 @@ namespace sdy {
 //
 // NOTE: In case there are multiple call ops for the same callee, we will clone
 // the function body for each call op and emit a warning.
-std::unique_ptr<mlir::Pass> createImportUninlineableFuncCallsPass();
+//
+// 2. The case `options.onlyUninlineable` is false is not ready yet.
+// TODO(enver): Support also for all func calls.
+std::unique_ptr<mlir::Pass> createImportFuncCallsPass(
+    ImportFuncCallsPassOptions options);
 
-// Register the xla-sdy-import-uninlineable-calls pass.
-void registerImportUninlineableFuncCallsPass();
+// Register the xla-sdy-import-calls pass with
+// `onlyUninlineable` is true.
+// TODO(enver): Support also for all func calls.
+void registerImportFuncCallsPass();
 
 }  // namespace sdy
 }  // namespace xla
 
-#endif  // XLA_SERVICE_SPMD_SHARDY_ROUND_TRIP_COMMON_IMPORT_UNINLINEABLE_FUNC_CALLS_H_
+#endif  // XLA_SERVICE_SPMD_SHARDY_ROUND_TRIP_COMMON_IMPORT_FUNC_CALLS_H_
