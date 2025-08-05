@@ -16,6 +16,7 @@ limitations under the License.
 #include "tsl/profiler/lib/profiler_session.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "absl/memory/memory.h"
@@ -23,6 +24,10 @@ limitations under the License.
 #include "absl/synchronization/mutex.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/logging.h"
+#include "xla/tsl/profiler/utils/xplane_builder.h"
+#include "xla/tsl/profiler/utils/xplane_schema.h"
+#include "xla/tsl/profiler/utils/xplane_utils.h"
+#include "tsl/platform/protobuf.h"  // IWYU pragma: keep
 #include "tsl/profiler/protobuf/profiler_options.pb.h"
 #include "tsl/profiler/protobuf/xplane.pb.h"
 
@@ -39,14 +44,27 @@ limitations under the License.
 namespace tsl {
 namespace {
 
+using google::protobuf::TextFormat;
 using tensorflow::ProfileOptions;
 using tensorflow::profiler::XSpace;
+using ::tsl::profiler::XPlaneBuilder;
 
 ProfileOptions GetOptions(const ProfileOptions& opts) {
   if (opts.version()) return opts;
   ProfileOptions options = ProfilerSession::DefaultOptions();
   options.set_include_dataset_ops(opts.include_dataset_ops());
   return options;
+}
+
+void SetProfileOptionsIntoSpace(const ProfileOptions& options, XSpace* space) {
+  XPlaneBuilder xplane(profiler::FindOrAddMutablePlaneWithName(
+      space, tsl::profiler::kTaskEnvPlaneName));
+  std::string options_str;
+  TextFormat::PrintToString(options, &options_str);
+  xplane.AddStatValue(
+      *xplane.GetOrCreateStatMetadata(tsl::profiler::GetTaskEnvStatTypeStr(
+          tsl::profiler::kEnvProfileOptions)),
+      options_str);
 }
 
 };  // namespace
@@ -84,6 +102,7 @@ absl::Status ProfilerSession::CollectData(XSpace* space) {
   TF_RETURN_IF_ERROR(CollectDataInternal(space));
   profiler::PostProcessSingleHostXSpace(space, start_time_ns_, stop_time_ns_);
 #endif
+  SetProfileOptionsIntoSpace(options_, space);
   return absl::OkStatus();
 }
 
