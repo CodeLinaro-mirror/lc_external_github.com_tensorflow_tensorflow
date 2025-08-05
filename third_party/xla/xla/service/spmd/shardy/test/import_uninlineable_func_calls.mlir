@@ -24,6 +24,9 @@ func.func private @foo(%arg0: tensor<8x2xi32>) -> tensor<8x2xi32> {
   return %0 : tensor<8x2xi32>
 }
 
+// -----
+sdy.mesh @mesh = #sdy.mesh<["x"=2, "y"=2]>
+
 // CHECK-LABEL: func @backend_config_out_shardings
 func.func @backend_config_out_shardings(%arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {"y"}]>}) -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {"y"}]>}) {
   // CHECK-NEXT: %[[NC:.*]] = sdy.named_computation<"bar">(%arg0) out_shardings=[<@mesh, [{"x"}, {"y"}]>] (%arg1: tensor<8x2xi32>) {
@@ -46,6 +49,9 @@ func.func private @bar(%arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mes
   return %0 : tensor<8x2xi32>
 }
 
+// -----
+sdy.mesh @mesh = #sdy.mesh<["x"=2, "y"=2]>
+
 // CHECK-LABEL: func @inlineable_false
 func.func @inlineable_false(%arg0: tensor<8x2xi32>, %arg1: tensor<8x2xi32>) -> (tensor<8x2xi32>) {
   // CHECK-NEXT: %[[NC:.*]]:2 = sdy.named_computation<"baz">(%arg0, %arg1) out_shardings=[<@mesh, [{"x"}, {}]>, <@mesh, [{}, {"y"}]>] (%arg2: tensor<8x2xi32>, %arg3: tensor<8x2xi32>) {
@@ -66,6 +72,9 @@ func.func private @baz(%arg0: tensor<8x2xi32>, %arg1: tensor<8x2xi32>) -> (tenso
   return %0, %arg1 : tensor<8x2xi32>, tensor<8x2xi32>
 }
 
+// -----
+sdy.mesh @mesh = #sdy.mesh<["x"=2, "y"=2]>
+
 // CHECK-LABEL: func @inlineable_true
 func.func @inlineable_true(%arg0: tensor<8x2xi32>, %arg1: tensor<8x2xi32>) -> (tensor<8x2xi32>) {
   // CHECK-NEXT: %[[CALL:.*]]:2 =  call @qux(%arg0, %arg1) {mhlo.frontend_attributes = {inlineable = "true"}, sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}, {}]>, <@mesh, [{}, {"y"}]>]>}
@@ -81,6 +90,9 @@ func.func private @qux(%arg0: tensor<8x2xi32>, %arg1: tensor<8x2xi32>) -> (tenso
   %0 = stablehlo.multiply %arg0, %arg1 : tensor<8x2xi32>
   return %0, %arg1 : tensor<8x2xi32>, tensor<8x2xi32>
 }
+
+// -----
+sdy.mesh @mesh = #sdy.mesh<["x"=2, "y"=2]>
 
 // Don't import if there is no backend_config or inlineable attr.
 // CHECK-LABEL: func @no_backend_config_or_inlineable_attr
@@ -130,4 +142,74 @@ func.func @multiple_call_ops_same_name(%arg0: tensor<8x2xi32> {sdy.sharding = #s
 func.func private @foobar(%arg0: tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{"x"}, {}]>}) -> (tensor<8x2xi32> {sdy.sharding = #sdy.sharding<@mesh, [{}, {"y"}]>}) {
   %0 = stablehlo.multiply %arg0, %arg0 {mhlo.frontend_attributes = {_xla_compute_type = "host"}} : tensor<8x2xi32>
   return %0 : tensor<8x2xi32>
+}
+
+// -----
+
+// CHECK-LABEL: func @same_func_call_one_inlineable_one_uninlineable
+func.func @same_func_call_one_inlineable_one_uninlineable(%arg0: tensor<8x2xi32>) -> tensor<8x2xi32> {
+  // CHECK-NEXT: %[[NC:.*]] = sdy.named_computation<"foo">(%arg0) (%arg1: tensor<8x2xi32>) {
+  // CHECK-NEXT:   %[[MULT:.*]] = stablehlo.multiply %arg1, %arg1 : tensor<8x2xi32>
+  // CHECK-NEXT:   sdy.return %[[MULT]] : tensor<8x2xi32>
+  // CHECK-NEXT: }
+  // CHECK-SAME: {mhlo.frontend_attributes = {inlineable = "false"}}
+  // CHECK-SAME: (tensor<8x2xi32>) -> tensor<8x2xi32>
+  // CHECK-NEXT: %[[CALL:.*]] = call @foo(%arg0) {mhlo.frontend_attributes = {inlineable = "true"}}
+  // CHECK-NEXT: %[[ADD:.*]] = stablehlo.add %[[NC]], %[[CALL]] : tensor<8x2xi32>
+  // CHECK-NEXT: return %[[ADD]] : tensor<8x2xi32>
+  %0 = call @foo(%arg0) {mhlo.frontend_attributes = {inlineable = "false"}} : (tensor<8x2xi32>) -> tensor<8x2xi32>
+  %1 = call @foo(%arg0) {mhlo.frontend_attributes = {inlineable = "true"}} : (tensor<8x2xi32>) -> tensor<8x2xi32>
+  %2 = stablehlo.add %0, %1 : tensor<8x2xi32>
+  return %2 : tensor<8x2xi32>
+}
+
+// CHECK: func private @foo
+func.func private @foo(%arg0: tensor<8x2xi32>) -> tensor<8x2xi32> {
+  %0 = stablehlo.multiply %arg0, %arg0 : tensor<8x2xi32>
+  return %0 : tensor<8x2xi32>
+}
+
+// -----
+
+// CHECK-LABEL: func @does_not_flatten_fully_non_flat_call_graph
+func.func @does_not_flatten_fully_non_flat_call_graph(%arg0: tensor<8xf32>) -> tensor<8xf32> {
+  // CHECK-NEXT: %[[NC1:.*]] = sdy.named_computation<"foo">(%arg0) (%arg1: tensor<8xf32>) {
+  // CHECK-NEXT:   %[[ADD:.*]] = stablehlo.add %arg1, %arg1 : tensor<8xf32>
+  // CHECK-NEXT:   %[[NC2:.*]] = sdy.named_computation<"bar">(%[[ADD]]) (%arg2: tensor<8xf32>) {
+  // CHECK-NEXT:     %[[ABS1:.*]] = stablehlo.abs %arg2 : tensor<8xf32>
+  // CHECK-NEXT:     sdy.return %[[ABS1]] : tensor<8xf32>
+  // CHECK-NEXT:   }
+  // CHECK-SAME:   {mhlo.frontend_attributes = {inlineable = "false"}}
+  // CHECK-SAME:   (tensor<8xf32>) -> tensor<8xf32>
+  // CHECK-NEXT:   sdy.return %[[NC2]] : tensor<8xf32>
+  // CHECK-NEXT: }
+  // CHECK-SAME: {mhlo.frontend_attributes = {inlineable = "false"}}
+  // CHECK-SAME: (tensor<8xf32>) -> tensor<8xf32>
+  // CHECK-NEXT: %[[NEGATE:.*]] = stablehlo.negate %[[NC1]] : tensor<8xf32>
+  // CHECK-NEXT: %[[CALL:.*]] = call @bar(%[[NEGATE]]) {mhlo.frontend_attributes = {inlineable = "true"}}
+  // CHECK-NEXT: %[[NC3:.*]] = sdy.named_computation<"bar">(%[[CALL]]) (%arg1: tensor<8xf32>) {
+  // CHECK-NEXT:   %[[ABS2:.*]] = stablehlo.abs %arg1 : tensor<8xf32>
+  // CHECK-NEXT:   sdy.return %[[ABS2]] : tensor<8xf32>
+  // CHECK-NEXT: }
+  // CHECK-SAME: {mhlo.frontend_attributes = {inlineable = "false"}}
+  // CHECK-SAME: (tensor<8xf32>) -> tensor<8xf32>
+  // CHECK-NEXT: return %[[NC3]] : tensor<8xf32>
+  %0 = call @foo(%arg0) {mhlo.frontend_attributes = {inlineable = "false"}} : (tensor<8xf32>) -> tensor<8xf32>
+  %1 = stablehlo.negate %0 : tensor<8xf32>
+  %2 = call @bar(%1) {mhlo.frontend_attributes = {inlineable = "true"}} : (tensor<8xf32>) -> tensor<8xf32>
+  %3 = call @bar(%2) {mhlo.frontend_attributes = {inlineable = "false"}} : (tensor<8xf32>) -> tensor<8xf32>
+  return %3 : tensor<8xf32>
+}
+
+// CHECK-NOT: func private @foo
+func.func private @foo(%arg0: tensor<8xf32>) -> tensor<8xf32> {
+  %0 = stablehlo.add %arg0, %arg0 : tensor<8xf32>
+  %1 = call @bar(%0) {mhlo.frontend_attributes = {inlineable = "false"}} : (tensor<8xf32>) -> tensor<8xf32>
+  return %1 : tensor<8xf32>
+}
+
+// CHECK: func private @bar
+func.func private @bar(%arg0: tensor<8xf32>) -> tensor<8xf32> {
+  %0 = stablehlo.abs %arg0 : tensor<8xf32>
+  return %0 : tensor<8xf32>
 }
