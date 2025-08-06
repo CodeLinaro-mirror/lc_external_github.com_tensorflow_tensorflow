@@ -17,11 +17,6 @@ package_group(
 )
 
 cc_library(
-    name = "autotune_config",
-    hdrs = ["autotune_config.h"],
-)
-
-cc_library(
     name = "codegen_backend",
     hdrs = ["codegen_backend.h"],
     deps = [
@@ -39,7 +34,6 @@ cc_library(
     srcs = ["autotuner.cc"],
     hdrs = ["autotuner.h"],
     deps = [
-        ":autotune_config",
         ":autotuner_cache_interface",
         ":codegen_backend",
         ":profiler",
@@ -47,7 +41,6 @@ cc_library(
         "//xla/service:executable",
         "//xla/service:shaped_buffer",
         "//xla/stream_executor:device_description",
-        "//xla/stream_executor:stream_executor_h",
         "//xla/tsl/platform:env",
         "//xla/tsl/platform:errors",
         "//xla/tsl/platform:statusor",
@@ -61,14 +54,13 @@ cc_library(
         "@com_google_absl//absl/time",
         "@local_tsl//tsl/platform:blocking_counter",
         "@local_tsl//tsl/platform:fingerprint",
-    ],
+    ] + if_google(["@com_google_protobuf//:any_cc_proto"]),
 )
 
 xla_cc_test(
     name = "autotuner_test",
     srcs = ["autotuner_test.cc"],
     deps = [
-        ":autotune_config",
         ":autotuner",
         ":autotuner_cache_interface",
         ":codegen_backend",
@@ -90,7 +82,7 @@ xla_cc_test(
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
         "@local_tsl//tsl/platform:path",
-    ],
+    ] + if_google(["@com_google_protobuf//:any_cc_proto"]),
 )
 
 tf_proto_library(
@@ -127,7 +119,6 @@ cc_library(
     srcs = ["file_based_autotuner_cache.cc"],
     hdrs = ["file_based_autotuner_cache.h"],
     deps = [
-        ":autotune_config",
         ":autotuner_cache_interface",
         ":autotuner_cache_proto_cc",
         "//xla/hlo/ir:hlo",
@@ -156,7 +147,6 @@ xla_cc_test(
     name = "file_based_autotuner_cache_test",
     srcs = ["file_based_autotuner_cache_test.cc"],
     deps = [
-        ":autotune_config",
         ":autotuner_cache_proto_cc",
         ":file_based_autotuner_cache",
         "//xla:literal_util",

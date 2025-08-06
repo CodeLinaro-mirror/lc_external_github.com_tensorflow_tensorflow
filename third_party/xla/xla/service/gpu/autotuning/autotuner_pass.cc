@@ -16,6 +16,7 @@ limitations under the License.
 #include "xla/service/gpu/autotuning/autotuner_pass.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -26,7 +27,9 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "xla/backends/autotuner/autotuner.h"
+#include "xla/backends/autotuner/autotuner_cache_interface.h"
 #include "xla/backends/autotuner/codegen_backend.h"
+#include "xla/backends/autotuner/file_based_autotuner_cache.h"
 #include "xla/backends/autotuner/profiler.h"
 #include "xla/backends/gpu/autotuner/gpu_profiler.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -38,19 +41,52 @@ limitations under the License.
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/threadpool.h"
 
+constexpr char kAutotunerCacheVersion[] = "1";
+
 namespace xla {
 namespace gpu {
 
 absl::StatusOr<std::unique_ptr<AutotunerPass>> AutotunerPass::Create(
     std::vector<std::unique_ptr<CodegenBackend>> backends,
+    const DebugOptions& debug_options,
     stream_executor::StreamExecutor* stream_executor,
     tsl::thread::ThreadPool* thread_pool) {
   std::unique_ptr<GpuProfiler> profiler =
       GpuProfiler::Create(stream_executor, ProfileOptions());
-  TF_ASSIGN_OR_RETURN(
-      std::unique_ptr<Autotuner> autotuner,
-      Autotuner::Create(std::move(backends), std::move(profiler),
-                        AutotuneConfig(), thread_pool));
+
+  std::unique_ptr<AutotunerCacheInterface> cache_manager = nullptr;
+  const std::string& cache_dir =
+      debug_options.xla_gpu_per_fusion_autotune_cache_dir();
+  if (!cache_dir.empty()) {
+    FileBasedCacheConfig cache_config;
+    cache_config.autotune_cache_dir = cache_dir;
+    switch (debug_options.xla_gpu_experimental_autotune_cache_mode()) {
+      case DebugOptions::AUTOTUNE_CACHE_MODE_READ:
+        cache_config.autotune_cache_mode =
+            FileBasedCacheConfig::CacheMode::READ;
+        break;
+      case DebugOptions::AUTOTUNE_CACHE_MODE_UPDATE:
+        cache_config.autotune_cache_mode =
+            FileBasedCacheConfig::CacheMode::READ_WRITE;
+        break;
+      default:
+        // Includes AUTOTUNE_CACHE_MODE_UNSPECIFIED
+        LOG(WARNING) << "Unknown autotune cache mode, defaulting to READ_WRITE";
+        cache_config.autotune_cache_mode =
+            FileBasedCacheConfig::CacheMode::READ_WRITE;
+        break;
+    }
+    TF_ASSIGN_OR_RETURN(
+        cache_manager,
+        FileBasedAutotunerCache::Create(cache_config,
+                                        stream_executor->GetDeviceDescription(),
+                                        kAutotunerCacheVersion));
+  }
+
+  TF_ASSIGN_OR_RETURN(std::unique_ptr<Autotuner> autotuner,
+                      Autotuner::Create(std::move(backends),
+                                        std::move(profiler), AutotuneConfig(),
+                                        std::move(cache_manager), thread_pool));
   return absl::WrapUnique(new AutotunerPass(std::move(autotuner)));
 }
 
