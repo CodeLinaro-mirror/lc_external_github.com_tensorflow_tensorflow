@@ -22,7 +22,10 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+// #include <gmock/gmock.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status_matchers.h"
 #include "absl/strings/ascii.h"
 #include "xla/backends/gpu/collectives/gpu_clique_key.h"
 #include "xla/backends/gpu/runtime/all_gather_thunk.h"
@@ -30,6 +33,7 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/command_buffer_thunk.h"
 #include "xla/backends/gpu/runtime/conditional_thunk.h"
 #include "xla/backends/gpu/runtime/copy_thunk.h"
+#include "xla/backends/gpu/runtime/custom_call_thunk.h"
 #include "xla/backends/gpu/runtime/gemm_thunk.h"
 #include "xla/backends/gpu/runtime/sequential_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
@@ -49,6 +53,7 @@ limitations under the License.
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/platform_manager.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/tsl/platform/status.h"
 #include "xla/tsl/platform/statusor.h"
 
 namespace xla {
@@ -172,6 +177,18 @@ std::unique_ptr<ConditionalThunk> CreateConditionalThunk(
   return std::make_unique<ConditionalThunk>(Thunk::ThunkInfo(), slice,
                                             std::move(branch_thunk_sequences),
                                             /*branch_index_is_bool=*/false);
+}
+
+std::unique_ptr<CustomCallThunk> CreateCustomCallThunk(
+    std::string call_target) {
+  auto thunk =
+      CustomCallThunk::Create(Thunk::ThunkInfo(), std::move(call_target),
+                              CustomCallThunk::CustomCallTarget(),
+                              /*operands=*/{},
+                              /*results=*/{},
+                              /*opaque=*/"");
+  TF_CHECK_OK(thunk.status());
+  return std::move(thunk).value();
 }
 
 TEST(CommandBufferConversionPassTest, ConvertsToCommandBufferThunk) {
@@ -744,5 +761,41 @@ TEST(CommandBufferConversionPassTest, ConvertWhileThunkWithAsyncPair) {
 }
 
 }  // namespace
+
+TEST(CommandBufferConversionPassTest,
+     ConvertsLegacyCustomCallToCommandBufferThunk) {
+  std::vector<std::unique_ptr<Thunk>> thunks;
+  thunks.push_back(CreateCustomCallThunk("test_legacy_custom_call"));
+
+  auto root_thunk =
+      std::make_unique<SequentialThunk>(Thunk::ThunkInfo(), std::move(thunks));
+  DebugOptions debug_options;
+  debug_options.clear_xla_gpu_enable_command_buffer();
+  debug_options.add_xla_gpu_enable_command_buffer(DebugOptions::CUSTOM_CALL);
+  debug_options.add_legacy_command_buffer_custom_call_targets(
+      "test_legacy_custom_call");
+
+  se::DeviceDescription device_info = TestGpuDeviceInfo::CudaOrRocmDeviceInfo();
+
+  EXPECT_EQ(root_thunk->thunks().size(), 1);
+
+  CommandBufferConversionPass pass;
+
+  ASSERT_THAT(pass.Run(root_thunk.get(), debug_options, device_info),
+              absl_testing::IsOkAndHolds(/*changed=*/true));
+  ASSERT_EQ(root_thunk->thunks().size(), 1);
+  const Thunk* thunk = root_thunk->thunks()[0].get();
+  ASSERT_EQ(thunk->kind(), Thunk::kCommandBuffer);
+
+  auto* command_buffer_thunk = static_cast<const CommandBufferThunk*>(thunk);
+
+  const auto& thunks_in_command_buffer =
+      command_buffer_thunk->thunks()->thunks();
+  EXPECT_EQ(thunks_in_command_buffer.size(), 1);
+
+  EXPECT_THAT(thunks_in_command_buffer,
+              ::testing::ElementsAre(::testing::Pointee(
+                  ::testing::Property(&Thunk::kind, Thunk::kCustomCall))));
+}
 }  // namespace gpu
 }  // namespace xla
