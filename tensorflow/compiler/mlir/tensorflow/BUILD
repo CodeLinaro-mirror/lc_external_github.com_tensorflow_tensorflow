@@ -962,6 +962,8 @@ cc_library(
     hdrs = ["utils/serialize_mlir_module_utils.h"],
     deps = [
         ":error_util",
+        "//tensorflow/compiler/jit:flags",
+        "//tensorflow/compiler/jit:flags_headers",
         "//tensorflow/core/platform:errors",
         "//tensorflow/core/platform:status",
         "@llvm-project//llvm:Support",
@@ -969,6 +971,20 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
         "@local_xla//xla:status_macros",
+    ],
+)
+
+tf_cc_test(
+    name = "serialize_mlir_module_utils_test",
+    srcs = ["utils/serialize_mlir_module_utils_test.cc"],
+    deps = [
+        ":serialize_mlir_module_utils",
+        "//tensorflow/compiler/jit:flags",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//mlir:IR",
     ],
 )
 

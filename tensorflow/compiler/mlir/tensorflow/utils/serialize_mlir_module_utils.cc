@@ -21,6 +21,7 @@ limitations under the License.
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/OperationSupport.h"  // from @llvm-project
 #include "mlir/Parser/Parser.h"  // from @llvm-project
+#include "tensorflow/compiler/jit/flags.h"
 #include "tensorflow/compiler/mlir/tensorflow/utils/error_util.h"
 #include "xla/status_macros.h"
 #include "tensorflow/core/platform/errors.h"
@@ -31,7 +32,9 @@ std::string SerializeMlirModule(mlir::ModuleOp module_op) {
   std::string serialized_mlir_module;
   llvm::raw_string_ostream os(serialized_mlir_module);
   mlir::OpPrintingFlags print_flags;
-  print_flags.enableDebugInfo();
+  if (GetMlirCommonFlags()->tf_mlir_enable_debug_info_serialization) {
+    print_flags.enableDebugInfo();
+  }
   module_op.print(os, print_flags);
   return std::move(os.str());
 }
