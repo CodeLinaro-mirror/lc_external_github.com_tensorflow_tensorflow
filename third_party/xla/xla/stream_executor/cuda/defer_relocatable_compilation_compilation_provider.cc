@@ -26,6 +26,7 @@ limitations under the License.
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "xla/stream_executor/cuda/compilation_options.h"
@@ -98,6 +99,12 @@ DeferRelocatableCompilationCompilationProvider::CompileAndLink(
     deferred_inputs.push_back(std::get<RelocatableModule>(input));
   }
   return delegate_->CompileAndLink(cc, deferred_inputs, options);
+}
+
+absl::StatusOr<int>
+DeferRelocatableCompilationCompilationProvider::GetLatestPtxIsaVersion() const {
+  return absl::UnimplementedError(
+      "GetLatestPtxIsaVersion is not implemented for " + name() + ".");
 }
 
 absl::StatusOr<Assembly>
