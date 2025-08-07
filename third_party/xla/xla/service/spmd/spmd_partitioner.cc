@@ -215,17 +215,26 @@ bool ShouldKeepSharding(const HloInstruction* hlo) {
 absl::Status ClearShardingAttributes(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  // Recover the unreduce input and output sharding.
+  auto has_unreduced_axes = [](const HloInstruction* hlo) -> bool {
+    return hlo->frontend_attributes().map().contains(sdy::kHasUnreducedAxes);
+  };
+  for (int64_t i = 0; i < module->entry_computation()->num_parameters(); ++i) {
+    auto param = module->entry_computation()->parameter_instruction(i);
+    if (has_unreduced_axes(param)) {
+      param->set_sharding(module->spmd_parameters_shardings()[i]);
+    }
+  }
+  HloInstruction* entry_root = module->entry_computation()->root_instruction();
+  if (has_unreduced_axes(entry_root)) {
+    entry_root->set_sharding(module->spmd_output_sharding());
+  }
   for (HloComputation* computation : module->computations(execution_threads)) {
     for (HloInstruction* hlo : computation->instructions()) {
-      bool has_unreduced_axes =
-          hlo->frontend_attributes().map().contains(sdy::kHasUnreducedAxes);
-      if (has_unreduced_axes) {
+      if (has_unreduced_axes(hlo)) {
         hlo->erase_frontend_attribute(sdy::kHasUnreducedAxes);
       }
       if (ShouldKeepSharding(hlo)) {
-        if (has_unreduced_axes) {
-          hlo->set_sharding(HloSharding::Unreduced());
-        }
         continue;
       }
       hlo->clear_sharding();
@@ -2639,20 +2648,8 @@ absl::Status SpmdPartitioningVisitor::Preprocess(HloInstruction* hlo) {
     return sharding;
   };
 
-  const bool has_manual_sharding =
-      hlo->sharding().IsManual() ||
-      (hlo->sharding().IsTuple() &&
-       absl::c_any_of(
-           hlo->sharding().tuple_elements(),
-           [](const HloSharding& sharding) { return sharding.IsManual(); }));
-  const bool has_manual_subgroup =
-      hlo->sharding().IsManualSubgroup() ||
-      (hlo->sharding().IsTuple() &&
-       absl::c_any_of(hlo->sharding().tuple_elements(),
-                      [](const HloSharding& sharding) {
-                        return sharding.IsManualSubgroup();
-                      }));
-  if (has_manual_sharding && !hlo->IsCustomCall("SPMDFullToShardShape")) {
+  if (hlo->sharding().IsManual() &&
+      !hlo->IsCustomCall("SPMDFullToShardShape")) {
     visiting_hlo_sharding_ = hlo->sharding();
     auto get_sharding_shape = [](const HloInstruction* hlo) {
       if (hlo->opcode() != HloOpcode::kOutfeed) {
@@ -2674,7 +2671,7 @@ absl::Status SpmdPartitioningVisitor::Preprocess(HloInstruction* hlo) {
           hlo->opcode(), get_sharding_shape(operand), operand->sharding()));
       GetPartitionedHlo(operand).hlo()->copy_sharding(operand);
     }
-  } else if (has_manual_subgroup &&
+  } else if (hlo->sharding().IsManualSubgroup() &&
              !hlo->IsCustomCall("SPMDFullToShardShape") &&
              !hlo->IsCustomCall("SPMDShardToFullShape") &&
              hlo->opcode() != HloOpcode::kGetTupleElement) {
@@ -3214,9 +3211,6 @@ absl::Status SpmdPartitioningVisitor::HandleTranspose(HloInstruction* hlo) {
 
 absl::Status SpmdPartitioningVisitor::HandleReshape(HloInstruction* hlo) {
   const HloSharding& sharding = hlo->sharding();
-  if (sharding.IsTileMaximal()) {
-    return DefaultAction(hlo);
-  }
 
   const Shape& in_shape = hlo->operand(0)->shape();
   const Shape& out_shape = hlo->shape();
@@ -5535,7 +5529,7 @@ absl::StatusOr<bool> SpmdPartitioner::Run(
   XLA_VLOG_LINES(1, SpmdLogger::ReportBeforePartition(
                         *module, options_.report_instruction_count));
   RecordInputsOutputsSharding(module);
-
+  ConvertUnreducedSharding(module, execution_threads);
   FlattenCallGraph flatten;
   TF_ASSIGN_OR_RETURN(auto changed, flatten.Run(module));
 
@@ -5658,13 +5652,6 @@ absl::Status SpmdPartitioner::PreprocessSharding(
               HloSharding::Single(hlo->shape(), HloSharding::Replicate()));
         }
       }
-
-      // Represent unreduced as a frontend attribute to avoid propagating
-      // the unreduced HLO sharding.
-      if (hlo->sharding().IsUnreduced()) {
-        hlo->add_frontend_attribute(sdy::kHasUnreducedAxes, "true");
-        hlo->set_sharding(HloSharding::Replicate());
-      }
     }
   }
 
@@ -5698,6 +5685,37 @@ absl::Status SpmdPartitioner::PreprocessSharding(
   }
 
   return absl::OkStatus();
+}
+
+void SpmdPartitioner::ConvertUnreducedSharding(
+    HloModule* module,
+    const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  for (HloComputation* computation : module->computations(execution_threads)) {
+    for (HloInstruction* hlo : computation->instructions()) {
+      if (hlo->sharding().IsUnreduced()) {
+        hlo->add_frontend_attribute(sdy::kHasUnreducedAxes, "true");
+        if (hlo->sharding().IsTuple()) {
+          if (hlo->sharding().IsTuple()) {
+            std::vector<HloSharding> subshardings =
+                hlo->sharding().tuple_elements();
+            for (HloSharding& subsharding : subshardings) {
+              // Delay manual sharding substitution for CustomCalls.
+              if (subsharding.IsUnreduced()) {
+                subsharding = HloSharding::Replicate();
+              }
+            }
+            hlo->set_sharding(HloSharding::Tuple(hlo->shape(), subshardings));
+          }
+        } else {
+          hlo->set_sharding(HloSharding::Replicate());
+        }
+      }
+      if (hlo->sharding().IsUnReducedSubgroup()) {
+        hlo->add_frontend_attribute(sdy::kHasUnreducedAxes, "true");
+        hlo->set_sharding(HloSharding::Replicate());
+      }
+    }
+  }
 }
 
 namespace {

@@ -501,6 +501,9 @@ GroupedSharding GetGroupedReplicatedSharding(const int64_t num_groups,
 // Get group sharding for each manual subgroup.
 GroupedSharding GetManualSubgroupSharding(const HloSharding& sharding);
 
+GroupedSharding GetSubgroupSharding(const HloSharding& sharding,
+                                    OpSharding::Type sharding_type);
+
 // Create a group sharding over the partially replicated dimension re-using an
 // existing device group subdivision to avoid unexpected devices reordering.
 std::optional<GroupedSharding>
