@@ -2316,3 +2316,22 @@ def DecomposeOptionalsPass : Pass<"tf-decompose-optionals", "ModuleOp"> {
   }];
   let constructor = "TF::CreateDecomposeOptionalsPass()";
 }
+
+def OrderForProgramKeyPass : Pass<"tf-order-for-program-key", "ModuleOp"> {
+  let summary = "Move TPUCompile ops as early as possible.";
+  let description = [{
+      Reorders blocks so that TPUCompileMlir ops (and launches that contain
+      TPUCompileMlir ops) are placed as early as possible.
+
+      For example, the code
+
+        "SomeOp"() : () -> tensor<i64>
+        %0, %1 = "tf._TPUCompileMlir"(...)
+
+      would be reordered to
+
+        %0, %1 = "tf._TPUCompileMlir"(...)
+        "SomeOp"() : () -> tensor<i64>
+  }];
+  let constructor = "TF::CreateOrderForProgramKeyPass()";
+}
