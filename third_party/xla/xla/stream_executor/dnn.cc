@@ -20,6 +20,7 @@ limitations under the License.
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -902,7 +903,12 @@ std::string ConvolutionDescriptor::ToString() const {
   return absl::StrFormat(
       "{zero_padding: %s pad_alignment: %s filter_strides: %s dilation_rates: "
       "%s}",
-      padding, PadAlignmentString(pad_alignment()), strides, dilations);
+      padding,
+      // TODO(appujee): This is technically not sound as for GPU different
+      // dimensions may have different pad alignments, but we don't have a way
+      // to express that here anyway.
+      PadAlignmentString(static_cast<PadAlignment>(this->padding()[0])),
+      strides, dilations);
 }
 
 // -- PoolingDescriptor
