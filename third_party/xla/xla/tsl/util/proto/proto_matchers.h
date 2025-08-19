@@ -141,7 +141,7 @@ class PartialIgnore final
 // and IgnoreRepeatedFieldOrdering to adjust the values. ExpectedProto can be
 // either a proto or string.
 template <typename ExpectedProto>
-class EqualsProtoMatcher {
+class ProtoMatcher {
  public:
   static_assert(std::is_base_of_v<::tsl::protobuf::Message, ExpectedProto> ||
                     std::is_same_v<ExpectedProto, std::string>,
@@ -149,8 +149,10 @@ class EqualsProtoMatcher {
   using is_gtest_matcher = void;
   using is_proto_matcher = void;
 
-  explicit EqualsProtoMatcher(ExpectedProto expected_proto)
-      : expected_proto_(std::move(expected_proto)) {}
+  explicit ProtoMatcher(
+      ExpectedProto expected_proto,
+      ::tsl::protobuf::util::MessageDifferencer::MessageFieldComparison cmp)
+      : expected_proto_(std::move(expected_proto)), cmp_(cmp) {}
 
   // Matches a proto against the expected proto.
   template <typename ActualProto>
@@ -172,6 +174,7 @@ class EqualsProtoMatcher {
     }
 
     ::tsl::protobuf::util::MessageDifferencer diff;
+    diff.set_message_field_comparison(cmp_);
     diff.set_report_ignores(false);
     if (partial_) {
       diff.AddIgnoreCriteria(std::make_unique<PartialIgnore>());
@@ -193,7 +196,12 @@ class EqualsProtoMatcher {
   // Describes this matcher to an ostream.
   void DescribeTo(std::ostream* os) const {
     *os << absl::StreamFormat(
-        "equals%s%s ", partial_ ? " (ignoring extra fields)" : "",
+        "%s%s%s ",
+        cmp_ == ::tsl::protobuf::util::MessageDifferencer::
+                    MessageFieldComparison::EQUAL
+            ? "equals"
+            : "equates",
+        partial_ ? " (ignoring extra fields)" : "",
         unordered_repeated_fields_ ? " (ignoring repeated field order)" : "");
     // StreamFormat() doesn't work with some versions of protobuf, so we need
     // to convert expected_proto_ to a string manually.
@@ -218,6 +226,7 @@ class EqualsProtoMatcher {
   ExpectedProto expected_proto_;
   bool partial_ = false;
   bool unordered_repeated_fields_ = false;
+  const ::tsl::protobuf::util::MessageDifferencer::MessageFieldComparison cmp_;
 };
 
 }  // namespace internal
@@ -226,13 +235,31 @@ class EqualsProtoMatcher {
 template <typename Proto, typename = std::enable_if_t<std::is_base_of_v<
                               ::tsl::protobuf::Message, Proto>>>
 inline auto EqualsProto(Proto proto) {
-  return internal::EqualsProtoMatcher<Proto>(std::move(proto));
+  return internal::ProtoMatcher<Proto>(
+      std::move(proto), ::tsl::protobuf::util::MessageDifferencer::EQUAL);
 }
 
 // Returns a matcher that matches a proto that equals the given proto
 // (represented as a text string).
 inline auto EqualsProto(absl::string_view proto) {
-  return internal::EqualsProtoMatcher<std::string>(std::string(proto));
+  return internal::ProtoMatcher<std::string>(
+      std::string(proto), ::tsl::protobuf::util::MessageDifferencer::EQUAL);
+}
+
+// Returns a matcher that matches a proto that is equivalent to the given proto.
+template <typename Proto, typename = std::enable_if_t<std::is_base_of_v<
+                              ::tsl::protobuf::Message, Proto>>>
+inline auto EquivToProto(Proto proto) {
+  return internal::ProtoMatcher<Proto>(
+      std::move(proto), ::tsl::protobuf::util::MessageDifferencer::EQUIVALENT);
+}
+
+// Returns a matcher that matches a proto that is equivalent to the given proto
+// (represented as a text string).
+inline auto EquivToProto(absl::string_view proto) {
+  return internal::ProtoMatcher<std::string>(
+      std::string(proto),
+      ::tsl::protobuf::util::MessageDifferencer::EQUIVALENT);
 }
 
 }  // namespace proto_testing
