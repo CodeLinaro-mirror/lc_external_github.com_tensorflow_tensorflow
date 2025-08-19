@@ -199,10 +199,6 @@ std::pair<SymbolicExpr, int64_t> GetBaseAndCoeff(SymbolicExpr expr) {
       auto [base, coeff] = GetBaseAndCoeff(lhs);
       return {base, coeff * rhs.GetValue()};
     }
-    if (lhs.GetType() == SymbolicExprType::kConstant) {
-      auto [base, coeff] = GetBaseAndCoeff(rhs);
-      return {base, coeff * lhs.GetValue()};
-    }
   }
   return {expr, 1};
 }
@@ -221,19 +217,6 @@ void ExtractTerms(SymbolicExpr expr,
 
 SymbolicExpr CanonicalizeAdd(SymbolicExpr lhs, SymbolicExpr rhs) {
   SymbolicExprContext* ctx = lhs.GetContext();
-
-  // Constant folding
-  if (lhs.GetType() == SymbolicExprType::kConstant &&
-      rhs.GetType() == SymbolicExprType::kConstant) {
-    return ctx->CreateConstant(lhs.GetValue() + rhs.GetValue());
-  }
-  // Neutral element
-  if (lhs.GetType() == SymbolicExprType::kConstant && lhs.GetValue() == 0) {
-    return rhs;
-  }
-  if (rhs.GetType() == SymbolicExprType::kConstant && rhs.GetValue() == 0) {
-    return lhs;
-  }
 
   // Flattening and term collection
   llvm::SmallVector<std::pair<SymbolicExpr, int64_t>> terms;
@@ -286,16 +269,6 @@ SymbolicExpr CanonicalizeAdd(SymbolicExpr lhs, SymbolicExpr rhs) {
 SymbolicExpr CanonicalizeMul(SymbolicExpr lhs, SymbolicExpr rhs) {
   SymbolicExprContext* ctx = lhs.GetContext();
 
-  if (lhs.GetType() == SymbolicExprType::kConstant &&
-      rhs.GetType() == SymbolicExprType::kConstant) {
-    return ctx->CreateConstant(lhs.GetValue() * rhs.GetValue());
-  }
-
-  // Commutativity: C * X => X * C
-  if (lhs.GetType() == SymbolicExprType::kConstant) {
-    std::swap(lhs, rhs);
-  }
-
   // Neutral Elements
   if (rhs.GetType() == SymbolicExprType::kConstant) {
     if (rhs.GetValue() == 0) {
@@ -322,11 +295,7 @@ SymbolicExpr CanonicalizeMul(SymbolicExpr lhs, SymbolicExpr rhs) {
     return ((lhs * rhs.GetLHS()) + (lhs * rhs.GetRHS())).Canonicalize();
   }
 
-  SymbolicExpr res_lhs = lhs, res_rhs = rhs;
-  if (res_rhs < res_lhs) {
-    std::swap(res_lhs, res_rhs);
-  }
-  return ctx->CreateBinaryOp(SymbolicExprType::kMul, res_lhs, res_rhs);
+  return ctx->CreateBinaryOp(SymbolicExprType::kMul, lhs, rhs);
 }
 
 std::optional<int64_t> SubtractAndGetConstDiff(SymbolicExpr lhs,
@@ -344,9 +313,6 @@ SymbolicExpr CanonicalizeMin(SymbolicExpr lhs, SymbolicExpr rhs) {
     return (diff.value() <= 0) ? lhs : rhs;
   }
 
-  if (rhs < lhs) {
-    std::swap(lhs, rhs);
-  }
   return ctx->CreateBinaryOp(SymbolicExprType::kMin, lhs, rhs);
 }
 
@@ -356,9 +322,6 @@ SymbolicExpr CanonicalizeMax(SymbolicExpr lhs, SymbolicExpr rhs) {
     return (diff.value() >= 0) ? lhs : rhs;
   }
 
-  if (rhs < lhs) {
-    std::swap(lhs, rhs);
-  }
   return ctx->CreateBinaryOp(SymbolicExprType::kMax, lhs, rhs);
 }
 
@@ -552,25 +515,49 @@ SymbolicExpr SymbolicExpr::Canonicalize() const {
     return *this;
   }
 
-  switch (GetType()) {
-    case SymbolicExprType::kConstant:
-    case SymbolicExprType::kVariable:
-      return *this;
+  SymbolicExprType type = GetType();
+  if (type == SymbolicExprType::kConstant ||
+      type == SymbolicExprType::kVariable) {
+    return *this;
+  }
+
+  SymbolicExpr lhs = this->GetLHS().Canonicalize();
+  SymbolicExpr rhs = this->GetRHS().Canonicalize();
+
+  // If both sides are constants, we can evaluate the expression.
+  if (lhs.GetType() == SymbolicExprType::kConstant &&
+      rhs.GetType() == SymbolicExprType::kConstant) {
+    return GetContext()->CreateConstant(
+        SymbolicExpr(GetContext()->CreateBinaryOp(type, lhs, rhs))
+            .Evaluate({}));
+  }
+
+  // Assure constants are on the RHS for commutative operations.
+  switch (type) {
     case SymbolicExprType::kAdd:
-      return CanonicalizeAdd(this->GetLHS().Canonicalize(),
-                             this->GetRHS().Canonicalize());
     case SymbolicExprType::kMul:
-      return CanonicalizeMul(this->GetLHS().Canonicalize(),
-                             this->GetRHS().Canonicalize());
     case SymbolicExprType::kMin:
-      return CanonicalizeMin(this->GetLHS().Canonicalize(),
-                             this->GetRHS().Canonicalize());
     case SymbolicExprType::kMax:
-      return CanonicalizeMax(this->GetLHS().Canonicalize(),
-                             this->GetRHS().Canonicalize());
+      if (rhs < lhs) {
+        std::swap(lhs, rhs);
+      }
+      break;
+    default:
+      break;
+  }
+
+  switch (type) {
+    case SymbolicExprType::kAdd:
+      return CanonicalizeAdd(lhs, rhs);
+    case SymbolicExprType::kMul:
+      return CanonicalizeMul(lhs, rhs);
+    case SymbolicExprType::kMin:
+      return CanonicalizeMin(lhs, rhs);
+    case SymbolicExprType::kMax:
+      return CanonicalizeMax(lhs, rhs);
     default:
       // TODO(b/433693793): Implement canonicalization for other types.
-      return *this;
+      return GetContext()->CreateBinaryOp(type, lhs, rhs);
   }
 }
 
