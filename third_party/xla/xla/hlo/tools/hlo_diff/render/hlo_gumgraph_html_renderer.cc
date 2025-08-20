@@ -67,7 +67,12 @@ std::string PrintCss() {
     .section > .header {
       font-size: 16px;
       font-weight: bold;
-      margin-bottom: 5px;
+      padding: 0.5rem;
+      background-color: white; /* Add a background to cover content while sticking */
+      position: sticky;
+      top: 0;
+      z-index: 2; /* Ensure it stays above other content */
+      border-bottom: 1px solid #cccccc;
     }
     .section > .content {
       font-size: 14px;
@@ -212,8 +217,14 @@ std::string PrintCss() {
       color: #999999;
     }
 
+    span.hlo-instruction {
+      display: inline-block;
+    }
     span.hlo-instruction:hover {
-      border: 1px solid #4285F4;
+      border: 2px solid #4285F4;
+    }
+    span.bordered {
+      border: 2px solid #4285F4;
     }
 
     span.red-highlight {
@@ -224,6 +235,28 @@ std::string PrintCss() {
     }
     span.yellow-highlight {
       background-color: #feefc3;
+    }
+    span.temp-highlight {
+      background-color: #a8c7fa;
+      opacity: 0.7;
+      transition: background-color 0.5s ease-out;
+    }
+
+    .hlo-instruction.hidden {
+      display: none;
+    }
+    button {
+      background-color: #3f51b5;
+      color: white;
+      font-weight: bold;
+      padding: 0.2rem 0.5rem;
+      margin-left: 1rem;
+      border-radius: 0.5rem;
+      transition: all 0.2s ease-in-out;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    }
+    button:hover {
+      transform: translateY(-1px) scale(1.02);
     }
 
     </style>
@@ -242,16 +275,105 @@ std::string PrintJavascript() {
       tooltip.textContent = 'Click to copy';
     }, 2000);
   }
+  </script>
+  )html";
+}
 
-  function TextboxOnScroll(event) {
-    const textbox = event.target;
-    const idParts = textbox.id.split('-');
-    const id = idParts[0];
-    const isLeft = idParts[1] == 'left';
-    const sibling = document.getElementById(id + '-' + (isLeft ? 'right' : 'left'));
-    sibling.scrollTop = textbox.scrollTop;
-    sibling.scrollLeft = textbox.scrollLeft;
+std::string PrintJavascriptForHoverEvent() {
+  return R"html(
+  <script>
+  const allSpans = document.querySelectorAll('span[data-diffid]');
+  allSpans.forEach(span => {
+      span.addEventListener('mouseover', handleMouseOver);
+      span.addEventListener('mouseout', handleMouseOut);
+      span.addEventListener('click', handleSpanClick);
+  });
+  function handleMouseOver(event) {
+      const diffId = event.target.getAttribute('data-diffid');
+      if (!diffId) {
+          return;
+      }
+      const relatedSpans = document.querySelectorAll(`span[data-diffid="${diffId}"]`);
+      relatedSpans.forEach(relatedSpan => {
+          relatedSpan.classList.add('bordered');
+      });
   }
+
+  function handleMouseOut(event) {
+      const diffId = event.target.getAttribute('data-diffid');
+      if (!diffId) {
+          return;
+      }
+      const relatedSpans = document.querySelectorAll(`span[data-diffid="${diffId}"]`);
+      relatedSpans.forEach(relatedSpan => {
+          relatedSpan.classList.remove('bordered');
+      });
+  }
+
+  function handleSpanClick(event) {
+      const diffId = event.target.getAttribute('data-diffid');
+      if (!diffId) {
+          return;
+      }
+
+      const clickedSpan = event.target;
+      const clickedPre = clickedSpan.closest('.hlo-textbox').querySelector('pre');
+      if (!clickedPre) return;
+
+      const idParts = clickedPre.id.split('-');
+      const fingerprint = idParts[0];
+      const isLeft = idParts[1] === 'left';
+      const siblingPreId = fingerprint + '-' + (isLeft ? 'right' : 'left');
+      const siblingPre = document.getElementById(siblingPreId);
+
+      if (siblingPre) {
+          const targetSpan = siblingPre.querySelector(`span[data-diffid="${diffId}"]`);
+          if (targetSpan) {
+              // Calculate the vertical offset of the clicked span from the top of its visible area.
+              const clickedSpanViewportOffset = clickedSpan.offsetTop - clickedPre.scrollTop;
+
+              // Calculate the percentage of this offset within the clickedPre's visible height.
+              const percentage = clickedPre.clientHeight > 0 ?
+                  clickedSpanViewportOffset / clickedPre.clientHeight : 0;
+
+              // Calculate the desired offset for the targetSpan within the siblingPre's visible area.
+              const desiredSiblingViewportOffset = percentage * siblingPre.clientHeight;
+
+              // Calculate the new scrollTop for siblingPre to achieve this alignment.
+              const newScrollTop = targetSpan.offsetTop - desiredSiblingViewportOffset;
+
+              // Scroll the siblingPre element smoothly.
+              siblingPre.scrollTo({
+                  top: Math.max(0, newScrollTop),
+                  behavior: 'smooth'
+              });
+
+              // Temporarily highlight the target span
+              targetSpan.classList.add('temp-highlight');
+              setTimeout(() => {
+                  targetSpan.classList.remove('temp-highlight');
+              }, 1000); // Remove highlight after 1 seconds
+          }
+      }
+  }
+  </script>
+  )html";
+}
+
+std::string PrintJavascriptForToggleButton() {
+  return R"html(
+  <script>
+  const toggleButton = document.getElementById('toggleButton');
+    const hloInstructions = document.querySelectorAll('.hlo-instruction:not(.highlighted)');
+    let isHidden = false;
+
+    toggleButton.addEventListener('click', () => {
+      isHidden = !isHidden;
+      hloInstructions.forEach(instruction => {
+        instruction.classList.toggle('hidden', isHidden);
+      });
+      toggleButton.textContent = isHidden ? 'Show Unchanged Instructions' : 'Hide Unchanged Instructions';
+    });
   </script>
   )html";
 }
@@ -339,6 +461,12 @@ std::string PrintAttributesList(absl::Span<const std::string> items) {
                   {"attributes-list"});
 }
 
+// Prints a button
+std::string PrintButton(absl::string_view id, absl::string_view text) {
+  return absl::StrFormat(
+      R"html(<button id="%s" class="button">%s</button>)html", id, text);
+}
+
 // The position of the tooltip.
 enum class TooltipPosition : std::uint8_t { kLeft, kRight };
 
@@ -383,6 +511,7 @@ std::string PrintTextbox(absl::string_view title, absl::string_view content,
 // span element in the HTML output.
 struct Attributes {
   std::string highlight;
+  std::string diffid;
 };
 
 // Generate span attributes for all instructions given diff result.
@@ -397,8 +526,19 @@ absl::flat_hash_map<const HloInstruction*, Attributes> GenerateSpanAttributes(
   }
   for (const auto& [l_instruction, r_instruction] :
        diff_result.changed_instructions) {
-    span_attributes[l_instruction] = {"yellow-highlight"};
-    span_attributes[r_instruction] = {"yellow-highlight"};
+    span_attributes[l_instruction] = {
+        "yellow-highlight",
+        absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+    span_attributes[r_instruction] = {
+        "yellow-highlight",
+        absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+  }
+  for (const auto& [l_instruction, r_instruction] :
+       diff_result.unchanged_instructions) {
+    span_attributes[l_instruction] = {
+        "", absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
+    span_attributes[r_instruction] = {
+        "", absl::StrCat(l_instruction->name(), "::", r_instruction->name())};
   }
   return span_attributes;
 };
@@ -438,22 +578,27 @@ std::string PrintHloComputationToHtml(
         comp->MakeInstructionPostOrder();
     for (const HloInstruction* instruction : instruction_order) {
       DCHECK_EQ(comp, instruction->parent());
-      printer.Append("  ");  // Instruction indentation (2 spaces)
 
       auto it = span_attributes.find(instruction);
       std::string highlight_class =
           it != span_attributes.end() && !it->second.highlight.empty()
-              ? std::string(it->second.highlight)
+              ? std::string(it->second.highlight) + " highlighted"
+              : "";
+      std::string diffid =
+          it != span_attributes.end() && !it->second.diffid.empty()
+              ? absl::StrCat("data-diffid=\"",
+                             EscapeStringForHtmlAttribute(it->second.diffid),
+                             "\"")
               : "";
       printer.Append(absl::StrCat("<span class=\"hlo-instruction ",
-                                  highlight_class, "\" >"));
-
+                                  highlight_class, "\"", diffid, " >"));
+      printer.Append("  ");  // Instruction indentation (2 spaces)
       if (instruction == comp->root_instruction()) {
         printer.Append("ROOT ");
       }
       instruction->PrintWithCanonicalNameMap(
           &printer, instruction_print_options, &name_map);
-      printer.Append("</span>\n");
+      printer.Append("</span>");
     }
   }
 
@@ -1017,7 +1162,8 @@ void RenderHtml(const DiffResult& diff_result, const DiffSummary& diff_summary,
 
   // Print repetitive computation groups
   out << PrintSectionWithHeader(
-      "Diffs grouped by computation (Ordered by # of different instructions)",
+      "Diffs grouped by computation (Ordered by # of different instructions) " +
+          PrintButton("toggleButton", "Hide Unchanged Instructions"),
       PrintRepetitiveDiffPatterns(diff_summary.computation_diff_patterns,
                                   span_attributes, url_generator));
 
@@ -1046,6 +1192,9 @@ void RenderHtml(const DiffResult& diff_result, const DiffSummary& diff_summary,
                               filtered_diff_result.changed_instructions.size()),
               PrintChangedInstructions(
                   filtered_diff_result.changed_instructions, url_generator))));
+
+  out << PrintJavascriptForHoverEvent();
+  out << PrintJavascriptForToggleButton();
 }
 
 }  // namespace hlo_diff
