@@ -120,6 +120,9 @@ absl::StatusOr<PaddingConfig> ParsePaddingConfig(absl::string_view str);
 // Parses and returns a Shape::ToString-format string.
 absl::StatusOr<Shape> ParseShape(absl::string_view str);
 
+// Parses and returns a Shape::ToString-format string.
+absl::StatusOr<std::vector<Shape>> ParseShapeList(absl::string_view str);
+
 // Parses and returns a Layout::ToString-format string.
 absl::StatusOr<Layout> ParseLayout(absl::string_view str);
 
