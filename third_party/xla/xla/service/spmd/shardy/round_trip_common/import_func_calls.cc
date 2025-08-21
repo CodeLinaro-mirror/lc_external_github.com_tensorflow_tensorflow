@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/service/spmd/shardy/round_trip_common/import_func_calls.h"
 
+#include <cstdint>
 #include <iterator>
 #include <memory>
 
@@ -59,6 +60,8 @@ using ::mlir::func::CallOp;
 using ::mlir::func::FuncOp;
 using ::mlir::sdy::kShardingAttr;
 using ::mlir::sdy::NamedComputationOp;
+using ::mlir::sdy::TensorShardingAttr;
+using ::mlir::sdy::TensorShardingPerValueAttr;
 
 bool isInlineableCallOp(CallOp callOp) {
   if (hasFrontendAttr(callOp, kXlaBackendConfigAttr)) {
@@ -67,6 +70,32 @@ bool isInlineableCallOp(CallOp callOp) {
   auto inlineableAttr =
       tryGetFrontendAttr<mlir::BoolAttr>(callOp, kXlaInlineableAttr);
   return !inlineableAttr || inlineableAttr->getValue();
+}
+
+TensorShardingPerValueAttr getFuncArgShardings(FuncOp funcOp) {
+  mlir::SmallVector<TensorShardingAttr> argShardings;
+  argShardings.reserve(funcOp.getNumArguments());
+  TensorShardingAttr anySharding;
+  for (int64_t argNum = 0; argNum < funcOp.getNumArguments(); ++argNum) {
+    if (auto sdySharding = funcOp.getArgAttrOfType<TensorShardingAttr>(
+            argNum, kShardingAttr)) {
+      anySharding = sdySharding;
+      break;
+    }
+  }
+  if (!anySharding) {
+    return nullptr;
+  }
+  for (int64_t argNum = 0; argNum < funcOp.getNumArguments(); ++argNum) {
+    if (auto sdySharding = funcOp.getArgAttrOfType<TensorShardingAttr>(
+            argNum, kShardingAttr)) {
+      argShardings.push_back(sdySharding);
+    } else {
+      argShardings.push_back(
+          TensorShardingAttr::getFullyClosedLike(anySharding));
+    }
+  }
+  return TensorShardingPerValueAttr::get(funcOp.getContext(), argShardings);
 }
 
 void importCallOp(
@@ -81,11 +110,13 @@ void importCallOp(
                 });
 
   StringRef calleeName = callOp.getCallee();
+  FuncOp funcOp = symbolTable.lookup<FuncOp>(calleeName);
+  CHECK(funcOp) << "Failed to lookup function: " << calleeName.str();
   rewriter.setInsertionPoint(callOp);
   auto namedCompOp = rewriter.create<NamedComputationOp>(
       callOp->getLoc(), callOp->getResultTypes(), calleeName,
       callOp.getOperands(),
-      /*inShardings=*/nullptr,
+      /*inShardings=*/getFuncArgShardings(funcOp),
       /*outShardings=*/mlir::sdy::getShardingPerValue(callOp));
   namedCompOp->setAttrs(namedCompAttrs);
 
@@ -102,8 +133,6 @@ void importCallOp(
     rewriter.cloneRegionBefore(*movedRegionIt->second, namedCompRegion,
                                namedCompRegion.begin());
   } else {
-    FuncOp funcOp = symbolTable.lookup<FuncOp>(calleeName);
-    CHECK(funcOp) << "Failed to lookup function: " << calleeName.str();
     mlir::sdy::inlineRegionAndConvertTerminatorOp<mlir::sdy::ReturnOp>(
         funcOp.getBody(), namedCompRegion);
     calleeNameToMovedRegion[calleeName] = &namedCompRegion;
