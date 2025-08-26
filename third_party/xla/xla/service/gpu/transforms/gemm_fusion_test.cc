@@ -1455,6 +1455,47 @@ TEST_F(SmallDotGemmFusionTest, Int4WithMinorBatchDimIsNotRewritten) {
   EXPECT_FALSE(result);
 }
 
+TEST_F(GemmFusionTest, ScaledDotIsFused) {
+  constexpr absl::string_view kHloText = R"(
+    HloModule ScaledDotIsFused
+
+    ENTRY entry {
+     lhs = bf16[4,4] parameter(0)
+     lhs_scale = bf16[1,1] parameter(1)
+     rhs = bf16[4,4] parameter(2)
+     rhs_scale = bf16[1,1] parameter(3)
+     ROOT dot = bf16[4,4] scaled-dot(lhs, lhs_scale, rhs, rhs_scale),
+         lhs_contracting_dims={1},
+         rhs_contracting_dims={1},
+         metadata={op_name="foo"}
+    }
+  )";
+
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(kHloText));
+  TF_ASSERT_OK_AND_ASSIGN(auto result,
+                          GemmFusion(gpu_version_).Run(module.get()));
+  EXPECT_TRUE(result);
+
+  constexpr absl::string_view kExpectedHloText = R"(
+    CHECK: %fusion_dot
+    CHECK:   %lhs.1 = bf16[4,4]{1,0} parameter(0)
+    CHECK:   %lhs_scale.1 = bf16[1,1]{1,0} parameter(1)
+    CHECK:   %rhs.1 = bf16[4,4]{1,0} parameter(2)
+    CHECK:   %rhs_scale.1 = bf16[1,1]{1,0} parameter(3)
+    CHECK:   ROOT %dot.1 = bf16[4,4]{1,0} scaled-dot(%lhs.1, %lhs_scale.1, %rhs.1, %rhs_scale.1),
+    CHECK:     lhs_contracting_dims={1},
+    CHECK:     rhs_contracting_dims={1},
+    CHECK:     metadata={op_name="foo"}
+    CHECK: }
+    CHECK: ENTRY
+    CHECK:   ROOT %fusion = bf16[4,4]{1,0} fusion(%lhs, %lhs_scale, %rhs, %rhs_scale),
+    CHECK:     kind=kCustom,
+    CHECK:     calls=%fusion_dot
+    CHECK:     {"kind":"__triton_scaled_dot"}
+  )";
+  MatchHloModule(*module, kExpectedHloText);
+}
+
 }  // namespace
 }  // namespace gpu
 }  // namespace xla
