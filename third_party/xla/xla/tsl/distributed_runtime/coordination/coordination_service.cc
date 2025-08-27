@@ -1338,9 +1338,6 @@ void CoordinationService::BarrierAsyncLocked(
     // Initialize new barrier instance state.
     if (!InitializeBarrier(barrier, barrier_id, counter, timeout, task,
                            participating_tasks, done)) {
-      LOG(WARNING) << "Barrier init failed for barrier: "
-                   << BarrierName(barrier_id, counter)
-                   << " task: " << GetTaskName(task);
       return;  // Exit early if barrier init failed.
     }
   }
