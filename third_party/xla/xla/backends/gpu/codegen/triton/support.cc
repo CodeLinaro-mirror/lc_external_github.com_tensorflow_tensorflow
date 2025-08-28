@@ -491,6 +491,80 @@ CodegenDecision IsTritonSupportedDot(
   return CodegenDecision::Allow();
 }
 
+CodegenDecision CheckScaledDotOperandType(
+    const HloInstruction& dot, int operand_index,
+    absl::string_view operand_name,
+    const se::GpuComputeCapability& gpu_version) {
+  PrimitiveType type = dot.operand(operand_index)->shape().element_type();
+  if (operand_index == 1 || operand_index == 3) {
+    if (type == F8E8M0FNU) {
+      return CodegenDecision::Allow();
+    }
+    return CodegenDecision::Forbid(
+        absl::StrCat("Unsupported type for ", operand_name,
+                     primitive_util::LowercasePrimitiveTypeName(type)));
+  }
+  auto* cuda = std::get_if<se::CudaComputeCapability>(&gpu_version);
+  if (cuda && type == BF16) {
+    return CodegenDecision::Allow();
+  }
+  auto* rocm = std::get_if<se::RocmComputeCapability>(&gpu_version);
+  if (rocm && type == F16) {
+    return CodegenDecision::Allow();
+  }
+  return CodegenDecision::Forbid(
+      absl::StrCat("Not supported ", operand_name, " type for scaled dot. ",
+                   primitive_util::LowercasePrimitiveTypeName(type)));
+}
+
+CodegenDecision IsTritonSupportedScaledDot(
+    const HloInstruction& dot, const se::GpuComputeCapability& gpu_version) {
+  if (!IsInTritonNestedGemmFusion(dot)) {
+    return CodegenDecision::Forbid(
+        "Dot operation is only supported in nested GEMM fusions.");
+  }
+  PrimitiveType result_type = dot.shape().element_type();
+  if (result_type != F32) {
+    return CodegenDecision::Forbid(
+        "Only f32 output is supported for scaled dot.");
+  }
+
+  if (CodegenDecision decision =
+          CheckScaledDotOperandType(dot, 0, "lhs", gpu_version);
+      !decision) {
+    return decision;
+  }
+  if (CodegenDecision decision =
+          CheckScaledDotOperandType(dot, 1, "lhs_scale", gpu_version);
+      !decision) {
+    return decision;
+  }
+  if (CodegenDecision decision =
+          CheckScaledDotOperandType(dot, 2, "rhs", gpu_version);
+      !decision) {
+    return decision;
+  }
+  if (CodegenDecision decision =
+          CheckScaledDotOperandType(dot, 3, "rhs_scale", gpu_version);
+      !decision) {
+    return decision;
+  }
+  if (dot.shape().element_type() != F32) {
+    return CodegenDecision::Forbid(
+        "Only f32 output is supported for scaled dot.");
+  }
+
+  if (dot.operand(0)->opcode() != HloOpcode::kFusion ||
+      dot.operand(1)->opcode() != HloOpcode::kFusion ||
+      dot.operand(2)->opcode() != HloOpcode::kFusion ||
+      dot.operand(3)->opcode() != HloOpcode::kFusion) {
+    return CodegenDecision::Forbid(
+        "Only operands that are fusions are supported.");
+  }
+
+  return CodegenDecision::Allow();
+}
+
 // Verifies that the nested fusion instruction conforms to the assumptions of
 // the emitter. Currently, we expect nested fusions:
 // - of kind `__triton_nested_gemm_fusion`;
@@ -521,6 +595,7 @@ CodegenDecision IsTritonSupportedFusion(
   const HloInstruction* user = hlo.users().front();
   switch (user->opcode()) {
     case HloOpcode::kDot:
+    case HloOpcode::kScaledDot:
     case HloOpcode::kConcatenate:
       break;
     default:
@@ -571,13 +646,25 @@ CodegenDecision IsTritonSupportedInstructionImpl(
                                        gpu_version);
   }
 
+  if (instr.opcode() == HloOpcode::kScaledDot) {
+    return IsTritonSupportedScaledDot(instr, gpu_version);
+  }
+
   auto type = instr.shape().element_type();
   bool output_type_is_supported = IsTritonSupportedDataType(type, gpu_version);
 
   if (!output_type_is_supported) {
-    return CodegenDecision::Forbid("Unsupported output data type.");
+    if (type != F8E8M0FNU || (instr.opcode() != HloOpcode::kFusion &&
+                              instr.opcode() != HloOpcode::kParameter)) {
+      LOG(ERROR) << "Unsupported output data type "
+                 << primitive_util::LowercasePrimitiveTypeName(type)
+                 << " for opcode '" << HloOpcodeString(instr.opcode()) << "'";
+      return CodegenDecision::Forbid(
+          absl::StrCat("Unsupported output data type ",
+                       primitive_util::LowercasePrimitiveTypeName(type),
+                       " for ", HloOpcodeString(instr.opcode())));
+    }
   }
-
   bool input_types_are_supported =
       absl::c_all_of(instr.operands(), [&](const HloInstruction* operand) {
         return IsTritonSupportedDataType(operand->shape().element_type(),
@@ -585,7 +672,11 @@ CodegenDecision IsTritonSupportedInstructionImpl(
       });
 
   if (!input_types_are_supported) {
-    return CodegenDecision::Forbid("Unsupported input data type.");
+    if (type != F8E8M0FNU || instr.opcode() != HloOpcode::kFusion) {
+      return CodegenDecision::Forbid(
+          absl::StrCat("Unsupported input data type of the instruction ",
+                       HloOpcodeString(instr.opcode())));
+    }
   }
 
   if (instr.opcode() == HloOpcode::kConcatenate) {
