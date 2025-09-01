@@ -1893,6 +1893,7 @@ cc_library(
         "//xla/service:call_inliner",
         "//xla/service:dump",
         "//xla/service:float_support",
+        "//xla/service:hlo_cost_analysis",
         "//xla/service:hlo_module_config",
         "//xla/service:hlo_verifier",
         "//xla/service/gpu/autotuning:autotuner_pass",
