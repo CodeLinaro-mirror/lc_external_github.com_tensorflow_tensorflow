@@ -49,6 +49,18 @@ TEST_F(SymbolicExprTest, CreateAndPrint) {
                   "((((v0 + 42) * max(min(v1, 2), 0)) floordiv 2) ceildiv 2)"));
 }
 
+TEST_F(SymbolicExprTest, PrintWithDifferentNumDimensions) {
+  SymbolicExpr expr = v0 * 2 + v1;
+
+  EXPECT_THAT(expr.ToString(), MatchIndexingString("((v0 * 2) + v1)"));
+  // Only symbols
+  EXPECT_THAT(expr.ToString(0), MatchIndexingString("((s0 * 2) + s1)"));
+  // One dimension and one symbol
+  EXPECT_THAT(expr.ToString(1), MatchIndexingString("((d0 * 2) + s0)"));
+  // Only dimensions
+  EXPECT_THAT(expr.ToString(2), MatchIndexingString("((d0 * 2) + d1)"));
+}
+
 TEST_F(SymbolicExprTest, ParseAndPrint) {
   const std::string kStringContainingAllOperators =
       "((((v0 + 42) * max(min(v1, 2), 0)) floordiv 2) ceildiv 2)";
@@ -252,6 +264,15 @@ TEST_F(SymbolicExprTest, Canonicalization_DivMod) {
             "((v0 floordiv 2) * -1)");
   EXPECT_EQ(((v0 * 6).floorDiv(-3)).Canonicalize().ToString(), "(v0 * -2)");
   EXPECT_EQ(((v0 * 6).ceilDiv(-3)).Canonicalize().ToString(), "(v0 * -2)");
+}
+
+TEST_F(SymbolicExprTest, Walk) {
+  SymbolicExpr expr = (v0 + 42) * v1;
+  std::vector<std::string> visited_exprs;
+  expr.Walk([&](SymbolicExpr e) { visited_exprs.push_back(e.ToString()); });
+
+  EXPECT_THAT(visited_exprs, ::testing::ElementsAre("v0", "42", "(v0 + 42)",
+                                                    "v1", "((v0 + 42) * v1)"));
 }
 
 }  // namespace

@@ -17,6 +17,7 @@ limitations under the License.
 #define XLA_SERVICE_GPU_MODEL_EXPERIMENTAL_SYMBOLIC_EXPR_H_
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -66,7 +67,9 @@ class SymbolicExpr {
   SymbolicExpr GetLHS() const;
   SymbolicExpr GetRHS() const;
   int64_t GetValue() const;
-  std::string ToString() const;
+  // If num_dims is provided, then the first num_dims variables are dimensions,
+  // and the rest are symbols.
+  std::string ToString(int64_t num_dims = -1) const;
   int64_t Evaluate(absl::Span<const int64_t> variable_values) const;
   SymbolicExpr ReplaceVariables(
       absl::Span<const SymbolicExpr> substitutions) const;
@@ -83,6 +86,10 @@ class SymbolicExpr {
       const llvm::DenseMap<SymbolicExpr, SymbolicExpr>& replacements) const;
 
   void GetUsedVariables(llvm::DenseSet<VariableID>& used_vars) const;
+
+  // Traverses the expression tree and calls the callback for each
+  // subexpression in postorder.
+  void Walk(const std::function<void(SymbolicExpr)>& callback) const;
 
   SymbolicExpr operator+(int64_t v) const;
   SymbolicExpr operator+(SymbolicExpr other) const;
