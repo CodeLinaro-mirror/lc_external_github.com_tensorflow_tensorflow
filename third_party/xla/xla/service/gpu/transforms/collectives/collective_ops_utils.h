@@ -48,9 +48,11 @@ enum class GPUTopologyType {
   MULTI_HOST = 2,
 };
 
-bool IsNVLinkConnected(const HloModuleConfig& config,
-                       const se::DeviceDescription& device_description,
-                       int64_t nvlink_slice_size);
+// Collective is only combined for platforms like A100, H100, B200 when
+// the collective runs across multiple hosts.
+bool IsCombineCollective(const HloModuleConfig& config,
+                         const se::DeviceDescription& device_description,
+                         int64_t nvlink_slice_size);
 
 }  // namespace gpu
 }  // namespace xla

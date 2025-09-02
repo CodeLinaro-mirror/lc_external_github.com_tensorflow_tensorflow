@@ -163,23 +163,25 @@ absl::StatusOr<GPUCommunicationType> CommunicationType(
   return GPUCommunicationType::UNDEFINED;
 }
 
-bool IsNVLinkConnected(const HloModuleConfig& config,
-                       const se::DeviceDescription& device_description,
-                       int64_t nvlink_slice_size) {
+bool IsCombineCollective(const HloModuleConfig& config,
+                         const se::DeviceDescription& device_description,
+                         int64_t nvlink_slice_size) {
   se::CudaComputeCapability cc = device_description.cuda_compute_capability();
-  // NVLink is only available on Ampere/Hopper/Blackwell GPUs.
-  if (!(cc.IsHopper() || cc.IsAmpere() || cc.IsBlackwell())) {
+  // Collective combining is not enabled before Ampere GPUs.
+  if (!cc.IsAtLeastAmpere()) {
     return false;
   }
   int hlo_device_count = config.num_partitions() * config.replica_count();
   if (hlo_device_count <= nvlink_slice_size) {
-    VLOG(1) << "NVLink connected: HLO device count " << hlo_device_count
-            << " <= NVLink slice size " << nvlink_slice_size;
-    return true;
+    VLOG(1) << "Do not combine collective for fast NVLink network: HLO device "
+               "count "
+            << hlo_device_count << " <= NVLink slice size "
+            << nvlink_slice_size;
+    return false;
   }
-  VLOG(1) << "Not NVLink connected: HLO device count " << hlo_device_count
-          << " > NVLink slice size " << nvlink_slice_size;
-  return false;
+  VLOG(1) << "Enable collective combining: HLO device count "
+          << hlo_device_count << " > NVLink slice size " << nvlink_slice_size;
+  return true;
 }
 
 }  // namespace gpu
