@@ -1837,8 +1837,11 @@ std::string SymbolicTileAnalysis::ToString() const {
 namespace {
 
 // The possible tiles sizes for one dimension.
-std::vector<int64_t> PossibleTileSizesForOneDimension(int64_t dim_size) {
-  CHECK_GE(dim_size, 1);
+absl::StatusOr<std::vector<int64_t>> PossibleTileSizesForOneDimension(
+    int64_t dim_size) {
+  if (dim_size < 1) {
+    return absl::InvalidArgumentError("Dimension size must be positive.");
+  }
 
   std::vector<int64_t> result;
   result.reserve(absl::bit_width(static_cast<uint64_t>(dim_size)));
@@ -1853,13 +1856,13 @@ std::vector<int64_t> PossibleTileSizesForOneDimension(int64_t dim_size) {
 
 namespace detail {
 
-std::vector<FlatTiling> GetFlatTilingsForInputSpace(
+absl::StatusOr<std::vector<FlatTiling>> GetFlatTilingsForInputSpace(
     absl::Span<const int64_t> input_space) {
   std::vector<FlatTiling> flat_tilings;
   flat_tilings.push_back({});
   for (int parameter_size : input_space) {
-    std::vector<int64_t> possible_tile_sizes =
-        PossibleTileSizesForOneDimension(parameter_size);
+    TF_ASSIGN_OR_RETURN(std::vector<int64_t> possible_tile_sizes,
+                        PossibleTileSizesForOneDimension(parameter_size));
     std::vector<FlatTiling> extended_tilings;
     extended_tilings.reserve(flat_tilings.size() * possible_tile_sizes.size());
     for (const FlatTiling& flat_tile_sizes : flat_tilings) {
@@ -1883,8 +1886,10 @@ absl::StatusOr<std::vector<Tiling>> SymbolicTileAnalysis::GetValidTilings()
       tiling_specification_.parameter_mapping();
 
   std::vector<Tiling> tilings;
-  for (const FlatTiling& flat_tile_sizes : detail::GetFlatTilingsForInputSpace(
-           InputSpaceForParameterMapping(parameter_mapping))) {
+  TF_ASSIGN_OR_RETURN(std::vector<FlatTiling> flat_tilings,
+                      detail::GetFlatTilingsForInputSpace(
+                          InputSpaceForParameterMapping(parameter_mapping)));
+  for (const FlatTiling& flat_tile_sizes : flat_tilings) {
     TF_ASSIGN_OR_RETURN(
         Tiling tiling,
         Tiling::Unflatten(flat_tile_sizes, tiling_specification_));
