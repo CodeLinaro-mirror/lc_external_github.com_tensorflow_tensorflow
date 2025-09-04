@@ -44,8 +44,8 @@ limitations under the License.
 #include "xla/hlo/utils/hlo_sharding_util.h"
 #include "xla/literal_util.h"
 #include "xla/service/custom_call_sharding_helper.h"
+#include "xla/service/dot_as_convolution_util.h"
 #include "xla/service/hlo_creation_utils.h"
-#include "xla/service/hlo_module_config.h"
 #include "xla/service/memory_annotations.h"
 #include "xla/service/spmd/spmd_partitioner.h"
 #include "xla/service/spmd/spmd_partitioner_util.h"
@@ -479,6 +479,39 @@ absl::Status SpmdPartitioningVisitor::HandleCustomCall(HloInstruction* hlo) {
                                           MakePartitioningState())
                                .Reshard(hlo->sharding()));
     return absl::OkStatus();
+  }
+
+  // Block-scaled dot with MX operands.
+  if (hlo->custom_call_target() == "__op$block_scaled_dot") {
+    // Evaluate the dimension numbers of the block-scaled dot.
+    int dimensions_size = hlo->operand(0)->shape().dimensions_size();
+    TF_RET_CHECK(dimensions_size == 2 || dimensions_size == 3);
+    DotDimensionNumbers dimension_numbers;
+    dimension_numbers.add_lhs_contracting_dimensions(dimensions_size - 1);
+    dimension_numbers.add_rhs_contracting_dimensions(dimensions_size - 1);
+    if (dimensions_size == 3) {
+      dimension_numbers.add_lhs_batch_dimensions(0);
+      dimension_numbers.add_rhs_batch_dimensions(0);
+    }
+
+    HloCustomCallInstruction* block_scaled_dot =
+        Cast<HloCustomCallInstruction>(hlo);
+    CreateShardedScaledDotFunctor create_sharded_scaled_dot_functor(
+        block_scaled_dot, dimension_numbers);
+
+    // Create a regular dot with equivalent operand and output shape to compute
+    // the mapping for HandleDotHelper.
+    PrecisionConfig precision_config;
+    precision_config.mutable_operand_precision()->Resize(
+        2, PrecisionConfig::DEFAULT);
+    std::unique_ptr<HloInstruction> dot = HloInstruction::CreateDot(
+        hlo->shape(), hlo->mutable_operand(0), hlo->mutable_operand(1),
+        dimension_numbers, precision_config);
+    dot_as_convolution_util::DotConvolutionDimsInfo mapping =
+        dot_as_convolution_util::ParseDotGeneralFromDot(dot.get());
+
+    return HandleDotHelper<CreateShardedScaledDotFunctor>(
+        hlo, mapping, create_sharded_scaled_dot_functor);
   }
 
   return DefaultAction(hlo);
