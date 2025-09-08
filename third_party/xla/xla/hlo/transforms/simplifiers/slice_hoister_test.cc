@@ -74,15 +74,15 @@ TEST_F(SliceHoisterTest, HoistSliceThroughAdd) {
   EXPECT_THAT(param_1_slice->slice_strides(), ElementsAre(1, 1));
 }
 
-TEST_F(SliceHoisterTest, HoistSliceThroughMultipleAdds) {
+TEST_F(SliceHoisterTest, HoistSliceThroughMultipleElementwiseBinaryOperations) {
   absl::string_view module_str = R"(
     HloModule module
     ENTRY main {
       param_0 = f32[8,9] parameter(0)
       param_1 = f32[8,9] parameter(1)
-      add_op_1 = f32[8,9] add(f32[8,9] param_0, f32[8,9] param_1)
-      add_op_2 = f32[8,9] add(f32[8,9] add_op_1, f32[8,9] param_1)
-      ROOT slice_op = f32[2,9] slice(f32[8,9] add_op_2), slice={[0:2], [0:9]}
+      multiply_op = f32[8,9] multiply(f32[8,9] param_0, f32[8,9] param_1)
+      add_op = f32[8,9] add(f32[8,9] multiply_op, f32[8,9] param_1)
+      ROOT slice_op = f32[2,9] slice(f32[8,9] add_op), slice={[0:2], [0:9]}
     }
   )";
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
@@ -95,7 +95,7 @@ TEST_F(SliceHoisterTest, HoistSliceThroughMultipleAdds) {
   SCOPED_TRACE(module->ToString());
   EXPECT_TRUE(changed);
 
-  HloCSE cse = HloCSE(false);
+  HloCSE cse = HloCSE(false);  // CSE to remove the redundant slice of param_1.
   TF_ASSERT_OK_AND_ASSIGN(changed, RunHloPass(&cse, module.get()));
 
   SCOPED_TRACE(module->ToString());
@@ -108,8 +108,8 @@ TEST_F(SliceHoisterTest, HoistSliceThroughMultipleAdds) {
   const HloInstruction* param_1_second_slice = nullptr;
   EXPECT_THAT(
       root_instruction,
-      GmockMatch(m::Add(m::Add(m::Slice(&param_0_slice, m::Parameter(0)),
-                               m::Op(&param_1_first_slice)),
+      GmockMatch(m::Add(m::Multiply(m::Slice(&param_0_slice, m::Parameter(0)),
+                                    m::Op(&param_1_first_slice)),
                         m::Op(&param_1_second_slice))));
   // The slice of param_1 should be evaluated only once and reused.
   EXPECT_EQ(param_1_first_slice, param_1_second_slice);
@@ -180,5 +180,49 @@ TEST_F(SliceHoisterTest,
   SCOPED_TRACE(module->ToString());
   EXPECT_FALSE(changed);
 }
+
+// Dot is not an element-wise operation.
+TEST_F(SliceHoisterTest, DoesNotHoistSliceThroughDot) {
+  absl::string_view module_str = R"(
+    HloModule module
+    ENTRY main {
+      p0 = f32[8,10] parameter(0)
+      p1 = f32[10,9] parameter(1)
+      dot_op = f32[8,9] dot(p0, p1), lhs_contracting_dims={1}, rhs_contracting_dims={0}
+      ROOT slice_op = f32[2,9] slice(f32[8,9] dot_op), slice={[0:2], [0:9]}
+    }
+  )";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(module_str));
+
+  SliceHoister slice_hoister;
+  TF_ASSERT_OK_AND_ASSIGN(bool changed,
+                          RunHloPass(&slice_hoister, module.get()));
+
+  SCOPED_TRACE(module->ToString());
+  EXPECT_FALSE(changed);
+}
+
+// Negate is not a binary operation.
+TEST_F(SliceHoisterTest, DoesNotHoistSliceThroughNegate) {
+  absl::string_view module_str = R"(
+    HloModule module
+    ENTRY main {
+      p0 = f32[8,9] parameter(0)
+      neg_op = f32[8,9] negate(p0)
+      ROOT slice_op = f32[2,9] slice(f32[8,9] neg_op), slice={[0:2], [0:9]}
+    }
+  )";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(module_str));
+
+  SliceHoister slice_hoister;
+  TF_ASSERT_OK_AND_ASSIGN(bool changed,
+                          RunHloPass(&slice_hoister, module.get()));
+
+  SCOPED_TRACE(module->ToString());
+  EXPECT_FALSE(changed);
+}
+
 }  // anonymous namespace
 }  // namespace xla
