@@ -2187,6 +2187,7 @@ absl::StatusOr<TritonWrapperResult> CompileTritonToLLVM(
     pm.addPass(
         mlir::triton::xla::CreateInt4ToPackedInt4RewritePass(device_info));
   }
+  pm.addPass(mlir::triton::xla::CreateTritonXLAConvertUnsupportedTypesPass());
 
   pm.addPass(mlir::triton::xla::CreateTritonXLAExtractInsertToTritonPass(
       block_level_parameters.is_tma_allowed &&
