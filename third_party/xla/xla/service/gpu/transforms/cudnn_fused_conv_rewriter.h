@@ -1,3 +1,4 @@
+#include "xla/stream_executor/cuda/cuda_compute_capability.h"
 /* Copyright 2018 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
