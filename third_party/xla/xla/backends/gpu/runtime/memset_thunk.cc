@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "absl/status/status.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/tsl/platform/statusor.h"
 
 namespace xla {
 namespace gpu {
@@ -25,6 +26,25 @@ absl::Status MemzeroThunk::ExecuteOnStream(const ExecuteParams& params) {
   se::DeviceMemoryBase dest_data =
       params.buffer_allocations->GetDeviceAddress(dest_);
   return params.stream->MemZero(&dest_data, dest_data.size());
+}
+
+absl::StatusOr<std::unique_ptr<MemzeroThunk>> MemzeroThunk::FromProto(
+    ThunkInfo thunk_info, const MemzeroThunkProto& thunk_proto,
+    absl::Span<const BufferAllocation> buffer_allocations) {
+  TF_ASSIGN_OR_RETURN(BufferAllocation::Slice dest,
+                      BufferAllocation::Slice::FromProto(
+                          thunk_proto.dest_buffer(), buffer_allocations));
+  return std::make_unique<MemzeroThunk>(std::move(thunk_info), dest);
+}
+
+absl::StatusOr<ThunkProto> MemzeroThunk::ToProto() const {
+  ThunkProto proto;
+  *proto.mutable_thunk_info() = thunk_info().ToProto();
+
+  auto* memzero_thunk_proto = proto.mutable_memzero_thunk();
+  TF_ASSIGN_OR_RETURN(*memzero_thunk_proto->mutable_dest_buffer(),
+                      dest_.ToProto());
+  return proto;
 }
 
 absl::Status Memset32BitValueThunk::ExecuteOnStream(

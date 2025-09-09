@@ -969,7 +969,24 @@ cc_library(
         ":thunk",
         "//xla/service:buffer_assignment",
         "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status",
+    ],
+)
+
+xla_cc_test(
+    name = "memset_thunk_test",
+    srcs = ["memset_thunk_test.cc"],
+    deps = [
+        ":memset_thunk",
+        ":thunk",
+        ":thunk_proto_cc",
+        "//xla/service:buffer_assignment",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/util/proto:proto_matchers",
+        "@com_google_absl//absl/log:check",
+        "@com_google_googletest//:gtest_main",
+        "@local_tsl//tsl/platform:protobuf",
     ],
 )
 
@@ -2092,6 +2109,7 @@ cc_library(
         ":cudnn_thunk",
         ":gemm_thunk",
         ":kernel_thunk",
+        ":memset_thunk",
         ":replica_id_thunk",
         ":sequential_thunk",
         ":thunk",
