@@ -135,8 +135,10 @@ cc_library(
     ],
     deps = [
         ":pjrt_client_registry",
-        "//xla/pjrt/gpu:gpu_helpers",
-        "//xla/pjrt/gpu:se_gpu_pjrt_client",
+        ":xla_test_backend_predicates",
+        "//xla/pjrt/plugin/xla_gpu:xla_gpu_allocator_config",
+        "//xla/pjrt/plugin/xla_gpu:xla_gpu_client_options",
+        "//xla/pjrt/plugin/xla_gpu:xla_gpu_pjrt_client",
     ],
     alwayslink = True,
 )
@@ -2067,6 +2069,7 @@ xla_test(
         "//xla/hlo/builder:xla_computation",
         "//xla/hlo/ir:hlo",
         "//xla/service:hlo_runner_interface",
+        "//xla/tests:xla_test_backend_predicates",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
@@ -2579,6 +2582,7 @@ xla_test(
         ":hlo_pjrt_interpreter_reference_mixin",
         ":hlo_pjrt_test_base",
         ":xla_internal_test_main",
+        ":xla_test_backend_predicates",
         "//xla:error_spec",
         "//xla:literal",
         "//xla:literal_util",

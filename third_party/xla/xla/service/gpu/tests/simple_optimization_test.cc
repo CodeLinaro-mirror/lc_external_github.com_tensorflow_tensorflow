@@ -13,15 +13,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <memory>
+#include <utility>
+
 #include "absl/strings/string_view.h"
-#include "xla/tests/hlo_test_base.h"
-#include "xla/tsl/lib/core/status_test_util.h"
+#include "xla/hlo/testlib/verified_hlo_module.h"
+#include "xla/tests/hlo_pjrt_test_base.h"
+#include "xla/tsl/platform/statusor.h"
+#include "xla/tsl/platform/test.h"
 
 namespace xla {
 namespace gpu {
 namespace {
 
-class SimpleOptimizationTest : public HloTestBase {};
+class SimpleOptimizationTest : public HloPjRtTestBase {};
 
 TEST_F(SimpleOptimizationTest, OptimizeModule) {
   constexpr absl::string_view kHloText = R"(
@@ -35,7 +40,11 @@ ENTRY e {
     lhs_contracting_dims={2,3}, rhs_contracting_dims={1,2}
 })";
 
-  TF_EXPECT_OK(GetOptimizedModule(kHloText).status());
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(kHloText));
+  EXPECT_OK(test_runner()
+                .CreateExecutable(std::move(module), /*run_hlo_passes=*/true)
+                .status());
 }
 
 }  // namespace
