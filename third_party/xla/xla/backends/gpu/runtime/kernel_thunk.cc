@@ -25,6 +25,9 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/functional/bind_front.h"
+#include "absl/functional/function_ref.h"
+#include "absl/functional/overload.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -168,30 +171,34 @@ absl::Status KernelThunk::Initialize(const InitializeParams& params) {
   return absl::OkStatus();
 }
 
+void PrintBufferContents(se::Stream*, int, se::TensorMap tensor_map) {
+  VLOG(100) << "TENSOR_MAP = ";
+  for (std::byte element : tensor_map.storage) {
+    VLOG(100) << absl::StrFormat("%x ", static_cast<unsigned>(element));
+  }
+}
+
+void PrintBufferContents(se::Stream* stream, int input_idx,
+                         se::DeviceMemoryBase buf) {
+  auto host_buffer = std::make_unique<char[]>(buf.size());
+  CHECK_OK(stream->Memcpy(host_buffer.get(), buf, buf.size()));
+  CHECK_OK(stream->BlockHostUntilDone());
+
+  std::string buffer_contents;
+  for (int i = 0; i < buf.size(); ++i) {
+    absl::StrAppendFormat(&buffer_contents, "%x ",
+                          static_cast<unsigned>(host_buffer[i]));
+  }
+  VLOG(100) << "BUF(" << input_idx++ << ") = " << buffer_contents;
+}
+
 static void PrintBufferContents(
     se::Stream* stream, absl::Span<const se::KernelArgument> kernel_args) {
   int input_idx = 0;
   for (const se::KernelArgument& arg : kernel_args) {
-    if (std::holds_alternative<se::DeviceMemoryBase>(arg)) {
-      se::DeviceMemoryBase buf = std::get<se::DeviceMemoryBase>(arg);
-
-      auto host_buffer = std::make_unique<char[]>(buf.size());
-      CHECK_OK(stream->Memcpy(host_buffer.get(), buf, buf.size()));
-      CHECK_OK(stream->BlockHostUntilDone());
-
-      std::string buffer_contents;
-      for (int i = 0; i < buf.size(); ++i) {
-        absl::StrAppendFormat(&buffer_contents, "%x ",
-                              static_cast<unsigned>(host_buffer[i]));
-      }
-      VLOG(100) << "BUF(" << input_idx++ << ") = " << buffer_contents;
-    } else {
-      se::TensorMap tensor_map = std::get<se::TensorMap>(arg);
-      VLOG(100) << "TENSOR_MAP(" << input_idx++ << ") = ";
-      for (std::byte element : tensor_map.storage) {
-        VLOG(100) << absl::StrFormat("%x ", static_cast<unsigned>(element));
-      }
-    }
+    std::visit(
+        [&](auto&& arg) { PrintBufferContents(stream, input_idx++, arg); },
+        arg);
   }
 }
 
