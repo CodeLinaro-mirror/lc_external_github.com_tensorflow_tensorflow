@@ -126,9 +126,8 @@ ENTRY AddDotsFunc {
     DebugOptions debug_options = GetDebugOptionsForTest();
     if (debug_options.xla_gpu_enable_cublaslt()) {
       return ErrorSpec{1e-3, 1e-3};
-    } else {
-      return ErrorSpec{1e-3, 1e-3};
     }
+    return ErrorSpec{1e-3, 1e-3};
   }();
 
   auto get_module = [&]() {
