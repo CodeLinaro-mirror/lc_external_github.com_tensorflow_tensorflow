@@ -656,11 +656,11 @@ absl::StatusOr<ArrayRef> AssembleStringArrayFromSingleDeviceStringArrays(
   auto buffer_copying_state = std::make_shared<BufferCopyingState>(
       arrays.size(), std::move(buffer_backing_store));
 
-  auto buffers_promise = Future<BasicStringArray::Buffers>::CreatePromise();
-  auto buffers_future = Future<BasicStringArray::Buffers>(buffers_promise);
+  auto [buffers_promise, buffers_future] =
+      Future<BasicStringArray::Buffers>::MakePromise();
 
   auto buffer_copier = [state = buffer_copying_state,
-                        promise = buffers_promise](
+                        promise = std::move(buffers_promise)](
                            absl::StatusOr<BasicStringArray::Buffers> strbuf,
                            int shard_index) mutable {
     absl::MutexLock lock(&state->mu);
@@ -706,7 +706,7 @@ absl::StatusOr<ArrayRef> AssembleStringArrayFromSingleDeviceStringArrays(
     }
 
     basic_string_array->buffers().OnReady(
-        [shard_index = i, buffer_copier = buffer_copier](
+        [shard_index = i, buffer_copier = std::move(buffer_copier)](
             absl::StatusOr<BasicStringArray::Buffers> strbuf) mutable {
           buffer_copier(std::move(strbuf), shard_index);
         });
@@ -1506,9 +1506,10 @@ absl::Status PjRtClient::CrossHostSendBuffers(
   // TODO(emilyaf): Use an async version of KeyValueStore::Get or query batched
   // keys together to reduce the number of threads used.
   for (int i = 0; i < keys.size(); ++i) {
-    auto promise = PjRtFuture<std::string>::CreatePromise();
-    PjRtFuture<std::string> descriptor_future(promise);
-    work_queue_->Schedule([this, &promise, k = keys[i]] {
+    auto [promise, descriptor_future] = PjRtFuture<std::string>::MakePromise();
+    work_queue_->Schedule([this, k = keys[i],
+                           promise = std::make_shared<decltype(promise)>(
+                               std::move(promise))]() mutable {
       std::string key = absl::StrCat(kKeyPrefix, k);
       absl::StatusOr<std::string> descriptor =
           kv_store_->Get(key, cross_host_transfer_timeout_);
@@ -1516,12 +1517,12 @@ absl::Status PjRtClient::CrossHostSendBuffers(
         LOG(FATAL) << "Failed to get descriptor for key " << key << ": "
                    << descriptor.status();
       }
-      promise.Set(std::move(*descriptor));
+      promise->Set(std::move(*descriptor));
     });
     auto on_done = [](absl::Status status, bool sends_were_enqueued) {
       CHECK_OK(status);
     };
-    buffers[i]->CopyToRemoteDevice(descriptor_future, on_done);
+    buffers[i]->CopyToRemoteDevice(std::move(descriptor_future), on_done);
   }
   return absl::OkStatus();
 }
