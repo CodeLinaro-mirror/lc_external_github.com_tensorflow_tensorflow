@@ -142,6 +142,10 @@ message InfeedThunkProto {
   repeated ShapedSliceProto dest_slices = 1;
 }
 
+message SelectKThunkProto {
+  // TODO(upwind): Add fields for SelectKThunkProto.
+}
+
 message ThunkProto {
   ThunkInfoProto thunk_info = 1;
 
@@ -164,7 +168,6 @@ message ThunkProto {
     HostExecuteDoneThunkProto host_execute_done_thunk = 17;
     DynamicSliceThunkProto dynamic_slice_thunk = 18;
     MemzeroThunkProto memzero_thunk = 19;
-    InfeedThunkProto infeed_thunk = 21;
   }
 }
 
