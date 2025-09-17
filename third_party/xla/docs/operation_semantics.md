@@ -1568,6 +1568,8 @@ XlaBuilder supports these element-wise unary functions:
 
 <b>`Cos(operand)`</b> Element-wise cosine `x -> cos(x)`.
 
+<b>`ACosh(operand)`</b> Element-wise inverse hyperbolic cosine `x -> acosh(x)`.
+
 <b>`Erf(operand)`</b> Element-wise error function `x -> erf(x)` where
 
 $$\text{erf}(x) = \frac{2}{\sqrt{\pi}}\int_0^x e^{-t^2} \, dt$$.
@@ -1643,6 +1645,9 @@ XlaBuilder supports these element-wise unary functions with the optional
 cbrt(x)`.
 
 <b>`Cos(operand, result_accuracy)`</b> Element-wise cosine `x -> cos(x)`.
+
+<b>`ACosh(operand, result_accuracy)`</b> Element-wise inverse hyperbolic cosine
+`x -> acosh(x)`.
 
 <b>`Erf(operand, result_accuracy)`</b> Element-wise error function `x -> erf(x)`
 where
