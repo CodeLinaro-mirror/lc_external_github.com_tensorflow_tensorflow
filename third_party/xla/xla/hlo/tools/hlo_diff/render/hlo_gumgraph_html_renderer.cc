@@ -78,6 +78,14 @@ std::string PrintCss() {
     .section > .content {
       font-size: 14px;
     }
+    .section > .content ul {
+      margin-top: 5px;
+      margin-bottom: 5px;
+      padding-left: 20px;
+    }
+    .section > .content li {
+      margin-bottom: 3px;
+    }
 
     details {
       margin: 0;
@@ -227,29 +235,59 @@ std::string PrintCss() {
     span.grey {
       color: #999999;
     }
-
-    span.hlo-instruction {
-      display: inline-block;
-      cursor: pointer;
+    div.hlo-instruction {
+      display: flex;
       width: 100%;
+      align-items: flex-start;
     }
-    span.hlo-instruction:hover {
-      border: 2px solid #4285F4;
+    div.hlo-instruction.expanded {
+      max-width: unset;
     }
-    span.bordered {
+    span.hlo-instruction-text {
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: pre;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    div.hlo-instruction.expanded span.hlo-instruction-text {
+      white-space: pre-wrap;
+      overflow: visible;
+    }
+    button.hlo-expand-btn {
+      flex-shrink: 0;
+      background: #e8eaf6;
+      color: #3f51b5;
+      padding: 0 4px;
+      border: 1px solid #c5cae9;
+      box-shadow: none;
+      font-weight: bold;
+      margin-left: 4px;
+      min-width: 25px;
+      height: 1.3em;
+      line-height: 1.1;
+      visibility: hidden;
+      cursor: pointer;
+    }
+    div.hlo-instruction.has-overflow.expanded button.hlo-expand-btn,
+    div.hlo-instruction.has-overflow:not(.expanded):hover button.hlo-expand-btn {
+      visibility: visible;
+    }
+    div.bordered {
       border: 2px solid #4285F4;
     }
 
-    span.red-highlight {
+    .red-highlight {
       background-color: #fad2cf;
     }
-    span.green-highlight {
+    .green-highlight {
       background-color: #ceead6;
     }
-    span.yellow-highlight {
+    .yellow-highlight {
       background-color: #feefc3;
     }
-    span.darker-yellow-highlight {
+    .darker-yellow-highlight {
       background-color: #FAD67F;
       /* Ensure empty or minimal content spans are visible as a thin line */
       display: inline-block;
@@ -259,7 +297,7 @@ std::string PrintCss() {
       line-height: 1; /* Prevent extra space */
       overflow: hidden; /* Hide any overflow */
     }
-    span.temp-highlight {
+    .temp-highlight {
       background-color: #a8c7fa;
       opacity: 0.7;
       animation: breathe-highlight 1s infinite alternate;
@@ -357,76 +395,89 @@ std::string PrintJavascriptForHoverEvent() {
       }, 3000);
   }
 
-  const allSpans = document.querySelectorAll('span[data-diffid][data-diffid-mapped]');
-  allSpans.forEach(span => {
-      span.addEventListener('mouseover', handleMouseOver);
-      span.addEventListener('mouseout', handleMouseOut);
-      span.addEventListener('click', handleSpanClick);
-      span.addEventListener('dblclick', handleSpanDoubleClick);
+  const allInstructions = document.querySelectorAll('.hlo-instruction');
+  allInstructions.forEach(instructionDiv => {
+      instructionDiv.addEventListener('mouseover', handleInstructionMouseOver);
+      instructionDiv.addEventListener('mouseout', handleInstructionMouseOut);
+      instructionDiv.addEventListener('dblclick', handleInstructionDoubleClick);
+      instructionDiv.addEventListener('click', handleInstructionClick);
+
+      const button = instructionDiv.querySelector('.hlo-expand-btn');
+      const textSpan = instructionDiv.querySelector('.hlo-instruction-text');
+      if(textSpan.scrollWidth > textSpan.clientWidth) {
+        instructionDiv.classList.add('has-overflow');
+        button.addEventListener('click', (e) => {
+          instructionDiv.classList.toggle('expanded');
+          button.textContent = instructionDiv.classList.contains('expanded') ? '-' : '+';
+          e.stopPropagation();
+        });
+      }
   });
 
-  function getRelatedSpans(diffId, mappedId) {
-    return document.querySelectorAll(`span[data-diffid="${diffId}"][data-diffid-mapped="${mappedId}"], span[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
+  function getRelatedDivs(diffId, mappedId) {
+    return document.querySelectorAll(`div[data-diffid="${diffId}"][data-diffid-mapped="${mappedId}"], div[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
   }
 
-  function handleMouseOver(event) {
-      const diffId = event.target.getAttribute('data-diffid');
-      const mappedId = event.target.getAttribute('data-diffid-mapped');
+  function handleInstructionMouseOver(event) {
+      const instructionDiv = event.currentTarget;
+      const diffId = instructionDiv.getAttribute('data-diffid');
+      const mappedId = instructionDiv.getAttribute('data-diffid-mapped');
       if (!diffId || !mappedId) {
           return;
       }
-      const relatedSpans = getRelatedSpans(diffId, mappedId);
-      relatedSpans.forEach(relatedSpan => {
-          relatedSpan.classList.add('bordered');
+      const relatedDivs = getRelatedDivs(diffId, mappedId);
+      relatedDivs.forEach(relatedDiv => {
+          relatedDiv.classList.add('bordered');
       });
   }
 
-  function handleMouseOut(event) {
-      const diffId = event.target.getAttribute('data-diffid');
-      const mappedId = event.target.getAttribute('data-diffid-mapped');
+  function handleInstructionMouseOut(event) {
+      const instructionDiv = event.currentTarget;
+      const diffId = instructionDiv.getAttribute('data-diffid');
+      const mappedId = instructionDiv.getAttribute('data-diffid-mapped');
       if (!diffId || !mappedId) {
           return;
       }
-      const relatedSpans = getRelatedSpans(diffId, mappedId);
-      relatedSpans.forEach(relatedSpan => {
-          relatedSpan.classList.remove('bordered');
+      const relatedDivs = getRelatedDivs(diffId, mappedId);
+      relatedDivs.forEach(relatedDiv => {
+          relatedDiv.classList.remove('bordered');
       });
   }
 
-  function handleSpanClick(event) {
-      const diffId = event.target.getAttribute('data-diffid');
-      const mappedId = event.target.getAttribute('data-diffid-mapped');
+  function handleInstructionClick(event) {
+      const instructionDiv = event.currentTarget;
+      const diffId = instructionDiv.getAttribute('data-diffid');
+      const mappedId = instructionDiv.getAttribute('data-diffid-mapped');
       if (!diffId || !mappedId) {
           return;
       }
 
-      const clickedSpan = event.target;
-      const clickedPre = clickedSpan.closest('pre');
+      const clickedPre = instructionDiv.closest('pre');
       if (!clickedPre) return;
 
-      const selfTextboxes = clickedSpan.closest('.hlo-textboxes');
+      const selfTextboxes = instructionDiv.closest('.hlo-textboxes');
       if (!selfTextboxes) return;
       const siblingTextboxes = selfTextboxes.nextElementSibling || selfTextboxes.previousElementSibling;
       if (!siblingTextboxes || !siblingTextboxes.classList.contains('hlo-textboxes')) return;
 
-      const targetSpan = siblingTextboxes.querySelector(`span[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
+      const targetDiv = siblingTextboxes.querySelector(`div[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
 
-      if (targetSpan) {
-          const siblingPre = targetSpan.closest('pre');
+      if (targetDiv) {
+          const siblingPre = targetDiv.closest('pre');
           if (!siblingPre) return;
 
-          // Calculate the vertical offset of the clicked span from the top of its visible area.
-          const clickedSpanViewportOffset = clickedSpan.offsetTop - clickedPre.scrollTop;
+          // Calculate the vertical offset of the clicked div from the top of its visible area.
+          const clickedDivViewportOffset = (instructionDiv.offsetTop - clickedPre.offsetTop) - clickedPre.scrollTop;
 
           // Calculate the percentage of this offset within the clickedPre's visible height.
           const percentage = clickedPre.clientHeight > 0 ?
-              clickedSpanViewportOffset / clickedPre.clientHeight : 0;
+              clickedDivViewportOffset / clickedPre.clientHeight : 0;
 
-          // Calculate the desired offset for the targetSpan within the siblingPre's visible area.
+          // Calculate the desired offset for the targetDiv within the siblingPre's visible area.
           const desiredSiblingViewportOffset = percentage * siblingPre.clientHeight;
 
           // Calculate the new scrollTop for siblingPre to achieve this alignment.
-          const newScrollTop = targetSpan.offsetTop - desiredSiblingViewportOffset;
+          const newScrollTop = (targetDiv.offsetTop - siblingPre.offsetTop) - desiredSiblingViewportOffset;
 
           // Scroll the siblingPre element smoothly.
           siblingPre.scrollTo({
@@ -434,62 +485,63 @@ std::string PrintJavascriptForHoverEvent() {
               behavior: 'smooth'
           });
 
-          // Temporarily highlight the target span
-          targetSpan.classList.add('temp-highlight');
+          // Temporarily highlight the target div
+          targetDiv.classList.add('temp-highlight');
           setTimeout(() => {
-              targetSpan.classList.remove('temp-highlight');
+              targetDiv.classList.remove('temp-highlight');
           }, 2000); // Remove highlight after 2 seconds
       } else {
           ShowSystemMessage("Corresponding instruction is in another computation, double click to jump to it.");
       }
   }
 
-  function handleSpanDoubleClick(event) {
-      const diffId = event.target.getAttribute('data-diffid');
-      const mappedId = event.target.getAttribute('data-diffid-mapped');
+  function handleInstructionDoubleClick(event) {
+      const instructionDiv = event.currentTarget;
+      const diffId = instructionDiv.getAttribute('data-diffid');
+      const mappedId = instructionDiv.getAttribute('data-diffid-mapped');
       if (!diffId || !mappedId) {
           return;
       }
 
-      const clickedSpan = event.target;
-      const clickedPre = clickedSpan.closest('pre');
+      const clickedEl = event.target;
+      const clickedPre = clickedEl.closest('pre');
       if (!clickedPre) return;
 
-      const selfTextboxes = clickedSpan.closest('.hlo-textboxes');
+      const selfTextboxes = clickedEl.closest('.hlo-textboxes');
       if (!selfTextboxes) return;
       const siblingTextboxes = selfTextboxes.nextElementSibling || selfTextboxes.previousElementSibling;
       if (!siblingTextboxes || !siblingTextboxes.classList.contains('hlo-textboxes')) return;
 
-      const targetSpanInSibling = siblingTextboxes.querySelector(`span[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
+      const targetDivInSibling = siblingTextboxes.querySelector(`div[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
 
-      if (!targetSpanInSibling) {
-          // Case 2: Corresponding span NOT found in sibling textboxes in same pair.
-          // Search for the span with the same diffId in other hlo-textbox-pairs.
-          const allMatchingSpans = document.querySelectorAll(`span[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
-          let foundSpanInOtherPre = null;
-          allMatchingSpans.forEach(span => {
-              if (span !== clickedSpan) {
-                  foundSpanInOtherPre = span;
+      if (!targetDivInSibling) {
+          // Case 2: Corresponding div NOT found in sibling textboxes in same pair.
+          // Search for the div with the same diffId in other hlo-textbox-pairs.
+          const allMatchingDivs = document.querySelectorAll(`div[data-diffid="${mappedId}"][data-diffid-mapped="${diffId}"]`);
+          let foundDivInOtherPre = null;
+          allMatchingDivs.forEach(div => {
+              if (div !== instructionDiv) {
+                  foundDivInOtherPre = div;
               }
           });
 
-          if (foundSpanInOtherPre) {
-              const foundPre = foundSpanInOtherPre.closest('pre');
+          if (foundDivInOtherPre) {
+              const foundPre = foundDivInOtherPre.closest('pre');
               if (foundPre) {
                   // Find ancestor detail and open it.
-                  let parentDetails = foundSpanInOtherPre.closest('details');
+                  let parentDetails = foundDivInOtherPre.closest('details');
                   while (parentDetails) {
                       parentDetails.open = true;
                       parentDetails = parentDetails.parentElement ? parentDetails.parentElement.closest('details') : null;
                   }
 
-                  // Scroll the foundPre to make the foundSpanInOtherPre visible.
-                  foundSpanInOtherPre.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  // Scroll the foundPre to make the foundDivInOtherPre visible.
+                  foundDivInOtherPre.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-                  // Temporarily highlight the found span
-                  foundSpanInOtherPre.classList.add('temp-highlight');
+                  // Temporarily highlight the found div
+                  foundDivInOtherPre.classList.add('temp-highlight');
                   setTimeout(() => {
-                      foundSpanInOtherPre.classList.remove('temp-highlight');
+                      foundDivInOtherPre.classList.remove('temp-highlight');
                   }, 3000);
               }
           }
@@ -580,6 +632,50 @@ std::string PrintSectionWithHeader(absl::string_view header,
   return PrintDiv(absl::StrCat(PrintDiv(header, {"header"}),
                                PrintDiv(content, {"content"})),
                   {"section"});
+}
+
+// Prints introduction section.
+std::string PrintIntroductionSection(const DiffResult& diff_result) {
+  std::string content = absl::StrFormat(
+      R"html(
+        <p>This report highlights the differences between two HLO modules.</p>
+        <p>
+          <b>Diff Statistics:</b>
+          <span>%d unchanged</span>
+          <span class="yellow">%d changed,</span>,
+          <span class="red">%d left unmatched</span>,
+          <span class="green">%d right unmatched</span> instruction(s).
+        </p>
+        <p>
+          <b>Highlights:</b><br/>
+          <span class="red-highlight">&nbsp;Red&nbsp;</span>: Instruction only present in the left module.<br/>
+          <span class="green-highlight">&nbsp;Green&nbsp;</span>: Instruction only present in the right module.<br/>
+          <span class="yellow-highlight">&nbsp;Yellow&nbsp;</span>: Instruction present in both modules but with differences.<br/>
+          Instructions without highlights are identical in both modules.
+        </p>
+        <p>
+          <b>Interactions:</b>
+          <ul>
+            <li><b>Hover</b> over an instruction to highlight its counterpart in the other module.</li>
+            <li><b>Click</b> on an instruction to scroll its counterpart into view within the same computation diff.</li>
+            <li><b>Double-click</b> on an instruction to jump to its counterpart if it resides in a different computation diff.</li>
+            <li>Click the <b>[+]</b> button on an instruction to expand/collapse overflowing text.</li>
+          </ul>
+        </p>
+        <p>
+          <b>Sections:</b>
+          <ul>
+            <li><b>XProf Op Metrics Diff</b>: Shows instructions with the largest execution time differences based on XProf data (if available).</li>
+            <li><b>Diffs grouped by computation</b>: Groups computations with similar diff patterns to help identify repetitive changes.</li>
+            <li><b>Full Diff Results</b>: A flat list of all instructions that are unmatched or have changed.</li>
+          </ul>
+        </p>
+      )html",
+      diff_result.unchanged_instructions.size(),
+      diff_result.changed_instructions.size(),
+      diff_result.left_module_unmatched_instructions.size(),
+      diff_result.right_module_unmatched_instructions.size());
+  return PrintSectionWithHeader("Introduction", content);
 }
 
 // Prints a system message placeholder.
@@ -761,8 +857,9 @@ std::string PrintHloComputationToHtml(
               EscapeStringForHtmlAttribute(it->second.mapped_diffid), "\"");
         }
       }
-      printer.Append(absl::StrCat("<span class=\"hlo-instruction ",
-                                  highlight_class, "\"", diffid_attrs, " >"));
+      printer.Append(absl::StrCat("<div class=\"hlo-instruction ",
+                                  highlight_class, "\"", diffid_attrs, " >",
+                                  "<span class='hlo-instruction-text'>"));
       printer.Append("  ");  // Instruction indentation (2 spaces)
       if (instruction == comp->root_instruction()) {
         printer.Append("ROOT ");
@@ -817,7 +914,7 @@ std::string PrintHloComputationToHtml(
           }
         }
       }
-      printer.Append("</span>");
+      printer.Append("</span><button class='hlo-expand-btn'>+</button></div>");
     }
   }
 
@@ -1369,6 +1466,9 @@ void RenderHtml(const DiffResult& diff_result, const DiffSummary& diff_summary,
       GenerateSpanAttributes(diff_result);
 
   out << PrintCss() << PrintJavascript();
+
+  // Print introduction section
+  out << PrintIntroductionSection(filtered_diff_result);
 
   // Print profile metrics diff
   if (left_op_metric_getter != nullptr && right_op_metric_getter != nullptr) {
