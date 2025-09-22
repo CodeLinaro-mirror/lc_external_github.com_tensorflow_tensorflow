@@ -54,6 +54,24 @@ limitations under the License.
 #include "xla/util.h"
 
 namespace xla {
+namespace {
+std::optional<std::string> GetRendezvous(const HloInstruction& instruction) {
+  auto attr_iter = instruction.frontend_attributes().map().find(
+      kXlaHostTransferRendezvousNameAttr);
+  if (attr_iter == instruction.frontend_attributes().map().end()) {
+    return std::nullopt;
+  }
+  std::string rendezvous = attr_iter->second;
+  std::string to_remove =
+      instruction.opcode() == HloOpcode::kSend ? "args_dtoh_" : "retvals_htod_";
+  size_t pos = rendezvous.find(to_remove);
+
+  if (pos != std::string::npos) {
+    rendezvous.erase(pos, to_remove.length());
+  }
+  return rendezvous;
+}
+}  // namespace
 
 SendRecvGroupMap::SendRecvGroupMap(const HloModule& hlo_module) {
   for (HloComputation* computation : hlo_module.computations()) {
@@ -62,8 +80,11 @@ SendRecvGroupMap::SendRecvGroupMap(const HloModule& hlo_module) {
           instruction->opcode() != HloOpcode::kRecv) {
         continue;
       }
-      std::string rendezvous = instruction->frontend_attributes().map().at(
-          kXlaHostTransferRendezvousNameAttr);
+      auto rendezvous_result = GetRendezvous(*instruction);
+      if (!rendezvous_result.has_value()) {
+        continue;
+      }
+      const std::string& rendezvous = *rendezvous_result;
       auto send_recv_iter = host_transfer_rendezvous_map_.find(rendezvous);
       if (send_recv_iter == host_transfer_rendezvous_map_.end()) {
         auto insert_success = host_transfer_rendezvous_map_.insert(
@@ -85,8 +106,12 @@ absl::StatusOr<HloInstruction*> SendRecvGroupMap::GetMatchingSendOrRecv(
       send_or_recv->opcode() != HloOpcode::kRecv) {
     return InvalidArgument("Expecting only send or recv");
   }
-  std::string rendezvous = send_or_recv->frontend_attributes().map().at(
-      kXlaHostTransferRendezvousNameAttr);
+
+  auto rendezvous_result = GetRendezvous(*send_or_recv);
+  if (!rendezvous_result.has_value()) {
+    return Internal("Missing rendezvous attribute");
+  }
+  const std::string& rendezvous = *rendezvous_result;
   auto send_recv_iter = host_transfer_rendezvous_map_.find(rendezvous);
   if (send_recv_iter == host_transfer_rendezvous_map_.end()) {
     return Internal("Missing send or recv from send recv group.");
