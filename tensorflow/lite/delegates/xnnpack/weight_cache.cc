@@ -359,6 +359,8 @@ bool MMapWeightCacheProvider::StartBuild(const char* path, FileDescriptor fd) {
       fd = FileDescriptor::Open(file_path_.c_str(), O_CREAT | O_TRUNC | O_RDWR,
                                 0644);
     }
+  } else {
+    XNNPACK_RETURN_CHECK(fd.Truncate(0), "could not truncate weight cache");
   }
   XNNPACK_RETURN_CHECK(fd.IsValid(), "could not open file ('%s'): %s.",
                        file_path_.c_str(), strerror(errno));
