@@ -61,6 +61,7 @@ limitations under the License.
 #include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"  // from @llvm-project
 #include "mlir/Transforms/DialectConversion.h"  // from @llvm-project
 #include "mlir/Transforms/Passes.h"  // from @llvm-project
+#include "stablehlo/conversions/linalg/transforms/Passes.h"  // from @stablehlo
 #include "stablehlo/dialect/ChloOps.h"  // from @stablehlo
 #include "stablehlo/transforms/Passes.h"  // from @stablehlo
 #include "tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.h"
@@ -173,6 +174,7 @@ absl::Status LowerHlotoLoops(mlir::ModuleOp module,
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
   pm.addNestedPass<FuncOp>(mlir::createCanonicalizerPass());
+
   pm.addNestedPass<FuncOp>(mlir::kernel_gen::createShapeSimplificationPass());
   pm.addNestedPass<FuncOp>(mlir::kernel_gen::createMergeAssumingOpsPass());
   pm.addNestedPass<FuncOp>(mlir::kernel_gen::createBroadcastPropagationPass());
@@ -180,8 +182,24 @@ absl::Status LowerHlotoLoops(mlir::ModuleOp module,
   pm.addNestedPass<FuncOp>(mlir::createCSEPass());
 
   // Transform HLO operations to LinAlg and standard.
-  pm.addNestedPass<FuncOp>(::mlir::mhlo::createLegalizeHloToLinalgPass());
-  pm.addPass(::mlir::mhlo::createLegalizeToArithmeticPass());
+  // pm.addPass(mlir::createPrintIRPass()); // FIXME
+  if (true) {  // DO NOT SUBMIT
+    // New path.
+    mlir::mhlo::HloLegalizeToStablehloPassOptions options;
+    options.allow_xla_features_ = true;  // MinimumBroadcastOp
+    pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass(options));
+    pm.addNestedPass<FuncOp>(
+        mlir::stablehlo::createStablehloLegalizeToLinalgPass());
+    pm.addPass(mlir::mhlo::createStablehloLegalizeToHloPass());
+    pm.addNestedPass<FuncOp>(
+        ::mlir::kernel_gen::createLegalizeTensorReshapePass());
+  } else {
+    pm.addNestedPass<FuncOp>(
+        ::mlir::kernel_gen::createLegalizeTensorReshapePass());
+    pm.addNestedPass<FuncOp>(::mlir::mhlo::createLegalizeHloToLinalgPass());
+    pm.addPass(::mlir::mhlo::createLegalizeToArithmeticPass());
+  }
+  // pm.addPass(mlir::createPrintIRPass());  // FIXME
 
   // Remove the remaining references to unsigned types after all HLO compute
   // operations were converted.
