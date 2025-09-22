@@ -37,6 +37,7 @@ limitations under the License.
 #endif
 
 namespace tensorflow {
+using Eigen::numext::div_ceil;
 
 namespace detail {
 template <typename T>
@@ -640,7 +641,7 @@ Status LaunchDepthwiseConv2dGPUSmall(OpKernelContext* ctx,
     case FORMAT_NHWC:
       block_dim = dim3(kBlockDepth, args.in_cols, block_height);
       block_count =
-          args.batch * DivUp(args.out_depth, kBlockDepth) * kBlockDepth;
+          args.batch * div_ceil(args.out_depth, kBlockDepth) * kBlockDepth;
       kernel =
           DepthwiseConv2dGPUKernelNHWCSmall<T, kDirection, kKnownFilterWidth,
                                             kKnownFilterHeight, kBlockDepth,
@@ -649,7 +650,7 @@ Status LaunchDepthwiseConv2dGPUSmall(OpKernelContext* ctx,
     case FORMAT_NCHW:
       block_dim = dim3(args.in_cols, block_height, kBlockDepth);
       block_count =
-          DivUp(args.batch * args.out_depth, kBlockDepth) * kBlockDepth;
+          div_ceil(args.batch * args.out_depth, kBlockDepth) * kBlockDepth;
       kernel =
           DepthwiseConv2dGPUKernelNCHWSmall<T, kDirection, kKnownFilterWidth,
                                             kKnownFilterHeight, kBlockDepth,
@@ -1567,14 +1568,14 @@ Status TryLaunchDepthwiseConv2dBackpropFilterGPUSmall(
     case FORMAT_NHWC:
       block_dim = dim3(kBlockDepth, args.in_cols, block_height);
       block_count =
-          args.batch * DivUp(args.out_depth, kBlockDepth) * kBlockDepth;
+          args.batch * div_ceil(args.out_depth, kBlockDepth) * kBlockDepth;
       kernel = DepthwiseConv2dBackpropFilterGPUKernelNHWCSmall<
           T, kKnownFilterWidth, kKnownFilterHeight, kBlockDepth, kAccumPixels>;
       break;
     case FORMAT_NCHW:
       block_dim = dim3(args.in_cols, block_height, kBlockDepth);
       block_count =
-          DivUp(args.batch * args.out_depth, kBlockDepth) * kBlockDepth;
+          div_ceil(args.batch * args.out_depth, kBlockDepth) * kBlockDepth;
       kernel = DepthwiseConv2dBackpropFilterGPUKernelNCHWSmall<
           T, kKnownFilterWidth, kKnownFilterHeight, kBlockDepth, kAccumPixels>;
       break;
