@@ -1903,6 +1903,7 @@ cc_library(
         "//xla/hlo/transforms/simplifiers:tuple_simplifier",
         "//xla/pjrt/distributed:key_value_store_interface",
         "//xla/service:call_inliner",
+        "//xla/service:compiler",
         "//xla/service:dump",
         "//xla/service:float_support",
         "//xla/service:hlo_cost_analysis",

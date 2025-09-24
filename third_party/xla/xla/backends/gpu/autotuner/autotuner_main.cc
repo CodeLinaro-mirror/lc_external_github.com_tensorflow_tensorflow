@@ -99,12 +99,14 @@ absl::Status Autotune(HloModule& module, const std::string& cache_dir,
                       xla::Compiler::GetForPlatform(platform));
   se::StreamExecutor* stream_executor = platform->ExecutorForDevice(0).value();
   DebugOptions debug_options = GetDebugOptionsFromFlags();
+  Compiler::TargetConfig target_config(stream_executor);
 
   auto& registry = stream_executor::PlatformObjectRegistry::GetGlobalRegistry();
   TF_ASSIGN_OR_RETURN(const GetCodegenBackends::Type& get_codegen_backends,
                       registry.FindObject<GetCodegenBackends>(platform->id()));
-  std::vector<std::unique_ptr<CodegenBackend>> backends = get_codegen_backends(
-      stream_executor, &debug_options, compiler.get(), mlir_context);
+  std::vector<std::unique_ptr<CodegenBackend>> backends =
+      get_codegen_backends(stream_executor, &debug_options, compiler.get(),
+                           target_config, mlir_context);
 
   std::unique_ptr<se::DeviceMemoryAllocator> allocator =
       std::make_unique<stream_executor::StreamExecutorMemoryAllocator>(

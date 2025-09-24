@@ -91,14 +91,18 @@ ENTRY %entry_computation (p0: f32[32,16], p1: f32[32,16]) -> (f32[32,16], f32[32
 class NativeEmitterBackendTest : public HloHardwareIndependentTestBase {
  protected:
   NativeEmitterBackendTest()
-      : backend_(PlatformUtil::GetDefaultPlatform()
-                     .value()
-                     ->ExecutorForDevice(0)
-                     .value(),
-                 &debug_options_, &compiler_) {}
+      : stream_executor_(PlatformUtil::GetDefaultPlatform()
+                             .value()
+                             ->ExecutorForDevice(0)
+                             .value()),
+        target_config_(stream_executor_),
+        backend_(stream_executor_, &debug_options_, &compiler_,
+                 target_config_) {}
 
   DebugOptions debug_options_;
   NVPTXCompiler compiler_;
+  se::StreamExecutor* stream_executor_;
+  Compiler::TargetConfig target_config_;
   NativeEmitterBackend backend_;
 };
 
@@ -216,7 +220,7 @@ TEST_F(NativeEmitterBackendTest, CompileSetsIsAutotuningCompilationOption) {
   MockCompiler mock_compiler;
   NativeEmitterBackend backend(
       PlatformUtil::GetDefaultPlatform().value()->ExecutorForDevice(0).value(),
-      &debug_options_, &mock_compiler);
+      &debug_options_, &mock_compiler, target_config_);
   // Call GetDefaultConfig on the fusion instruction.
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<BackendConfig> config,
                           backend.GetDefaultConfig(*(fusion)));
