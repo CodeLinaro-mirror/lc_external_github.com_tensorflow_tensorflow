@@ -215,7 +215,9 @@ class SubcomputationInsertionVisitor : public DfsHloVisitorWithDefault {
       return;
     }
     new_hlo_pointer->CopyOriginalValue(hlo, /*clone=*/true);
-    if (call_original_value->is_synthetic_call()) {
+    std::optional<std::string> call_instruction_name =
+        call_original_value->GetOriginalCallLikeInstructionName();
+    if (!call_instruction_name.has_value()) {
       return;
     }
     std::shared_ptr<OriginalValue> original_value =
@@ -226,12 +228,8 @@ class SubcomputationInsertionVisitor : public DfsHloVisitorWithDefault {
     for (auto& pair : original_value->mutable_original_arrays()) {
       std::optional<OriginalArray>& original_array = pair.second;
       if (original_array.has_value()) {
-        std::string call_instruction_name =
-            call_original_value->original_arrays()
-                .begin()
-                ->second->instruction_name;
         original_array->instruction_name = absl::StrCat(
-            call_instruction_name, "/", original_array->instruction_name);
+            *call_instruction_name, "/", original_array->instruction_name);
       }
     }
   }
