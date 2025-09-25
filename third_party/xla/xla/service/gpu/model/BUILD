@@ -687,6 +687,7 @@ xla_cc_test(
         ":symbolic_tile",
         "//xla/hlo/analysis:indexing_analysis",
         "//xla/hlo/analysis:indexing_test_utils",
+        "//xla/hlo/analysis:interval",
         "//xla/tests:xla_internal_test_main",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
