@@ -75,6 +75,8 @@ struct AutotuneConfig {
   // If true, the autotuner selects the first valid config instead of the best
   // performing one. This is to guarantee run-to-run determinism.
   bool select_first_config = false;
+  // If true, use hardcoded default backend configs instead of autotuning.
+  bool use_default_config = false;
 };
 
 class Autotuner {

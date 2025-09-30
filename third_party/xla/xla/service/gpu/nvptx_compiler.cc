@@ -57,7 +57,6 @@ limitations under the License.
 #include "xla/hlo/transforms/simplifiers/dot_dimension_merger.h"
 #include "xla/hlo/transforms/simplifiers/float_normalization.h"
 #include "xla/hlo/transforms/simplifiers/hlo_constant_folding.h"
-#include "xla/hlo/transforms/simplifiers/reshape_mover.h"
 #include "xla/hlo/transforms/simplifiers/tuple_simplifier.h"
 #include "xla/pjrt/distributed/key_value_store_interface.h"
 #include "xla/service/call_inliner.h"
@@ -366,12 +365,11 @@ absl::Status NVPTXCompiler::AddConvAndGemmAutotuningPasses(
            IsCublasGemm(instruction);
   };
 
-  bool cache_only = stream_exec == nullptr;
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<AutotunerPass> autotuner_pass,
       AutotunerPass::Create(std::move(backends), debug_options, stream_exec,
                             thread_pool, should_autotune, target_config,
-                            options.device_allocator, cache_only));
+                            options.device_allocator));
   pipeline->AddPass(std::move(autotuner_pass));
   return absl::OkStatus();
 }
@@ -439,12 +437,11 @@ absl::Status NVPTXCompiler::AddFusionAutotuningPass(
   backends.push_back(std::make_unique<NativeEmitterBackend>(
       &debug_options, this, target_config));
 
-  bool cache_only = stream_executor == nullptr;
-  TF_ASSIGN_OR_RETURN(std::unique_ptr<AutotunerPass> autotuner_pass,
-                      AutotunerPass::Create(
-                          std::move(backends), debug_options, stream_executor,
-                          thread_pool, ShouldAutotuneBetweenFusionEmitters,
-                          target_config, options.device_allocator, cache_only));
+  TF_ASSIGN_OR_RETURN(
+      std::unique_ptr<AutotunerPass> autotuner_pass,
+      AutotunerPass::Create(std::move(backends), debug_options, stream_executor,
+                            thread_pool, ShouldAutotuneBetweenFusionEmitters,
+                            target_config, options.device_allocator));
   pipeline->AddPass(std::move(autotuner_pass));
   return absl::OkStatus();
 }

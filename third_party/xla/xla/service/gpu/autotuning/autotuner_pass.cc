@@ -47,21 +47,35 @@ namespace gpu {
 
 namespace {
 
-AutotuneConfig GetAutotuneConfig(const DebugOptions& debug_options) {
+AutotuneConfig GetAutotuneConfig(const DebugOptions& debug_options,
+                                 bool is_deviceless) {
   AutotuneConfig autotune_config;
   autotune_config.check_buffers = debug_options.xla_gpu_autotune_level() >= 4;
   autotune_config.relative_tolerance =
       debug_options.xla_gpu_autotune_gemm_rtol();
   autotune_config.crash_on_check_failure =
       debug_options.xla_gpu_crash_on_verification_failures();
-  autotune_config.expect_all_instructions_in_cache =
-      debug_options.xla_gpu_require_complete_aot_autotune_results();
   autotune_config.dump_logs_to = debug_options.xla_gpu_dump_autotune_logs_to();
   autotune_config.exclude_cublas_config =
       !debug_options.xla_gpu_cublas_fallback();
   autotune_config.select_first_config =
       debug_options.xla_gpu_deterministic_ops() ||
       debug_options.xla_gpu_exclude_nondeterministic_ops();
+
+  bool has_cache =
+      !debug_options.xla_gpu_experimental_autotuner_cache_dir().empty();
+  if (has_cache) {
+    // Always expect all instructions in the cache if we have a cache.
+    autotune_config.expect_all_instructions_in_cache = true;
+  } else if (is_deviceless) {
+    // If we don't have a cache and we are running on a deviceless target, we
+    // want to use default configs.
+    autotune_config.use_default_config = true;
+  }
+
+  autotune_config.expect_all_instructions_in_cache =
+      debug_options.xla_gpu_require_complete_aot_autotune_results();
+
   return autotune_config;
 }
 
@@ -80,15 +94,16 @@ absl::StatusOr<std::unique_ptr<AutotunerPass>> AutotunerPass::Create(
     stream_executor::StreamExecutor* stream_executor,
     tsl::thread::ThreadPool* thread_pool, InstructionFilterFn should_autotune,
     const Compiler::TargetConfig* target_config,
-    se::DeviceMemoryAllocator* allocator, bool cache_only) {
+    se::DeviceMemoryAllocator* allocator) {
   std::unique_ptr<Profiler> profiler = nullptr;
-  AutotuneConfig autotune_config = GetAutotuneConfig(debug_options);
-  if (cache_only) {
-    autotune_config.expect_all_instructions_in_cache = true;
-  } else {
-    // If not cache_only, at least one of stream_executor or allocator must be
-    // provided.
-    CHECK(stream_executor != nullptr || allocator != nullptr);
+  bool is_deviceless = stream_executor == nullptr;
+  AutotuneConfig autotune_config =
+      GetAutotuneConfig(debug_options, is_deviceless);
+
+  if (!is_deviceless) {
+    // If we are running on a device (i.e. stream_executor is not null), we need
+    // an allocator to allocate temporary buffers for profiling.
+    CHECK(allocator != nullptr);
     profiler = GpuProfiler::Create(stream_executor,
                                    GetProfileOptions(debug_options), allocator);
   }

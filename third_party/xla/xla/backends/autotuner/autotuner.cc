@@ -96,6 +96,34 @@ absl::Status Autotuner::Autotune(HloModule* module,
     VLOG(1) << "No instructions to autotune.";
     return absl::OkStatus();
   }
+  if (autotune_config_.use_default_config) {
+    VLOG(1) << "Using default configs instead of autotuning for "
+            << instrunctions_by_fingerprint.size() << " unique instructions.";
+    for (auto& [_, instructions] : instrunctions_by_fingerprint) {
+      CHECK(!instructions.empty());
+      bool applied = false;
+      for (auto& backend : codegen_backends_) {
+        auto config = backend->GetDefaultConfig(*instructions[0]);
+        if (absl::IsUnimplemented(config.status())) {
+          LOG(FATAL) << "GetDefaultConfig is not implemented for "
+                     << backend->name();
+        }
+        if (config.ok()) {
+          for (auto* instr : instructions) {
+            TF_RETURN_IF_ERROR(backend->ApplyConfig(*instr, **config));
+          }
+          applied = true;
+          break;
+        }
+      }
+      if (!applied) {
+        return absl::NotFoundError(absl::StrCat(
+            "No backend with default config found for instruction: ",
+            instructions[0]->ToString()));
+      }
+    }
+    return absl::OkStatus();
+  }
 
   VLOG(1) << "Autotuning " << instrunctions_by_fingerprint.size()
           << " unique instructions.";
@@ -115,6 +143,22 @@ absl::Status Autotuner::Autotune(HloModule* module,
 
 absl::Status Autotuner::Autotune(HloInstruction* instr) {
   VLOG(1) << "Autotuning HLO: " << instr->ToString();
+  if (autotune_config_.use_default_config) {
+    VLOG(1) << "Using default config instead of autotuning.";
+    for (auto& backend : codegen_backends_) {
+      auto config = backend->GetDefaultConfig(*instr);
+      if (absl::IsUnimplemented(config.status())) {
+        LOG(FATAL) << "GetDefaultConfig is not implemented for "
+                   << backend->name();
+      }
+      if (config.ok()) {
+        return backend->ApplyConfig(*instr, **config);
+      }
+    }
+    return absl::NotFoundError(
+        absl::StrCat("No backend with default config found for instruction: ",
+                     instr->ToString()));
+  }
   TF_ASSIGN_OR_RETURN(Config best_config, GetCachedOrTuneBestConfig(instr));
   CodegenBackend* best_codegen_backend = best_config.codegen_backend;
   TF_RETURN_IF_ERROR(
