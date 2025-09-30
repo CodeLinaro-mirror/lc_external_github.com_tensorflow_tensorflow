@@ -569,7 +569,7 @@ xla_test(
     name = "gpu_kernel_test",
     srcs = ["gpu_kernel_test.cc"],
     backend_tags = {
-        # TODO(b/445172709): Re-enable once fixed.
+        # TODO(b/448274040): Re-enable once fixed.
         "b200": ["broken"],
     },
     backends = ["gpu"],
