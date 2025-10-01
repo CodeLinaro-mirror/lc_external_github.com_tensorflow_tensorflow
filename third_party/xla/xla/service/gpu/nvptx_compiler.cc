@@ -356,12 +356,11 @@ absl::Status NVPTXCompiler::AddConvAndGemmAutotuningPasses(
            IsCublasGemm(instruction);
   };
 
-  bool cache_only = stream_exec == nullptr;
   TF_ASSIGN_OR_RETURN(
       std::unique_ptr<AutotunerPass> autotuner_pass,
       AutotunerPass::Create(std::move(backends), debug_options, stream_exec,
                             thread_pool, should_autotune, target_config,
-                            options.device_allocator, cache_only));
+                            options.device_allocator));
   pipeline->AddPass(std::move(autotuner_pass));
   return absl::OkStatus();
 }
@@ -423,18 +422,21 @@ absl::Status NVPTXCompiler::AddFusionAutotuningPass(
   }
 
   std::vector<std::unique_ptr<CodegenBackend>> backends;
-  backends.push_back(std::make_unique<BlockLevelEmitterBackend>(
+  auto ble_backend = std::make_unique<BlockLevelEmitterBackend>(
       &debug_options, this, shape_size_fn, target_config,
-      /*use_default_config=*/true));
-  backends.push_back(std::make_unique<NativeEmitterBackend>(
-      &debug_options, this, target_config));
+      /*use_default_config=*/true);
+  ble_backend->AllowRegisterSpills();
+  backends.push_back(std::move(ble_backend));
+  auto native_backend = std::make_unique<NativeEmitterBackend>(
+      &debug_options, this, target_config);
+  native_backend->AllowRegisterSpills();
+  backends.push_back(std::move(native_backend));
 
-  bool cache_only = stream_executor == nullptr;
-  TF_ASSIGN_OR_RETURN(std::unique_ptr<AutotunerPass> autotuner_pass,
-                      AutotunerPass::Create(
-                          std::move(backends), debug_options, stream_executor,
-                          thread_pool, ShouldAutotuneBetweenFusionEmitters,
-                          target_config, options.device_allocator, cache_only));
+  TF_ASSIGN_OR_RETURN(
+      std::unique_ptr<AutotunerPass> autotuner_pass,
+      AutotunerPass::Create(std::move(backends), debug_options, stream_executor,
+                            thread_pool, ShouldAutotuneBetweenFusionEmitters,
+                            target_config, options.device_allocator));
   pipeline->AddPass(std::move(autotuner_pass));
   return absl::OkStatus();
 }
