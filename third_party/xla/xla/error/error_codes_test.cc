@@ -51,18 +51,37 @@ TEST(ErrorCodesTest, GetErrorUrl) {
   EXPECT_EQ(GetErrorUrl(kTestCode), "https://openxla.org/xla/errors/E0002");
 }
 
-TEST(ErrorCodesTest, FactoryFunction) {
+TEST(ErrorCodesTest, FactoryFunctionWithNoArgs) {
+  // Test one of the generated factory functions.
+  const int kExpectedLineNumber = __LINE__ + 1;
+  absl::Status status = InvalidArgument("My Test error");
+
+  // Check the absl::StatusCode defined in the macro.
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  // Check the full formatted error message.
+  EXPECT_EQ(status.message(),
+            "E0002: InvalidArgument: My Test "
+            "error\nhttps://openxla.org/xla/errors/E0002");
+  auto location = status.GetSourceLocations().front();
+  EXPECT_THAT(location.file_name(), testing::EndsWith("error_codes_test.cc"));
+  EXPECT_EQ(location.line(), kExpectedLineNumber);
+}
+
+TEST(ErrorCodesTest, FactoryFunctionWithArgs) {
   // Test one of the generated factory functions.
   std::string detail = "Something was wrong";
+  const int kExpectedLineNumber = __LINE__ + 1;
   absl::Status status = InvalidArgument("Test error: %s", detail);
 
   // Check the absl::StatusCode defined in the macro.
   EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-
   // Check the full formatted error message.
   EXPECT_EQ(status.message(),
             "E0002: InvalidArgument: Test error: Something was "
             "wrong\nhttps://openxla.org/xla/errors/E0002");
+  auto location = status.GetSourceLocations().front();
+  EXPECT_THAT(location.file_name(), testing::EndsWith("error_codes_test.cc"));
+  EXPECT_EQ(location.line(), kExpectedLineNumber);
 }
 
 TEST(ErrorCodesTest, FactoryFunctionNoDebugPayloadIfContextIsEmpty) {
