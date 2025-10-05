@@ -41,6 +41,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "llvm/Support/Casting.h"
@@ -914,6 +915,13 @@ class NanoExecutable final
 
   absl::StatusOr<std::string> Serialize() const override {
     return absl::UnimplementedError("Serialize is not implemented.");
+  }
+
+  absl::StatusOr<std::string> GetHumanReadableProgramText() const override {
+    TF_ASSIGN_OR_RETURN(
+        auto hlo_module,
+        HloModule::CreateFromProto(program_.proto(), HloModuleConfig()));
+    return hlo_module->ToString();
   }
 
   ifrt::UserContextRef user_context() const override { return user_context_; }
