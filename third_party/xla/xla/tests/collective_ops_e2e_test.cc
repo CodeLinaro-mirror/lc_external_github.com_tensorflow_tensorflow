@@ -285,10 +285,10 @@ TEST_P(AsyncCollectiveOps, AsyncAllReduce) {
     )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
+
   const bool enable_async_all_reduce = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -326,10 +326,9 @@ TEST_P(AsyncCollectiveOps, AsyncAllGather) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_all_gather = GetParam();
 
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
@@ -372,10 +371,9 @@ TEST_P(AsyncCollectiveOps, AsyncAllGatherMixedTypes) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_all_gather = GetParam();
 
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
@@ -415,10 +413,10 @@ TEST_P(AsyncCollectiveOps, AsyncCollectiveBroadcast) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
+
   const bool enable_async_collective_broadcast = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -452,10 +450,9 @@ TEST_P(AsyncCollectiveOps, AsyncCollectivePermute) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_collective_permute = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -597,10 +594,9 @@ TEST_P(AsyncCollectiveOps, AsyncReduceScatter) {
   )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_reduce_scatter = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -635,10 +631,9 @@ TEST_P(AsyncCollectiveOps, AsyncAllToAllWithSplitDim) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_all_to_all = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -723,10 +718,9 @@ TEST_P(AsyncCollectiveOps, AsyncAllToAllWithoutSplitDim) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_all_to_all = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -803,10 +797,9 @@ TEST_P(AsyncCollectiveOps, AsyncAllToAllNumberOfElementsLargerThanInt32Max) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const bool enable_async_all_to_all = GetParam();
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -856,10 +849,9 @@ ENTRY entry {
 )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   TF_ASSERT_OK_AND_ASSIGN(auto executable,
                           CreateExecutable(kModuleStr, kNumReplicas));
@@ -943,10 +935,9 @@ TEST_P(AsyncMemcpyCollectiveOps, AsyncAllToAllDegenerateWithSplitDim) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -978,10 +969,9 @@ TEST_P(AsyncMemcpyCollectiveOps, AsyncAllToAllDegenerateWithoutSplitDim) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -1208,10 +1198,9 @@ TEST_F(CollectiveOpsTestE2E, WhileLoopReduceScatterCodeMotion) {
   )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   DebugOptions debug_options = GetDebugOptionsForTest();
   debug_options.set_xla_gpu_enable_while_loop_reduce_scatter_code_motion(true);
@@ -1266,10 +1255,9 @@ TEST_F(CollectiveOpsTestE2E, NoAllToAllDecomposition) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -1314,10 +1302,9 @@ TEST_F(CollectiveOpsTestE2E, NoAsyncCollectives) {
   }
   )";
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -2191,10 +2178,9 @@ ENTRY entry {
 )";
 
   const int64_t kNumReplicas = 1;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -2210,11 +2196,9 @@ class CollectiveOpsTestE2EPipelinedNonPipelined : public CollectiveOpsTestE2E {
   void CollectiveOpsComparePipelinedNonPipelined(absl::string_view hlo_string) {
     const int64_t kNumReplicas = 1;
     const int64_t kNumPartitions = 2;
-    if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-      GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                   << " devices (" << test_runner().device_count()
-                   << " available)";
-    }
+    ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+        << "Test requires at least " << kNumReplicas * kNumPartitions
+        << " devices (" << test_runner().device_count() << " available)";
 
     HloModuleConfig config =
         GetModuleConfigForTest(kNumReplicas, kNumPartitions);
@@ -2457,11 +2441,9 @@ ENTRY entry {
 
   const int64_t kNumReplicas = 1;
   const int64_t kNumPartitions = 2;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -2514,11 +2496,9 @@ ENTRY entry {
 
   const int64_t kNumReplicas = 1;
   const int64_t kNumPartitions = 2;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -2616,10 +2596,9 @@ ENTRY entry {
 )";
 
   const int64_t kNumReplicas = 1;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
   const int64_t kNumPartitions = 4;
 
   HloModuleConfig config =
@@ -2929,11 +2908,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -2973,11 +2950,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs_InputBufferLargerThanOutput) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3017,11 +2992,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs_OutputBufferLargerThanInput) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3061,11 +3034,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs_MultipleUpdates) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3106,11 +3077,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs_MultiDimData) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3151,11 +3120,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs_Degenerate) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3196,11 +3163,9 @@ TEST_P(RaggedAllToAllTest, RaggedAllToAll_2GPUs_NonDefaultLayout) {
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3246,11 +3211,9 @@ TEST_P(RaggedAllToAllTest,
 
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3491,11 +3454,9 @@ TEST_F(RaggedAllToAllMultiHostDecomposerTest, RaggedAllToAll_2GPUs_SliceSize1) {
   const int64_t kNumReplicas = 2;
   const int64_t kNumPartitions = 1;
   const int64_t kNumUpdatesPerReplica = 16;
-  if (test_runner().device_count() < kNumReplicas * kNumPartitions) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas * kNumPartitions
-                 << " devices (" << test_runner().device_count()
-                 << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas * kNumPartitions)
+      << "Test requires at least " << kNumReplicas * kNumPartitions
+      << " devices (" << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas * kNumPartitions);
@@ -3985,10 +3946,9 @@ TEST_P(AllReduceTest, AsyncAllReduce_F32_2GPUs) {
   )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -4066,10 +4026,9 @@ TEST_P(AllReduceTest, AsyncAllReduceInsideWhile_F32_2GPUs) {
       kNumIterations, kNumElements, kReplicaGroups);
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -4123,10 +4082,9 @@ TEST_P(AllReduceTest, AsyncAllReduce_BF16_2GPUs) {
   )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
@@ -4179,10 +4137,9 @@ TEST_P(AllReduceTest, AsyncAllReduce_PRED_2GPUs) {
   )";
 
   const int64_t kNumReplicas = 2;
-  if (test_runner().device_count() < kNumReplicas) {
-    GTEST_SKIP() << "Test requires at least " << kNumReplicas << " devices ("
-                 << test_runner().device_count() << " available)";
-  }
+  ASSERT_GE(test_runner().device_count(), kNumReplicas)
+      << "Test requires at least " << kNumReplicas << " devices ("
+      << test_runner().device_count() << " available)";
 
   HloModuleConfig config =
       GetModuleConfigForTest(/*replica_count=*/kNumReplicas);
