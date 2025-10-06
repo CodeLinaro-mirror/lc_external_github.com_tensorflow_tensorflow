@@ -1,45 +1,27 @@
 Auto generated patch. Do not edit or delete it, even if empty.
-diff -ruN --strip-trailing-cr a/llvm/unittests/Analysis/FunctionPropertiesAnalysisTest.cpp b/llvm/unittests/Analysis/FunctionPropertiesAnalysisTest.cpp
---- a/llvm/unittests/Analysis/FunctionPropertiesAnalysisTest.cpp
-+++ b/llvm/unittests/Analysis/FunctionPropertiesAnalysisTest.cpp
-@@ -46,8 +46,8 @@
-     MAM.registerPass([VocabVector = std::move(VocabVector)]() mutable {
-       return IR2VecVocabAnalysis(std::move(VocabVector));
-     });
--    IR2VecVocab =
--        new ir2vec::Vocabulary(ir2vec::Vocabulary::createDummyVocabForTest(1));
-+    IR2VecVocab = std::make_unique<ir2vec::Vocabulary>(
-+        ir2vec::Vocabulary::createDummyVocabForTest(1));
-     MAM.registerPass([&] { return PassInstrumentationAnalysis(); });
-     FAM.registerPass([&] { return ModuleAnalysisManagerFunctionProxy(MAM); });
-     FAM.registerPass([&] { return DominatorTreeAnalysis(); });
-@@ -69,7 +69,7 @@
-   std::unique_ptr<LoopInfo> LI;
-   FunctionAnalysisManager FAM;
-   ModuleAnalysisManager MAM;
--  ir2vec::Vocabulary *IR2VecVocab;
-+  std::unique_ptr<ir2vec::Vocabulary> IR2VecVocab;
+diff -ruN --strip-trailing-cr a/llvm/lib/Target/AMDGPU/AMDGPUTargetMachine.cpp b/llvm/lib/Target/AMDGPU/AMDGPUTargetMachine.cpp
+--- a/llvm/lib/Target/AMDGPU/AMDGPUTargetMachine.cpp
++++ b/llvm/lib/Target/AMDGPU/AMDGPUTargetMachine.cpp
+@@ -929,8 +929,10 @@
+                                             ThinOrFullLTOPhase Phase) {
+     if (Level != OptimizationLevel::O0) {
+       if (!isLTOPreLink(Phase)) {
+-        AMDGPUAttributorOptions Opts;
+-        MPM.addPass(AMDGPUAttributorPass(*this, Opts, Phase));
++        if (getTargetTriple().isAMDGCN()) {
++          AMDGPUAttributorOptions Opts;
++          MPM.addPass(AMDGPUAttributorPass(*this, Opts, Phase));
++        }
+       }
+     }
+   });
+@@ -1296,7 +1298,8 @@
+   if (LowerCtorDtor)
+     addPass(createAMDGPUCtorDtorLoweringLegacyPass());
  
-   void TearDown() override {
-     // Restore original IR2Vec weights
-diff -ruN --strip-trailing-cr a/llvm/unittests/Analysis/IR2VecTest.cpp b/llvm/unittests/Analysis/IR2VecTest.cpp
---- a/llvm/unittests/Analysis/IR2VecTest.cpp
-+++ b/llvm/unittests/Analysis/IR2VecTest.cpp
-@@ -295,7 +295,7 @@
- // Fixture for IR2Vec tests requiring IR setup.
- class IR2VecTestFixture : public ::testing::Test {
- protected:
--  Vocabulary *V;
-+  std::unique_ptr<Vocabulary> V;
-   LLVMContext Ctx;
-   std::unique_ptr<Module> M;
-   Function *F = nullptr;
-@@ -304,7 +304,7 @@
-   Instruction *RetInst = nullptr;
+-  if (isPassEnabled(EnableImageIntrinsicOptimizer))
++  if (TM.getTargetTriple().isAMDGCN() &&
++      isPassEnabled(EnableImageIntrinsicOptimizer))
+     addPass(createAMDGPUImageIntrinsicOptimizerPass(&TM));
  
-   void SetUp() override {
--    V = new Vocabulary(Vocabulary::createDummyVocabForTest(2));
-+    V = std::make_unique<Vocabulary>(Vocabulary::createDummyVocabForTest(2));
- 
-     // Setup IR
-     M = std::make_unique<Module>("TestM", Ctx);
+   // This can be disabled by passing ::Disable here or on the command line
