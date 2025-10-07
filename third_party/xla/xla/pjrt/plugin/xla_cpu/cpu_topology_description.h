@@ -58,6 +58,11 @@ class CpuTopologyDescription : public PjRtTopologyDescription {
            this->cpu_topology().devices() == other.cpu_topology().devices();
   }
 
+  static absl::StatusOr<std::unique_ptr<PjRtTopologyDescription>> FromProto(
+      const PjRtTopologyDescriptionProto& proto);
+
+  absl::StatusOr<PjRtTopologyDescriptionProto> ToProto() const override;
+
   PjRtPlatformId platform_id() const override { return platform_id_; }
 
   absl::string_view platform_name() const override { return platform_name_; }
