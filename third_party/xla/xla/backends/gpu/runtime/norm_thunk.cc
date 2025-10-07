@@ -17,16 +17,45 @@ limitations under the License.
 
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/synchronization/mutex.h"
-#include "xla/stream_executor/stream_executor.h"
+#include "xla/backends/gpu/runtime/thunk.h"
+#include "xla/service/buffer_assignment.h"
+#include "xla/service/gpu/gpu_norm_runner.h"
+#include "xla/stream_executor/device_memory.h"
+#include "xla/stream_executor/lazy_op_runner.h"
+#include "xla/stream_executor/stream.h"
+#include "xla/tsl/platform/errors.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 
 namespace xla {
 namespace gpu {
 
+absl::StatusOr<std::unique_ptr<NormThunk>> NormThunk::Create(
+    ThunkInfo thunk_info, GpuNormDescriptor descriptor,
+    BufferAllocation::Slice x_slice, BufferAllocation::Slice scale_slice,
+    BufferAllocation::Slice y_or_dx_slice,
+    std::optional<BufferAllocation::Slice> bias_slice,
+    std::optional<BufferAllocation::Slice> expectation_slice,
+    std::optional<BufferAllocation::Slice> norm_factor_slice,
+    std::optional<BufferAllocation::Slice> dy_slice,
+    std::optional<BufferAllocation::Slice> dscale_slice,
+    std::optional<BufferAllocation::Slice> dbias_slice,
+    BufferAllocation::Slice scratch_slice) {
+  TF_ASSIGN_OR_RETURN(GpuNormConfig config, GpuNormConfig::For(descriptor));
+
+  return std::make_unique<NormThunk>(
+      thunk_info, std::move(config), std::move(descriptor), x_slice,
+      scale_slice, y_or_dx_slice, bias_slice, expectation_slice,
+      norm_factor_slice, dy_slice, dscale_slice, dbias_slice, scratch_slice);
+}
+
 NormThunk::NormThunk(ThunkInfo thunk_info, GpuNormConfig config,
+                     GpuNormDescriptor descriptor,
                      BufferAllocation::Slice x_slice,
                      BufferAllocation::Slice scale_slice,
                      BufferAllocation::Slice y_or_dx_slice,
@@ -48,6 +77,7 @@ NormThunk::NormThunk(ThunkInfo thunk_info, GpuNormConfig config,
       dscale_buffer_(dscale_slice),
       dbias_buffer_(dbias_slice),
       scratch_buffer_(scratch_slice),
+      descriptor_(descriptor),
       config_(config) {}
 
 NormRunner& NormThunk::GetOrCreateRunner(

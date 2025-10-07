@@ -22,11 +22,12 @@ limitations under the License.
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/synchronization/mutex.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/gpu_norm_runner.h"
-#include "xla/stream_executor/stream_executor.h"
+#include "xla/stream_executor/stream.h"
 #include "xla/xla_data.pb.h"
 
 namespace xla {
@@ -34,9 +35,21 @@ namespace gpu {
 
 class NormThunk : public Thunk {
  public:
+  static absl::StatusOr<std::unique_ptr<NormThunk>> Create(
+      ThunkInfo thunk_info, GpuNormDescriptor descriptor,
+      BufferAllocation::Slice x, BufferAllocation::Slice scale,
+      BufferAllocation::Slice y_or_dx,
+      std::optional<BufferAllocation::Slice> bias,
+      std::optional<BufferAllocation::Slice> expectation,
+      std::optional<BufferAllocation::Slice> norm_factor,
+      std::optional<BufferAllocation::Slice> dy,
+      std::optional<BufferAllocation::Slice> dscale,
+      std::optional<BufferAllocation::Slice> dbias,
+      BufferAllocation::Slice scratch);
+  // Only public for std::make_unique. Use Create instead.
   NormThunk(ThunkInfo thunk_info, GpuNormConfig config,
-            BufferAllocation::Slice x, BufferAllocation::Slice scale,
-            BufferAllocation::Slice y_or_dx,
+            GpuNormDescriptor descriptor, BufferAllocation::Slice x,
+            BufferAllocation::Slice scale, BufferAllocation::Slice y_or_dx,
             std::optional<BufferAllocation::Slice> bias,
             std::optional<BufferAllocation::Slice> expectation,
             std::optional<BufferAllocation::Slice> norm_factor,
@@ -64,6 +77,7 @@ class NormThunk : public Thunk {
   BufferAllocation::Slice scratch_buffer_;
   NormRunner& GetOrCreateRunner(const stream_executor::Stream*);
 
+  GpuNormDescriptor descriptor_;
   GpuNormConfig config_;
   absl::Mutex mu_;
   absl::flat_hash_map<const stream_executor::Stream*,
