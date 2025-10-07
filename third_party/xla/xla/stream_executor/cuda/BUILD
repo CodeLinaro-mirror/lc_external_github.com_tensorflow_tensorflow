@@ -1211,6 +1211,7 @@ xla_test(
         ":cuda_platform",
         ":cuda_platform_id",
         "//xla/stream_executor:device_description",
+        "//xla/stream_executor:device_memory",
         "//xla/stream_executor:kernel",
         "//xla/stream_executor:kernel_spec",
         "//xla/stream_executor:memory_allocation",
