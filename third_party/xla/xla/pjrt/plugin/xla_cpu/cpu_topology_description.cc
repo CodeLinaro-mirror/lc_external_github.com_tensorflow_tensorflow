@@ -18,6 +18,7 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
@@ -60,6 +61,43 @@ CpuTopologyDescription::DeviceDescriptions() const {
         device.process_id, device.local_device_id));
   }
   return devices;
+}
+
+absl::StatusOr<PjRtTopologyDescriptionProto> CpuTopologyDescription::ToProto()
+    const {
+  PjRtTopologyDescriptionProto proto;
+  proto.set_platform_id(platform_id_);
+  proto.set_platform_name(platform_name_);
+  proto.set_platform_version(platform_version_);
+  proto.mutable_platform_specific_topology()->PackFrom(cpu_topology_.ToProto());
+  return proto;
+}
+
+absl::StatusOr<std::unique_ptr<PjRtTopologyDescription>>
+CpuTopologyDescription::FromProto(const PjRtTopologyDescriptionProto& proto) {
+  CpuTopologyProto cpu_topology_proto;
+  if (!proto.platform_specific_topology().UnpackTo(&cpu_topology_proto)) {
+    return absl::InvalidArgumentError(
+        "Failed to unpack platform_specific_topology");
+  }
+
+  std::vector<CpuTopology::CpuDevice> cpu_devices;
+
+  for (const CpuTopologyProto::CpuDevice& cpu_device :
+       cpu_topology_proto.cpu_devices()) {
+    cpu_devices.push_back(CpuTopology::CpuDevice{
+        cpu_device.process_index(), cpu_device.local_hardware_id()});
+  }
+
+  std::vector<std::string> machine_attributes;
+  for (const std::string& machine_attribute :
+       cpu_topology_proto.machine_attributes()) {
+    machine_attributes.push_back(machine_attribute);
+  }
+
+  return std::make_unique<CpuTopologyDescription>(
+      proto.platform_id(), proto.platform_name(), proto.platform_version(),
+      std::move(cpu_devices), machine_attributes);
 }
 
 }  // namespace xla
