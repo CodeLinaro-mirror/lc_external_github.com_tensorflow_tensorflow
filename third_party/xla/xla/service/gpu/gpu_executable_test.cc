@@ -49,6 +49,7 @@ limitations under the License.
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/gpu/tma_metadata.h"
 #include "xla/stream_executor/semantic_version.h"
+#include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/env.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/util/proto/proto_matchers.h"
@@ -59,6 +60,7 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
 using ::testing::Property;
+using ::testing::SizeIs;
 using ::tsl::proto_testing::EqualsProto;
 
 TEST(GpuExecutableTest, OuputInfoToAndFromProto) {
@@ -107,7 +109,8 @@ TEST(GpuExecutableTest, OuputInfoToAndFromProto) {
 }
 
 TEST(GpuExecutableTest, RunThunkPasses) {
-  const std::string dump_dir = testing::TempDir();
+  std::string dump_dir;
+  EXPECT_TRUE(tsl::Env::Default()->LocalTempFilename(&dump_dir));
   DebugOptions debug_options = GetDebugOptionsFromFlags();
   debug_options.set_xla_dump_to(dump_dir);
   debug_options.set_xla_gpu_experimental_enable_command_buffer_on_thunks(true);
@@ -318,6 +321,79 @@ TEST(GpuExecutableTest, ThunkChecksumPassAddsAllocation) {
                           GpuExecutable::Create(std::move(params_with_pass)));
   EXPECT_EQ(executable_with_pass->GetAllocations().size(),
             allocations_without_pass + 1);
+}
+
+TEST(GpuExecutableTest, DumpsMetadataListProto) {
+  std::string dump_dir;
+  EXPECT_TRUE(tsl::Env::Default()->LocalTempFilename(&dump_dir));
+  DebugOptions debug_options = GetDebugOptionsFromFlags();
+  debug_options.set_xla_dump_to(dump_dir);
+
+  int execution_count = 0;
+  auto create_executable = [&]() {
+    Thunk::ThunkInfo thunk_info;
+    thunk_info.thunk_id = 123;
+    BufferAllocation alloc(0, 1024, 0);
+    BufferAllocation::Slice slice(&alloc, 0, 1024);
+
+    ThunkSequence thunk_sequence;
+    thunk_sequence.push_back(std::make_unique<KernelThunk>(
+        thunk_info,
+        /*kernel_name=*/"test_kernel",
+        /*kernel_arguments=*/emitters::KernelArguments({}),
+        /*launch_dimensions=*/LaunchDimensions(),
+        /*cluster_dim=*/std::nullopt,
+        /*shmem_bytes=*/0,
+        /*tma_metadata=*/se::gpu::TmaMetadata()));
+    thunk_info.thunk_id = 456;
+    thunk_sequence.push_back(std::make_unique<DeviceToDeviceCopyThunk>(
+        thunk_info, slice, slice, 1024));
+
+    GpuExecutable::Params params;
+    thunk_info.thunk_id = 789;
+    params.executable = std::make_unique<SequentialThunk>(
+        thunk_info, std::move(thunk_sequence));
+    params.debug_options = debug_options;
+
+    params.module_name = absl::StrCat("test_module", execution_count++);
+    se::DeviceDescription device_description;
+    device_description.set_gpu_compute_capability(
+        se::CudaComputeCapability::Volta());
+    device_description.set_driver_version({12, 3, 0});
+    device_description.set_runtime_version({12, 3, 0});
+    params.device_description = device_description;
+    params.enable_debug_info_manager = false;
+    params.debug_module =
+        std::make_unique<HloModule>(params.module_name, HloModuleConfig());
+    params.debug_module->mutable_config().set_debug_options(debug_options);
+    return GpuExecutable::Create(std::move(params));
+  };
+
+  TF_ASSERT_OK(create_executable());
+
+  std::vector<std::string> dump_files;
+  TF_ASSERT_OK(tsl::Env::Default()->GetMatchingPaths(
+      tsl::io::JoinPath(dump_dir, "*thunk_metadata.txt"), &dump_files));
+  ASSERT_THAT(dump_files, SizeIs(1));
+
+  ThunkMetadataListProto metadata_list_proto;
+  TF_ASSERT_OK(tsl::ReadTextProto(tsl::Env::Default(), dump_files.front(),
+                                  &metadata_list_proto));
+
+  EXPECT_THAT(metadata_list_proto, EqualsProto(R"pb(
+                thunk_metadata {
+                  thunk_info { thunk_id: 789 }
+                  thunk_kind: "kSequential"
+                }
+                thunk_metadata {
+                  thunk_info { thunk_id: 123 }
+                  thunk_kind: "kKernel"
+                }
+                thunk_metadata {
+                  thunk_info { thunk_id: 456 }
+                  thunk_kind: "kCopy"
+                }
+              )pb"));
 }
 
 }  // namespace
