@@ -416,6 +416,7 @@ py_test(
     tags = [
         "cpu",
         "manual",
+        "no_oss",
     ],
     deps = [
         ":tf_py_import",
