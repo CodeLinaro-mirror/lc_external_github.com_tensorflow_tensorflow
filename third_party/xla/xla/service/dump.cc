@@ -28,10 +28,12 @@ limitations under the License.
 
 #include "absl/algorithm/container.h"
 #include "absl/base/const_init.h"
+#include "absl/base/nullability.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -44,6 +46,9 @@ limitations under the License.
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/Transforms/LocationSnapshot.h"
+#include "xla/backends/gpu/runtime/sdc.pb.h"
+#include "xla/backends/gpu/runtime/sdc_buffer_id.h"
+#include "xla/backends/gpu/runtime/sdc_log_structs.h"
 #include "xla/debug_options_flags.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -1197,6 +1202,44 @@ absl::Status DumpProtoToDirectory(const tsl::protobuf::Message& message,
   }
   *full_path = tsl::io::JoinPath(directory, safe_file_name);
   return tsl::WriteBinaryProto(env, *full_path, message);
+}
+
+absl::Status DumpSdcLog(absl::Span<const gpu::SdcLogEntry> entries,
+                        const HloModule* absl_nullable hlo_module,
+                        const DebugOptions& debug_options) {
+  xla::gpu::SdcLogProto sdc_log_proto;
+
+  for (const auto& entry : entries) {
+    xla::gpu::SdcLogEntryProto* entry_proto = sdc_log_proto.add_entries();
+    entry_proto->set_thunk_id(entry.entry_id.thunk_id().value());
+    entry_proto->set_buffer_idx(entry.entry_id.buffer_idx());
+    entry_proto->set_checksum(entry.checksum);
+  }
+
+  int module_id = hlo_module != nullptr ? hlo_module->unique_id() : -1;
+  int64_t execution_count = 0;
+  {
+    static auto& module_id_to_execution_count ABSL_GUARDED_BY(mu) =
+        *new absl::flat_hash_map<int64_t, int64_t>();
+    absl::MutexLock lock(mu);
+    execution_count = module_id_to_execution_count[module_id]++;
+  }
+
+  std::string filename;
+  std::string suffix = absl::StrFormat("sdc_log.execution_%d", execution_count);
+  if (hlo_module != nullptr) {
+    filename = FilenameFor(*hlo_module, /*prefix=*/"", suffix);
+  } else {
+    filename =
+        FilenameFor(module_id,
+                    /*module_name=*/"null_hlo_module", /*prefix=*/"", suffix);
+  }
+
+  VLOG(1) << "[SDC LOG] dumping SDC log to " << filename << " under "
+          << debug_options.xla_dump_to();
+  DumpProtobufToFile(sdc_log_proto, debug_options, filename, nullptr);
+  VLOG(1) << "[SDC LOG] SDC log dumped to " << filename;
+  return absl::OkStatus();
 }
 
 }  // namespace xla

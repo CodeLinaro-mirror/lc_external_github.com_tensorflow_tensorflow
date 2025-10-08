@@ -16,14 +16,18 @@ limitations under the License.
 #ifndef XLA_SERVICE_DUMP_H_
 #define XLA_SERVICE_DUMP_H_
 
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "absl/base/nullability.h"
 #include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "mlir/IR/Operation.h"
+#include "xla/backends/gpu/runtime/sdc_log_structs.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/service/hlo_graph_dumper.h"
 #include "xla/tsl/platform/env.h"
@@ -212,6 +216,13 @@ void DumpHloConfigIfEnabled(const HloModule& module);
 std::optional<std::string> DumpNonDefaultDebugOptions(
     const HloModule& module, absl::string_view suffix,
     const DebugOptions* dump_options = nullptr);
+
+// Dumps a SDC log to opts.xla_dump_to/sdc_log.pb.
+//
+// This is used for debugging data corruption or non-deterministic execution.
+absl::Status DumpSdcLog(absl::Span<const gpu::SdcLogEntry> entries,
+                        const HloModule* absl_nullable hlo_module,
+                        const DebugOptions& debug_options);
 
 // Returns the non-default debug options as a string. The default debug options
 // are received from DefaultDebugOptionsIgnoringFlags().

@@ -25,6 +25,11 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
+#include "google/protobuf/text_format.h"
+#include "xla/backends/gpu/runtime/sdc.pb.h"
+#include "xla/backends/gpu/runtime/sdc_buffer_id.h"
+#include "xla/backends/gpu/runtime/sdc_log_structs.h"
+#include "xla/backends/gpu/runtime/thunk_id.h"
 #include "xla/debug_options_flags.h"
 #include "xla/hlo/analysis/alias_info.h"
 #include "xla/hlo/analysis/hlo_ordering.h"
@@ -45,7 +50,9 @@ limitations under the License.
 namespace xla {
 namespace {
 
+using ::testing::EqualsProto;
 using ::testing::IsEmpty;
+using ::testing::SizeIs;
 
 TEST(DumpHloIfEnabled, LargeConstantElided) {
   HloModuleConfig config;
@@ -489,6 +496,41 @@ TEST(DumpTest, DumpRepeatedStringTest) {
   EXPECT_THAT(
       non_default_options,
       testing::HasSubstr("xla_disable_hlo_passes: \"layout-assignment\"\n"));
+}
+
+TEST(DumpTest, DumpSdcLog) {
+  std::string dump_folder = tsl::testing::TmpDir();
+  DebugOptions options = DefaultDebugOptionsIgnoringFlags();
+  options.set_xla_dump_to(dump_folder);
+  std::vector<gpu::SdcLogEntry> entries{
+      gpu::SdcLogEntry{
+          /*entry_id=*/gpu::SdcBufferId::Create(gpu::ThunkId(123),
+                                                /*buffer_idx=*/45)
+              .value(),
+          /*checksum=*/0x12345678,
+      },
+      gpu::SdcLogEntry{
+          /*entry_id=*/gpu::SdcBufferId::Create(gpu::ThunkId(543),
+                                                /*buffer_idx=*/21)
+              .value(),
+          /*checksum=*/0x87654321,
+      },
+  };
+
+  EXPECT_OK(DumpSdcLog(entries, /*hlo_module=*/nullptr, options));
+
+  std::vector<std::string> matches;
+  TF_ASSERT_OK(tsl::Env::Default()->GetMatchingPaths(
+      tsl::io::JoinPath(dump_folder, "*sdc_log.execution_0.*"), &matches));
+  EXPECT_THAT(matches, SizeIs(1));
+
+  gpu::SdcLogProto sdc_log_proto;
+  TF_ASSERT_OK(tsl::ReadTextOrBinaryProto(tsl::Env::Default(), matches.front(),
+                                          &sdc_log_proto));
+  EXPECT_THAT(sdc_log_proto, EqualsProto(R"pb(
+                entries { thunk_id: 123 buffer_idx: 45 checksum: 0x12345678 }
+                entries { thunk_id: 543 buffer_idx: 21 checksum: 0x87654321 }
+              )pb"));
 }
 
 }  // namespace
