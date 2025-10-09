@@ -2609,6 +2609,40 @@ ENTRY main.5 {
   TF_EXPECT_OK(client->DmaUnmap(host_dma_ptr.get()));
 }
 
+TEST(StreamExecutorGpuClientTest, EventCaching) {
+  TF_ASSERT_OK_AND_ASSIGN(auto client,
+                          GetStreamExecutorGpuClient(DefaultOptions()));
+  auto* thread_pool =
+      tensorflow::down_cast<PjRtStreamExecutorClient*>(client.get())
+          ->thread_pool();
+  const auto& device = client->addressable_devices()[0];
+  LocalDeviceState* local_device_state =
+      tensorflow::down_cast<const PjRtStreamExecutorDevice*>(device)
+          ->local_device_state();
+  ASSERT_TRUE(local_device_state != nullptr);
+  size_t sync_point0 = local_device_state->GetNextComputeStreamSyncPoint();
+  TF_ASSERT_OK_AND_ASSIGN(auto event0,
+                          local_device_state->GetEventForComputeStreamSyncPoint(
+                              sync_point0, thread_pool));
+  TF_ASSERT_OK_AND_ASSIGN(auto event1,
+                          local_device_state->GetEventForComputeStreamSyncPoint(
+                              sync_point0, thread_pool));
+  size_t sync_point1 = local_device_state->GetNextComputeStreamSyncPoint();
+  TF_ASSERT_OK_AND_ASSIGN(auto event2,
+                          local_device_state->GetEventForComputeStreamSyncPoint(
+                              sync_point1, thread_pool));
+  // Events are getting cached.
+  EXPECT_EQ(&*event0, &*event1);
+  // New events are getting assigned.
+  EXPECT_NE(&*event0, &*event2);
+  tsl::BlockUntilReady(event2);
+  // sync_point1 is ready, so it is the most recent event.
+  TF_ASSERT_OK_AND_ASSIGN(auto event3,
+                          local_device_state->GetEventForComputeStreamSyncPoint(
+                              sync_point0, thread_pool));
+  EXPECT_EQ(&*event3, &*event2);
+}
+
 struct ShardedAutotuningTestInfo {
   bool use_xla_computation;
   int num_active_nodes;
