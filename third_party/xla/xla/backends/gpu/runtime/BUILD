@@ -1511,6 +1511,7 @@ cc_library(
     hdrs = ["collective_thunk.h"],
     deps = [
         ":thunk",
+        ":thunk_proto_cc",
         "//xla:debug_options_flags",
         "//xla:shape_util",
         "//xla:util",
