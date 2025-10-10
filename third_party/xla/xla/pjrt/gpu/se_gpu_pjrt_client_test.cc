@@ -2644,6 +2644,46 @@ TEST(StreamExecutorGpuClientTest, EventCaching) {
   EXPECT_EQ(&*event3, &*event2);
 }
 
+TEST(StreamExecutorGpuClientTest, LinkedEventPromise) {
+  TF_ASSERT_OK_AND_ASSIGN(auto pjrt_client,
+                          GetStreamExecutorGpuClient(DefaultOptions()));
+  auto* client =
+      tensorflow::down_cast<PjRtStreamExecutorClient*>(pjrt_client.get());
+  auto* memory_space = client->memory_spaces()[0];
+  auto literal = LiteralUtil::CreateR1<float>({41.0f, 42.0f, 43.0f, 44.0f});
+  TF_ASSERT_OK_AND_ASSIGN(
+      Shape device_shape,
+      client->MakeDefaultShapeForMemorySpace(memory_space, literal.shape(),
+                                             /*device_layout=*/nullptr));
+  TF_ASSERT_OK_AND_ASSIGN(
+      int64_t on_device_bytes_count,
+      client->GetOnDeviceBytesCount(memory_space, device_shape));
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto raw_buffer,
+      client->AllocateRawBuffer(memory_space, on_device_bytes_count,
+                                /*retry_on_oom=*/true,
+                                /*allocate_after=*/{}));
+  tsl::RCReference<PjRtDeviceEventPromise> promise;
+  tsl::RCReference<PjRtDeviceEvent> event;
+  TF_ASSERT_OK_AND_ASSIGN(std::tie(promise, event),
+                          client->CreateLinkedEventPromise(memory_space, ""));
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto buffer,
+      client->DefineBuffer(device_shape, raw_buffer, {std::move(event)},
+                           /*raw_buffer_is_mutable=*/true));
+
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto definition_event,
+      client->LinearizeInto(
+          literal, device_shape,
+          PjRtClient::HostBufferSemantics::kImmutableUntilTransferCompletes,
+          raw_buffer));
+  promise->Set(std::move(definition_event));
+
+  TF_ASSERT_OK_AND_ASSIGN(auto new_literal, buffer->ToLiteralSync());
+  ASSERT_EQ(literal, *new_literal);
+}
+
 struct ShardedAutotuningTestInfo {
   bool use_xla_computation;
   int num_active_nodes;

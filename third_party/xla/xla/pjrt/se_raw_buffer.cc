@@ -64,6 +64,49 @@ Future<> PjRtStreamExecutorDeviceEvent::GetReadyFuture() {
       });
 }
 
+PjRtStreamExecutorDeviceEventPromise::PjRtStreamExecutorDeviceEventPromise(
+    PjRtMemorySpace* memory_space, LocalDeviceState* local_device,
+    tsl::thread::ThreadPool* thread_pool)
+    : memory_space_(memory_space),
+      local_device_(local_device),
+      av_(tsl::MakeIndirectAsyncValue()),
+      event_(tsl::MakeConstructedAsyncValueRef<BufferSequencingEvent>(
+          thread_pool,
+          tsl::AsyncValueRef<BufferSequencingEvent::EventState>(av_))) {}
+
+void PjRtStreamExecutorDeviceEventPromise::Set(
+    tsl::RCReference<PjRtDeviceEvent> event) {
+  SetFromSEEvent(
+      tensorflow::down_cast<PjRtStreamExecutorDeviceEvent*>(event.get())
+          ->event());
+}
+
+void PjRtStreamExecutorDeviceEventPromise::SetFromSEEvent(
+    BufferSequencingEventRef event) {
+  av_->ForwardTo(event->event().CopyRCRef());
+  event.AndThen([event = event_, original_event = event]() {
+    if (auto* error = original_event.GetErrorIfPresent()) {
+      event.SetError(*error);
+    }
+    event.SetStateConcrete();
+  });
+}
+
+void PjRtStreamExecutorDeviceEventPromise::SetReady() {
+  auto* client =
+      tensorflow::down_cast<PjRtStreamExecutorClient*>(memory_space_->client());
+  auto result = BufferSequencingEvent::Create(client->thread_pool());
+  auto stream = local_device_->BorrowStreamFromPool();
+  auto status =
+      client->AllocateAndRecordEvent(result, local_device_, stream.get());
+  local_device_->ReturnStreamToPool(std::move(stream));
+  if (!status.ok()) {
+    SetError(status);
+  } else {
+    SetFromSEEvent(result);
+  }
+}
+
 absl::StatusOr<tsl::RCReference<PjRtDeviceEvent>>
 PjRtStreamExecutorRawBuffer::CopyRawHostToDeviceAndReturnEvent(
     const void* src, int64_t offset, int64_t transfer_size) {
