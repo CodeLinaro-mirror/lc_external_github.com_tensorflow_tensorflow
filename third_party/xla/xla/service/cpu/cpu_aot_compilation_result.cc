@@ -29,6 +29,8 @@ limitations under the License.
 #include "absl/memory/memory.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "xla/backends/cpu/buffer_allocation_info.h"
+#include "xla/backends/cpu/buffer_allocation_info_util.h"
 #include "xla/backends/cpu/constant_allocation.h"
 #include "xla/backends/cpu/runtime/function_library.h"
 #include "xla/backends/cpu/runtime/thunk.h"
@@ -87,11 +89,15 @@ CpuAotCompilationResult::Create(
                       thunk_sequence_serdes.ToProto(thunks));
 
   std::vector<cpu_function_runtime::BufferInfo> buffer_infos;
+  std::vector<cpu::BufferAllocationInfo> buffer_allocation_infos;
   std::optional<size_t> temp_allocation_index;
 
   if (buffer_assignment) {
     buffer_infos =
         CreateBufferInfosFromBufferAssignment(*hlo_module, *buffer_assignment);
+
+    buffer_allocation_infos =
+        CreateBufferAllocationInfos(*hlo_module, *buffer_assignment);
 
     // Find temp allocation index if it exists
     for (const BufferAllocation& allocation :
