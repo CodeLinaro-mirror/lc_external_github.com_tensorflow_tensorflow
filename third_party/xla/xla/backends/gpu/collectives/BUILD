@@ -518,6 +518,7 @@ xla_test(
     srcs = ["nvshmem_collectives_test.cc"],
     backend_tags = {"gpu": [
         "multi_gpu_h100",
+        "multi_gpu_b200",
         "no_oss",
         "noasan",
         "nomsan",

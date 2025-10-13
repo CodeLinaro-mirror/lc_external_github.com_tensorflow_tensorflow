@@ -233,6 +233,7 @@ xla_test(
     backend_tags = {
         "gpu": [
             "multi_gpu_h100",
+            "multi_gpu_b200",
             "no_oss",
             "nomsan",
         ],
@@ -247,6 +248,7 @@ xla_test(
         ":create_client",
         ":functional_hlo_runner",
         ":hlo_input_output_format",
+        ":profiler_interface",
         "//xla:debug_options_flags",
         "//xla:status_macros",
         "//xla:xla_data_proto_cc",
@@ -259,7 +261,6 @@ xla_test(
         "//xla/service:computation_layout",
         "//xla/service:hlo_proto_cc",
         "//xla/tests:xla_test_backend_predicates",
-        "//xla/tools/multihost_hlo_runner:profiler_interface",
         "//xla/tsl/lib/core:status_test_util",
         "//xla/tsl/platform:env",
         "//xla/tsl/platform:errors",

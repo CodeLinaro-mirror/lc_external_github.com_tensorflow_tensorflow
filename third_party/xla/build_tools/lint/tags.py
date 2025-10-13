@@ -98,6 +98,9 @@ _TAGS_TO_DOCUMENTATION_MAP = {
     "multi_gpu_h100": (
         "Used by `xla_test` to signal that multiple H100s are needed."
     ),
+    "multi_gpu_b200": (
+        "Used by `xla_test` to signal that multiple B200s are needed."
+    ),
 }
 
 

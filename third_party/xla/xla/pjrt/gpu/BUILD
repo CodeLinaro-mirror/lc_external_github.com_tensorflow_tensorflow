@@ -187,6 +187,7 @@ xla_test(
     srcs = ["se_gpu_pjrt_client_test.cc"],
     backend_tags = {"gpu": [
         "multi_gpu_h100",
+        "multi_gpu_b200",
         "no_oss",
         "noasan",
         "nomsan",
@@ -292,6 +293,7 @@ xla_test(
     srcs = ["nvshmem_gpu_collectives_test.cc"],
     backend_tags = {"gpu": [
         "multi_gpu_h100",
+        "multi_gpu_b200",
         "no_oss",
         "noasan",
         "nomsan",
@@ -359,6 +361,7 @@ xla_test(
     srcs = ["se_gpu_pjrt_client_nvshmem_test.cc"],
     backend_tags = {"gpu": [
         "multi_gpu_h100",
+        "multi_gpu_b200",
         "no_oss",
         "noasan",
         "nomsan",
