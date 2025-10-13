@@ -1838,6 +1838,100 @@ absl::Status EmitGeneric(mlir::OpBuilder builder,
   return absl::OkStatus();
 }
 
+std::vector<llvm::Metadata*> ExtractNvvmAnnotations(
+    llvm::Module* ll_triton_module) {
+  std::vector<llvm::Metadata*> captured_nvvm_annotations;
+  llvm::NamedMDNode* nvvm_annotations =
+      ll_triton_module->getNamedMetadata("nvvm.annotations");
+  if (nvvm_annotations) {
+    for (llvm::MDNode* operand : nvvm_annotations->operands()) {
+      captured_nvvm_annotations.push_back(operand);
+    }
+    ll_triton_module->eraseNamedMetadata(nvvm_annotations);
+  }
+  return captured_nvvm_annotations;
+}
+
+absl::StatusOr<stream_executor::gpu::TmaMetadata> ExtractTmaMetadata(
+    mlir::LLVM::LLVMFuncOp func_op) {
+  stream_executor::gpu::TmaMetadata tma_metadata;
+  for (auto [idx, arg] : llvm::enumerate(func_op.getArguments())) {
+    if (auto attr = func_op.getArgAttrOfType<mtx::TmaDescriptorAttr>(
+            idx, "tt.tma_descriptor")) {
+      TF_ASSIGN_OR_RETURN(
+          auto tma_desc,
+          CreateTmaDescriptor(attr.getGlobalShape(), attr.getTileShape(),
+                              attr.getTileStrides(), attr.getLayout(),
+                              attr.getElementByteSize(),
+                              attr.getSwizzleMode().getValue()));
+      tma_metadata.arg_index_to_tma_info.insert({idx, tma_desc});
+    }
+  }
+  return tma_metadata;
+}
+
+absl::StatusOr<se::ThreadDim> ExtractThreadDims(
+    mlir::ModuleOp triton_module, mlir::LLVM::LLVMFuncOp func_op) {
+  // Extract the launch information from the Triton module.
+  auto threads_per_warp_attr =
+      triton_module->getAttrOfType<mlir::IntegerAttr>("ttg.threads-per-warp");
+  if (!threads_per_warp_attr) {
+    return absl::InternalError("ttg.threads-per-warp attribute not found.");
+  }
+  auto num_warps_attr =
+      triton_module->getAttrOfType<mlir::IntegerAttr>("ttg.num-warps");
+  if (!num_warps_attr) {
+    return absl::InternalError("ttg.num-warps attribute not found.");
+  }
+  auto total_num_warps_attr =
+      triton_module->getAttrOfType<mlir::IntegerAttr>("ttg.total-num-warps");
+  if (!total_num_warps_attr) {
+    return absl::InternalError("ttg.total-num-warps attribute not found.");
+  }
+  auto reqntid_attr =
+      func_op->getAttrOfType<mlir::DenseI32ArrayAttr>("nvvm.reqntid");
+  if (!reqntid_attr) {
+    return absl::InternalError("nvvm.reqntid attribute not found.");
+  }
+  auto reqntids = reqntid_attr.asArrayRef();
+  if (reqntids.empty()) {
+    return absl::InternalError("nvvm.reqntid attribute is empty.");
+  }
+  if (reqntids.size() > 3) {
+    return absl::InternalError(
+        "nvvm.reqntid attribute has more than 3 dimensions.");
+  }
+
+  // Validate the launch information.
+  if (num_warps_attr.getInt() != total_num_warps_attr.getInt()) {
+    VLOG(6)
+        << "num_warps and total_num_warps are different! This can happen if "
+           "Triton compilation decides to use a different number of warps than "
+           "configured. e.g. auto warp specialization can do that.";
+  }
+  int64_t expected_total_threads = reqntids[0];
+  for (int i = 1; i < reqntids.size(); ++i) {
+    expected_total_threads *= reqntids[i];
+  }
+  int64_t actual_total_threads =
+      total_num_warps_attr.getInt() * threads_per_warp_attr.getInt();
+  if (actual_total_threads != expected_total_threads) {
+    return absl::InternalError(absl::StrCat(
+        "Expected total threads as per reqntid attribute to be ",
+        expected_total_threads, " but got ", actual_total_threads,
+        " as per ttg.total-num-warps and tt.threads-per-warp attributes."));
+  }
+
+  se::ThreadDim thread_dims(reqntids[0], 1, 1);
+  if (reqntids.size() > 1) {
+    thread_dims.y = reqntids[1];
+  }
+  if (reqntids.size() > 2) {
+    thread_dims.z = reqntids[2];
+  }
+
+  return thread_dims;
+}
 }  // namespace
 
 void LoadMlirDialectsForTriton(mlir::MLIRContext& mlir_context) {
@@ -1927,35 +2021,6 @@ void EmitReturnOp(EmitterLocOpBuilder b, absl::string_view fusion_kind) {
   } else {
     b.create<mlir::func::ReturnOp>();
   }
-}
-
-absl::StatusOr<stream_executor::gpu::TmaMetadata> ExtractTmaMetadata(
-    mlir::ModuleOp triton_module, absl::string_view kernel_name) {
-  stream_executor::gpu::TmaMetadata tma_metadata;
-  SmallVector<mlir::LLVM::LLVMFuncOp> func_ops;
-  for (auto func : triton_module.getOps<mlir::LLVM::LLVMFuncOp>()) {
-    // Custom calls will also match to LLVMFuncOp, so we are only interested in
-    // the entry function.
-    if (func.getName().str() == kernel_name) {
-      func_ops.push_back(func);
-    }
-  }
-  CHECK_EQ(func_ops.size(), 1)
-      << "Expected a single LLVMFuncOp in the module for the entry function.";
-
-  for (auto [idx, arg] : llvm::enumerate(func_ops[0].getArguments())) {
-    if (auto attr = func_ops[0].getArgAttrOfType<mtx::TmaDescriptorAttr>(
-            idx, "tt.tma_descriptor")) {
-      TF_ASSIGN_OR_RETURN(
-          auto tma_desc,
-          CreateTmaDescriptor(attr.getGlobalShape(), attr.getTileShape(),
-                              attr.getTileStrides(), attr.getLayout(),
-                              attr.getElementByteSize(),
-                              attr.getSwizzleMode().getValue()));
-      tma_metadata.arg_index_to_tma_info.insert({idx, tma_desc});
-    }
-  }
-  return tma_metadata;
 }
 
 absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> CreateTritonModule(
@@ -2175,14 +2240,7 @@ absl::StatusOr<TritonWrapperResult> CompileTritonToLLVM(
     }
 
     // Integrate LLVM matmul kernel into XLA's LLVM module.
-    auto* nvvm_annotations =
-        ll_triton_module->getNamedMetadata("nvvm.annotations");
-    if (nvvm_annotations) {
-      for (auto operand : nvvm_annotations->operands()) {
-        captured_nvvm_annotations.push_back(operand);
-      }
-      ll_triton_module->eraseNamedMetadata(nvvm_annotations);
-    }
+    captured_nvvm_annotations = ExtractNvvmAnnotations(ll_triton_module.get());
     ll_triton_module->setDataLayout(llvm_module->getDataLayout());
     ll_triton_module->setTargetTriple(llvm_module->getTargetTriple());
     // Use override flag because libdevice functions can be present in both.
@@ -2214,13 +2272,34 @@ absl::StatusOr<TritonWrapperResult> CompileTritonToLLVM(
                  cluster_info.clusterDimZ == 1);
   }
 
-  // It's okay for tma_metadata to be empty; it's only populated when used
-  // explicitly.
-  TF_ASSIGN_OR_RETURN(stream_executor::gpu::TmaMetadata tma_metadata,
-                      ExtractTmaMetadata(triton_module, kernel_name));
+  SmallVector<mlir::LLVM::LLVMFuncOp> func_ops;
+  for (auto func : triton_module.getOps<mlir::LLVM::LLVMFuncOp>()) {
+    // Custom calls will also match to LLVMFuncOp, so we are only interested in
+    // the entry function.
+    if (func.getName().str() == kernel_name) {
+      func_ops.push_back(func);
+    }
+  }
+  CHECK_EQ(func_ops.size(), 1)
+      << "Expected a single LLVMFuncOp in the module for the entry function.";
+  mlir::LLVM::LLVMFuncOp func_op = func_ops[0];
 
-  return {
-      {shared_mem_bytes, cluster_dim, tma_metadata, captured_nvvm_annotations}};
+  TF_ASSIGN_OR_RETURN(se::ThreadDim thread_dims,
+                      ExtractThreadDims(triton_module, func_op));
+  TF_ASSIGN_OR_RETURN(stream_executor::gpu::TmaMetadata tma_metadata,
+                      ExtractTmaMetadata(func_op));
+
+  // Propagate the following extracted information from the Triton module:
+  // - TMA metadata.
+  // - Total threads per block. Computed from module attributes.
+  // - Captured NVVM annotations.
+  TritonWrapperResult result;
+  result.shmem_bytes = shared_mem_bytes;
+  result.cluster_dim = cluster_dim;
+  result.tma_metadata = tma_metadata;
+  result.thread_dims = thread_dims;
+  result.nvvm_annotations = captured_nvvm_annotations;
+  return result;
 }
 
 std::string GetLibdevicePath(const HloModuleConfig& hlo_config,
