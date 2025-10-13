@@ -181,9 +181,12 @@ class ExportNamedComputationsPass
           namedComputationOp.getOperands());
       callOp->setAttrs(callOpAttrs);
 
-      // Copy the output shardings to the call op.
-      if (outShardings.has_value()) {
-        mlir::sdy::setShardings(callOp, *outShardings);
+      // Copy the func output shardings to the call op.
+      FuncOp funcOp = symbolTable.lookup<FuncOp>(funcSymName);
+      if (TensorShardingPerValueAttr funcResultShardings =
+              mlir::sdy::getFuncResultShardings(callOp, funcOp, symbolTable);
+          funcResultShardings) {
+        mlir::sdy::setShardings(callOp, funcResultShardings);
         if (manualAxesAttr) {
           callOp->setAttr(kManualAxes, manualAxesAttr);
         }
