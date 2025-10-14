@@ -89,8 +89,10 @@ absl::StatusOr<SingleBufferCopyPlan> SetupTransferDestList(
   size_t copy_size = xla::ShapeUtil::ByteSizeOf(shape);
 
   results.dests.push_back(MakeDmaDestination(atm, 0, copy_size));
+  // Assume a custom layout as `shape` can contain any layout.
   TF_ASSIGN_OR_RETURN(auto arr,
-                      ifrt_client->CreatePjRtArray(atm->RetrieveBuffer(0)));
+                      ifrt_client->CreatePjRtArray(atm->RetrieveBuffer(0),
+                                                   /*has_custom_layout=*/true));
   results.arrays.push_back(std::move(arr));
   return results;
 }
