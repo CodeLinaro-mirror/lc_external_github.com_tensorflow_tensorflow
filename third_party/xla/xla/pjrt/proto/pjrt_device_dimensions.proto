@@ -1,0 +1,11 @@
+edition = "2024";
+
+package xla;
+
+option features.field_presence = IMPLICIT;
+
+message PjRtDeviceDimensionsProto {
+  int32 x = 1;
+  int32 y = 2;
+  int32 z = 3;
+}
