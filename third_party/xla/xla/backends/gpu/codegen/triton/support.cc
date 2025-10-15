@@ -763,6 +763,12 @@ CodegenDecision IsTritonSupportedComputation(
     const se::GpuComputeCapability& gpu_compute_capability) {
   VLOG(3) << "IsTritonSupportedComputation: " << computation.ToString();
   for (const auto* instruction : computation.instructions()) {
+    if (instruction == computation.root_instruction() &&
+        instruction->opcode() == HloOpcode::kTuple) {
+      // While Tuple is not generally supported by Triton codegen, it is
+      // supported for fusion roots.
+      continue;
+    }
     if (CodegenDecision can_codegen =
             IsTritonSupportedInstruction(*instruction, gpu_compute_capability);
         !can_codegen) {
