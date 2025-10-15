@@ -795,7 +795,7 @@ CudaExecutor::VmmMemoryHandle& CudaExecutor::VmmMemoryHandle::operator=(
 }
 
 absl::StatusOr<CudaExecutor::VmmMemoryHandle>
-CudaExecutor::RetainVmmMemoryHandle(void* ptr) {
+CudaExecutor::RetainVmmMemoryHandle(void* ptr) const {
   if (!is_vmm_supported_) {
     return absl::InternalError("VMM is not supported on this device.");
   }
@@ -1799,7 +1799,7 @@ absl::StatusOr<TensorMap> CudaExecutor::CreateTensorMap(
 }
 
 absl::StatusOr<std::unique_ptr<GpuExecutor::MulticastMemory>>
-CudaExecutor::CreateMulticastMemory(uint64_t size, int num_devices) {
+CudaExecutor::CreateMulticastMemory(uint64_t size, int num_devices) const {
   if (!is_multicast_supported_) {
     return absl::FailedPreconditionError(
         "Multicast memory is not supported on this platform.");
@@ -1837,8 +1837,9 @@ CudaExecutor::CudaMulticastMemory::~CudaMulticastMemory() {
 }
 
 absl::Status CudaExecutor::CudaMulticastMemory::Initialize(
-    uint64_t size, int num_devices, GpuExecutor* gpu_executor) {
-  CudaExecutor* cuda_executor = dynamic_cast<CudaExecutor*>(gpu_executor);
+    uint64_t size, int num_devices, const GpuExecutor* gpu_executor) {
+  const CudaExecutor* cuda_executor =
+      dynamic_cast<const CudaExecutor*>(gpu_executor);
   if (cuda_executor == nullptr) {
     return absl::InvalidArgumentError("GpuExecutor is not a CudaExecutor.");
   }
@@ -1893,8 +1894,9 @@ absl::Status CudaExecutor::CudaMulticastMemory::SubscribeDevice(
 }
 
 absl::StatusOr<void*> CudaExecutor::CudaMulticastMemory::MapMemory(
-    void* device_ptr, GpuExecutor* gpu_executor) {
-  CudaExecutor* cuda_executor = dynamic_cast<CudaExecutor*>(gpu_executor);
+    void* device_ptr, const GpuExecutor* gpu_executor) {
+  const CudaExecutor* cuda_executor =
+      dynamic_cast<const CudaExecutor*>(gpu_executor);
   if (cuda_executor == nullptr) {
     return absl::InvalidArgumentError("GpuExecutor is not a CudaExecutor.");
   }
