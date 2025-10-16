@@ -238,6 +238,25 @@ absl::StatusOr<HloModuleAndArguments> ReadModuleFromSnapshotBinaryProtoFile(
   return hlo_module_and_arguments;
 }
 
+namespace {
+
+absl::StatusOr<HloUnoptimizedSnapshot> ReadHloUnoptimizedSnapshot(
+    tsl::protobuf::io::CopyingInputStreamAdaptor& adaptor) {
+  HloUnoptimizedSnapshot proto;
+  tsl::protobuf::io::CodedInputStream input_stream(&adaptor);
+
+  // Try to deserialize snapshot with arguments directly.
+  if (!proto.ParseFromCodedStream(&input_stream)) {
+    // Back the stream to the beginning if we fail to parse the snapshot.
+    adaptor.BackUp(adaptor.ByteCount());
+    TF_ASSIGN_OR_RETURN(proto, DeserializeHloUnoptimizedSnapshot(&adaptor));
+  }
+
+  return proto;
+}
+
+}  // namespace
+
 absl::StatusOr<HloModuleAndArguments>
 ReadModuleFromUnoptimizedSnapshotBinaryProtoFile(absl::string_view hlo_file) {
   HloModuleAndArguments hlo_module_and_arguments;
@@ -250,7 +269,7 @@ ReadModuleFromUnoptimizedSnapshotBinaryProtoFile(absl::string_view hlo_file) {
   tsl::protobuf::io::CopyingInputStreamAdaptor adaptor(&input_stream);
 
   TF_ASSIGN_OR_RETURN(HloUnoptimizedSnapshot proto,
-                      DeserializeHloUnoptimizedSnapshot(&adaptor));
+                      ReadHloUnoptimizedSnapshot(adaptor));
 
   TF_ASSIGN_OR_RETURN(hlo_module_and_arguments.hlo_module,
                       CreateModuleFromProto(proto.hlo_module()));
