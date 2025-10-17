@@ -150,7 +150,9 @@ void PremappedCopierState::ReturnBuffer(void* buffer) {
     available_copy_offsets_.push_back(buffer);
     work_list = FindWorkLocked();
   }
+  LOG(INFO) << "Return midway: " << work_list.size();
   StartWorkUnlocked(work_list);
+  LOG(INFO) << "Return done";
 }
 
 PremappedCopierState::WorkList PremappedCopierState::FindWorkLocked() {
@@ -180,7 +182,9 @@ void PremappedCopierState::StartWorkUnlocked(const WorkList& work_list) {
             --num_parallel_copies_;
             work_item->is_ready = true;
             work_item->result_status = s;
-            FlushReadyWorkItemsInOrder();
+            if (!currently_flushing_) {
+              FlushReadyWorkItemsInOrder();
+            }
             work_list2 = FindWorkLocked();
           }
           StartWorkUnlocked(work_list2);
@@ -194,14 +198,20 @@ void PremappedCopierState::FlushReadyWorkItemsInOrder() {
     if (!work_item->is_ready) {
       return;
     }
+    if (!work_item->result_status.ok()) {
+      available_copy_offsets_.push_back(work_item->dest_buffer);
+    }
+    currently_flushing_ = true;
+    mu_.unlock();
     if (work_item->result_status.ok()) {
       std::move(work_item->on_done)(this, work_item->dest_buffer,
                                     work_item->work);
     } else {
       std::move(work_item->on_done)(this, work_item->result_status,
                                     work_item->work);
-      available_copy_offsets_.push_back(work_item->dest_buffer);
     }
+    mu_.lock();
+    currently_flushing_ = false;
     work_queue_.pop_front();
     ++base_seq_id_;
   }
@@ -475,8 +485,10 @@ bool PjRtBufferEntry::Handle(tsl::RCReference<ConnectionState> state,
                                      is_largest, buf.status());
                     return;
                   }
+                  LOG(INFO) << "Started : " << buf.value();
                   state->Send(req_id, buf.value(), chunk.offset, chunk.size,
                               is_largest, [copier_state, buf = buf.value()]() {
+                                LOG(INFO) << "Return happened?? " << (void*)buf;
                                 copier_state->ReturnBuffer(buf);
                               });
                 });

@@ -73,12 +73,14 @@ uint32_t ZeroCopySendAckTable::Seal(absl::AnyInvocable<void() &&> on_done) {
     GCTables();
   }
   if (on_done) {
+    LOG(INFO) << "Handling acks?!";
     std::move(on_done)();
   }
   return ack_id;
 }
 
 void ZeroCopySendAckTable::HandleAck(uint32_t v) {
+  LOG(INFO) << "Handling acks: " << v;
   absl::AnyInvocable<void() &&> on_done;
   {
     absl::MutexLock l(mu_);
@@ -180,6 +182,8 @@ class SendConnectionHandler : public PollEventLoop::Handler {
         artificial_send_limit_(artificial_send_limit) {}
 
   ~SendConnectionHandler() override {
+    msg_queue_->Poison(absl::InternalError("A send connection has failed."));
+    LOG(INFO) << this << "Send closing?";
 #ifdef MSG_ZEROCOPY
     table_.ClearAll();
 #endif
@@ -191,14 +195,22 @@ class SendConnectionHandler : public PollEventLoop::Handler {
   }
 
   void DoSend(aux::BulkTransportInterface::SendMessage msg) {
+    LOG(INFO) << this << " -- Schedling send: " << bond_id_;
     std::move(msg.on_send)(bond_id_, msg.size);
+    absl::Cleanup cl([&]() {
+      if (msg.on_done) {
+        LOG(INFO) << "On DONE NOT CALLED!?";
+      }
+    });
     msg.on_send = nullptr;
 #ifndef MSG_ZEROCOPY
     size_t offset = 0;
     while (offset < msg.size) {
+      LOG(INFO) << "What here?";
       ssize_t send_count =
           send(fd_, reinterpret_cast<char*>(msg.data) + offset,
                std::min(msg.size - offset, artificial_send_limit_), 0);
+      LOG(INFO) << "What here? " << send_count;
       if (send_count <= 0) {
         break;
       }
@@ -213,9 +225,11 @@ class SendConnectionHandler : public PollEventLoop::Handler {
 #else
     size_t offset = 0;
     while (offset < msg.size) {
+      LOG(INFO) << "What here?";
       ssize_t send_count = send(
           fd_, reinterpret_cast<char*>(msg.data) + offset,
           std::min(msg.size - offset, artificial_send_limit_), MSG_ZEROCOPY);
+      LOG(INFO) << "What here? " << send_count;
       if (send_count <= 0) {
         break;
       }
@@ -274,6 +288,7 @@ class SendConnectionHandler : public PollEventLoop::Handler {
         return false;
       } else {
         state_.store(SocketState::kSending);
+        LOG(INFO) << "Reporting for duty!";
         msg_queue_->ReportReadyToSend(this);
       }
     }
@@ -356,6 +371,23 @@ std::shared_ptr<SharedSendWorkQueue> SharedSendWorkQueue::Start() {
   return result;
 }
 
+void SharedSendMsgQueue::Poison(absl::Status s) {
+  mu_.lock();
+  poison_status_ = s;
+  auto work_items = std::move(work_items_);
+  mu_.unlock();
+  LOG(INFO) << "Poisoning " << s;
+  while (!work_items.empty()) {
+    LOG(INFO) << "Does this work? " << work_items.size();
+    auto work = std::move(work_items.front());
+    work_items.pop_front();
+    std::move(work.on_send)(s, work.size);
+    std::move(work.on_done)();
+    LOG(INFO) << "Does this work (done)? " << work.data << " - "
+              << work_items.size();
+  }
+}
+
 void SharedSendMsgQueue::ReportReadyToSend(SendConnectionHandler* handler) {
   mu_.lock();
   if (!work_items_.empty()) {
@@ -374,7 +406,17 @@ void SharedSendMsgQueue::ReportReadyToSend(SendConnectionHandler* handler) {
 
 void SharedSendMsgQueue::ScheduleSendWork(
     aux::BulkTransportInterface::SendMessage msg) {
+  LOG(INFO) << "Scheduling msg: " << msg.data;
   mu_.lock();
+  if (!poison_status_.ok()) {
+    auto s = poison_status_;
+    mu_.unlock();
+    LOG(INFO) << "Sending poisoned msg: " << s << " -> " << msg.data;
+    std::move(msg.on_send)(std::move(s), msg.size);
+    std::move(msg.on_done)();
+    LOG(INFO) << "Sending poisoned msg (done)";
+    return;
+  }
   DCHECK(!shutdown_);
   if (work_items_.empty() && !handlers_.empty()) {
     auto* handler = handlers_.front();
