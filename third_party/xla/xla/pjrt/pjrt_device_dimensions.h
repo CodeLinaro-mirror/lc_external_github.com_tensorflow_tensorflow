@@ -45,6 +45,8 @@ class PjRtDeviceDimensions {
 
   size_t size() const { return dimensions_.size(); }
 
+  absl::Span<const int32_t> dimensions() const { return dimensions_; }
+
   friend bool operator==(const PjRtDeviceDimensions& a,
                          const PjRtDeviceDimensions& b) {
     return a.dimensions_ == b.dimensions_;

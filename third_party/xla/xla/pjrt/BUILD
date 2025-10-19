@@ -392,6 +392,7 @@ xla_cc_test(
         ":pjrt_device_dimensions",
         "//xla/pjrt/proto:pjrt_device_dimensions_proto_cc",
         "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
     ],
@@ -474,6 +475,7 @@ cc_library(
     hdrs = ["pjrt_compiler.h"],
     visibility = internal_visibility([":friends"]),
     deps = [
+        ":pjrt_common",
         ":pjrt_device_description",
         ":pjrt_device_dimensions",
         ":pjrt_executable",
