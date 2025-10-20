@@ -1431,6 +1431,18 @@ diff --ruN a/stablehlo/stablehlo/transforms/ChloLegalizeToStablehlo.cpp b/stable
    populateChloBroadcastingPatterns(context, patterns);
    populateChloDecompositionPatterns(context, patterns);
  }
+diff --ruN a/stablehlo/stablehlo/transforms/StablehloRefineShapes.cpp b/stablehlo/stablehlo/transforms/StablehloRefineShapes.cpp
+--- stablehlo/stablehlo/transforms/StablehloRefineShapes.cpp
++++ stablehlo/stablehlo/transforms/StablehloRefineShapes.cpp
+@@ -461,7 +461,7 @@
+   LogicalResult emitDifferentRefinementContextError(func::FuncOp func,
+                                                     RefinementKey key,
+                                                     RefinementKey prevKey) {
+-    return func.emitOpError() << "refined with invompatible refinement keys:"
++    return func.emitOpError() << "refined with incompatible refinement keys:"
+                               << "\n  curr=" << key.toString()
+                               << "\n  prev=" << prevKey.toString();
+   }
 diff --ruN a/stablehlo/stablehlo/transforms/optimization/Passes.td b/stablehlo/stablehlo/transforms/optimization/Passes.td
 --- stablehlo/stablehlo/transforms/optimization/Passes.td
 +++ stablehlo/stablehlo/transforms/optimization/Passes.td
