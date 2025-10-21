@@ -1,6 +1,10 @@
 load("//xla/tsl:tsl.bzl", "internal_visibility")
 load("//xla/tsl:tsl.default.bzl", "filegroup")
 load(
+    "//xla/tsl/platform:build_config.bzl",
+    "tsl_cc_test",
+)
+load(
     "//xla/tsl/platform:rules_cc.bzl",
     "cc_library",
 )
@@ -245,6 +249,22 @@ filegroup(
         "//tensorflow/core:__pkg__",
         "//tensorflow/core/lib/monitoring:__pkg__",
     ]),
+)
+
+tsl_cc_test(
+    name = "cell_reader_test",
+    size = "small",
+    srcs = ["cell_reader_test.cc"],
+    deps = [
+        ":cell_reader",
+        ":counter",
+        ":gauge",
+        ":percentile_sampler",
+        ":sampler",
+        ":test_utils",
+        ":types",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 filegroup(
