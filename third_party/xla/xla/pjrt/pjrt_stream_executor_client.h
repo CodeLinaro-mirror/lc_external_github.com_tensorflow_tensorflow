@@ -600,17 +600,6 @@ class PjRtStreamExecutorBuffer : public CommonPjRtBufferImpl {
   PjRtStreamExecutorBuffer& operator=(const PjRtStreamExecutorBuffer&) = delete;
   PjRtStreamExecutorBuffer& operator=(PjRtStreamExecutorBuffer&&) = delete;
 
-  // Drops the buffer's reference to its associated device memory, leaving the
-  // buffer in an invalid state. The memory will be freed lazily when all async
-  // operations using the buffer have completed, according to the allocation
-  // semantics of the underlying platform. Delete may briefly block if another
-  // thread is in the process of enqueuing an operation on this buffer, but it
-  // will never block for a stream operation to complete. If an external
-  // framework holds a reference to the TrackedDeviceBuffer via
-  // GetBufferWithExternalReference, the memory will not be freed until the
-  // external framework drops the reference.
-  void Delete() override;
-
   // Returns a hold on the TrackedDeviceBuffer holding the device
   // buffers. See comment on ScopedHold.
   ScopedHold GetBufferWithHold(ScopedHold::Type type);
@@ -620,8 +609,6 @@ class PjRtStreamExecutorBuffer : public CommonPjRtBufferImpl {
   ScopedHold GetBufferWithExternalReference() {
     return GetBufferWithHold(ScopedHold::kExternalReference);
   }
-
-  Future<> GetReadyFuture() override;
 
   // Similar to Delete, drops the buffer's reference to its associated device
   // memory, leaving the buffer in an invalid state, but returns the
@@ -640,9 +627,6 @@ class PjRtStreamExecutorBuffer : public CommonPjRtBufferImpl {
   // accesses via the buffer returned from Release.
   absl::StatusOr<tsl::RCReference<RawSEDeviceMemory>> Release(
       bool wait_for_operations_to_complete);
-
-  absl::StatusOr<std::unique_ptr<PjRtBuffer>> DonateWithControlDependency(
-      Future<> dependency) override;
 
  private:
   friend class PjRtClient;
