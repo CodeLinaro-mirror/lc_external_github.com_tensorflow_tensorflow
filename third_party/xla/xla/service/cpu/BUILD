@@ -503,15 +503,14 @@ xla_test(
     ],
 )
 
-xla_test(
+xla_cc_test(
     name = "cpu_compiler_internals_test",
     srcs = ["cpu_compiler_internals_test.cc"],
-    backends = [
-        "cpu",
-    ],
     deps = [
+        ":cpu_compiler_pure",
         "//xla/backends/cpu/codegen/emitters:cpu_fusion_emitter_config",
         "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:hlo_hardware_independent_test_base",
         "//xla/hlo/testlib:verified_hlo_module",
         "//xla/service:llvm_compiler",
         "//xla/tests:hlo_test_base",
