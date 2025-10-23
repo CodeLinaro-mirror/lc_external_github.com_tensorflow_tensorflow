@@ -120,11 +120,14 @@ absl::StatusOr<bool> CompositeRewriter::RewriteComputation(
     TF_ASSIGN_OR_RETURN(
         DotDimensionNumbers dot_dimension_numbers,
         ParseDimensionNumbers(frontend_attrs.at("composite.attributes")));
+    PrecisionConfig precision_config{};
+    precision_config.add_operand_precision(PrecisionConfig::DEFAULT);
+    precision_config.add_operand_precision(PrecisionConfig::DEFAULT);
     auto* scaled_dot =
         computation->AddInstruction(HloInstruction::CreateScaledDot(
             call->shape(), call->mutable_operand(0), call->mutable_operand(1),
             call->mutable_operand(2), call->mutable_operand(3),
-            dot_dimension_numbers, PrecisionConfig{}));
+            dot_dimension_numbers, precision_config));
     TF_RETURN_IF_ERROR(call->ReplaceAllUsesWith(scaled_dot));
     TF_RETURN_IF_ERROR(computation->RemoveInstruction(call));
     changed = true;
