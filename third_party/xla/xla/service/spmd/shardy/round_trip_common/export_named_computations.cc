@@ -231,13 +231,23 @@ class ExportNamedComputationsPass
       callOp->setAttrs(callOpAttrs);
 
       // Copy the func output shardings to the call op.
-      // TODO(enver): Add explicit reshard if callOp and funcOp result shardings
-      // mismatch.
       FuncOp funcOp = symbolTable.lookup<FuncOp>(funcSymName);
       if (TensorShardingPerValueAttr funcResultShardings =
               getFuncResultShardings(callOp, funcOp, symbolTable);
           funcResultShardings) {
         mlir::sdy::setShardings(callOp, funcResultShardings);
+        if (outShardings.has_value()) {
+          for (auto [funcResultSharding, outSharding, result] : llvm::zip_equal(
+                   funcResultShardings.getShardings(),
+                   outShardings->getShardings(), callOp.getResults())) {
+            if (!funcResultSharding.isEquivalent(outSharding)) {
+              rewriter.setInsertionPointAfterValue(result);
+              auto reshardOp = mlir::sdy::ReshardOp::create(
+                  rewriter, result.getLoc(), result, outSharding);
+              rewriter.replaceAllUsesExcept(result, reshardOp, reshardOp);
+            }
+          }
+        }
         if (manualAxesAttr) {
           callOp->setAttr(kManualAxes, manualAxesAttr);
         }
