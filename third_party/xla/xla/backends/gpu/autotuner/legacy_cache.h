@@ -19,8 +19,10 @@ limitations under the License.
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "xla/autotuning.pb.h"
 #include "xla/backends/autotuner/autotuner_cache_interface.h"
 #include "xla/hlo/ir/hlo_instruction.h"
@@ -44,6 +46,13 @@ class LegacyCache : public AutotunerCacheInterface {
   std::optional<Config> Lookup(const HloInstruction* instr) override;
   absl::Status Insert(const HloInstruction* instr,
                       const Config& best_config) override;
+
+  absl::StatusOr<std::string> Serialize(
+      const std::vector<const HloInstruction*>& instructions_to_serialize)
+      override;
+  absl::Status Deserialize(const std::string& serialized_cache) override;
+
+  void ClearCache();
 
  private:
   AutotuneCacheKey GetAutotuneCacheKey(const HloInstruction& instr);

@@ -18,8 +18,10 @@ limitations under the License.
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "xla/backends/autotuner/autotuner_cache.pb.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 
@@ -42,6 +44,20 @@ class AutotunerCacheInterface {
 
   virtual absl::Status Insert(const HloInstruction* instr,
                               const Config& best_config) = 0;
+
+  // Serializes the cache to a string. If instructions are provided, only the
+  // cache entries corresponding to the instructions will be serialized,
+  // otherwise all cache entries will be serialized.
+  virtual absl::StatusOr<std::string> Serialize(
+      const std::vector<const HloInstruction*>& instructions_to_serialize) {
+    return absl::UnimplementedError("Serialize is not implemented.");
+  };
+
+  // Deserializes the string and updates the cache, overwriting the keys if they
+  // already exist.
+  virtual absl::Status Deserialize(const std::string& serialized_cache) {
+    return absl::UnimplementedError("Deserialize is not implemented.");
+  };
 };
 
 }  // namespace xla

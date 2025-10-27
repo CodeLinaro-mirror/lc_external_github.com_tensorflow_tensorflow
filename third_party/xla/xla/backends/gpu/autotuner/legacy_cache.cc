@@ -16,6 +16,8 @@ limitations under the License.
 #include "xla/backends/gpu/autotuner/legacy_cache.h"
 
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "google/protobuf/duration.pb.h"
 #include "absl/log/log.h"
@@ -24,6 +26,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/service/gpu/autotuning/autotune_cache_key.h"
 #include "xla/service/gpu/autotuning/autotuner_util.h"
+#include "xla/tsl/platform/errors.h"
 #include "xla/tsl/protobuf/dnn.pb.h"
 
 namespace xla {
@@ -61,6 +64,32 @@ absl::Status LegacyCache::Insert(const HloInstruction* instr,
     return result_and_inserted.status();
   }
   return absl::OkStatus();
+}
+
+void LegacyCache::ClearCache() { AutotunerUtil::ClearAutotuneResults(); }
+
+absl::StatusOr<std::string> LegacyCache::Serialize(
+    const std::vector<const HloInstruction*>& instructions_to_serialize) {
+  AutotuneResults results;
+  AutotuneCacheKeySet key_set;
+  for (const HloInstruction* instr : instructions_to_serialize) {
+    key_set.insert(GetAutotuneCacheKey(*instr));
+  }
+
+  std::optional<AutotuneCacheKeySet*> keys_to_send = std::nullopt;
+  if (!key_set.empty()) {
+    keys_to_send = &key_set;
+  }
+
+  TF_RETURN_IF_ERROR(
+      AutotunerUtil::SerializeAutotuneResults(&results, keys_to_send));
+  return AutotuneResultsToString(results, true);
+}
+
+absl::Status LegacyCache::Deserialize(const std::string& serialized_cache) {
+  return AutotunerUtil::LoadAutotuneResults(serialized_cache,
+                                            /*as_textproto=*/true,
+                                            /*allow_override=*/true);
 }
 
 AutotuneCacheKey LegacyCache::GetAutotuneCacheKey(const HloInstruction& instr) {
