@@ -32,9 +32,7 @@ limitations under the License.
 #include "xla/backends/cpu/codegen/fusion_compiler.h"
 #include "xla/backends/cpu/codegen/fusion_emitter.h"
 #include "xla/codegen/kernel_spec.h"
-#include "xla/codegen/llvm_ir_kernel_source.h"
-#include "xla/codegen/llvm_kernel_definition.h"
-#include "xla/codegen/mlir_kernel_definition.h"
+#include "xla/codegen/llvm_kernel_source.h"
 #include "xla/codegen/mlir_kernel_source.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/service/buffer_assignment.h"
@@ -216,9 +214,10 @@ ParallelFusionEmitter::ConsumeKernels() {
 void ParallelFusionEmitter::CompileFusion(
     std::shared_ptr<MlirKernelDefinition> mlir_kernel_definition,
     std::shared_ptr<CompilerInstance> compiler_instance) {
-  auto [spec, source] = std::move(*mlir_kernel_definition).ReleaseStorage();
-  absl::StatusOr<LlvmIrKernelSource> llvm_kernel_source =
-      compiler_instance->compiler->Compile(std::move(source));
+  KernelSpec spec = mlir_kernel_definition->spec();
+  absl::StatusOr<LlvmKernelSource> llvm_kernel_source =
+      compiler_instance->compiler->Compile(
+          std::move(*mlir_kernel_definition).TakeSource());
 
   absl::MutexLock lock(kernels_mutex_);
   outstanding_kernels_--;

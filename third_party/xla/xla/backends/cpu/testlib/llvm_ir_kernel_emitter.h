@@ -23,8 +23,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
-#include "xla/codegen/llvm_kernel_definition.h"
-#include "xla/codegen/llvm_kernel_emitter.h"
+#include "xla/codegen/llvm_kernel_source.h"
 #include "xla/runtime/buffer_use.h"
 #include "xla/runtime/work_group.h"
 #include "xla/service/buffer_assignment.h"
@@ -50,9 +49,8 @@ class LlvmTestKernelEmitter : public LlvmKernelEmitter {
                         NumWorkGroups num_workgroups,
                         absl::Span<const KernelArg> args);
 
+  absl::string_view name() const override { return "llvm_test_kernel_emitter"; }
   absl::StatusOr<LlvmKernelDefinition> EmitKernelDefinition() final;
-
-  std::string name() const override { return "llvm_test_kernel_emitter"; }
 
  private:
   std::string llvm_ir_;
