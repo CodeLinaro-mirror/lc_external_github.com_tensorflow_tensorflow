@@ -789,6 +789,7 @@ xla_cc_test(
     deps = [
         ":symbolic_expr",
         ":symbolic_map",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
@@ -817,8 +818,9 @@ xla_cc_test(
     name = "symbolic_expr_test",
     srcs = ["symbolic_expr_test.cc"],
     deps = [
+        ":indexing_test_utils",
         ":symbolic_expr",
-        "//xla/hlo/analysis:indexing_test_utils",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_googletest//:gtest_main",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
