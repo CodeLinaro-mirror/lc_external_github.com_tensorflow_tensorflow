@@ -29,8 +29,7 @@ limitations under the License.
 #include "xla/codegen/hlo_fusion_spec.h"
 #include "xla/codegen/kernel_definition.h"
 #include "xla/codegen/kernel_spec.h"
-#include "xla/codegen/mlir_kernel_definition.h"
-#include "xla/codegen/mlir_kernel_emitter.h"
+#include "xla/codegen/mlir_kernel_source.h"
 #include "xla/hlo/analysis/indexing_map.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/utils/hlo_traversal.h"
@@ -57,6 +56,10 @@ class DynamicUpdateSliceKernelEmitter final : public MlirKernelEmitter {
       WorkDimensions work_dimensions, absl::string_view entry_function_name,
       BackendKind backend_kind);
 
+  absl::string_view name() const final {
+    return "dynamic_update_slice_kernel_emitter";
+  }
+
   absl::StatusOr<MlirKernelDefinition> EmitKernelDefinition() override;
 
   // Get the shape that will be used for loop indexing for the given fusion
@@ -66,10 +69,6 @@ class DynamicUpdateSliceKernelEmitter final : public MlirKernelEmitter {
   static IndexingMap ComputeWorkItemIdToOutputIndexing(
       const WorkDimensions& work_dimensions, const Shape& update_shape,
       gpu::SymbolicExprContext* ctx);
-
-  std::string name() const final {
-    return "dynamic_update_slice_kernel_emitter";
-  }
 
  private:
   IndexingMap ComputeWorkItemIdToInputIndexing(

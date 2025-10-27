@@ -29,9 +29,7 @@ limitations under the License.
 #include "xla/codegen/emitters/kernel_arguments.h"
 #include "xla/codegen/hlo_fusion_spec.h"
 #include "xla/codegen/kernel_definition.h"
-#include "xla/codegen/kernel_spec.h"
-#include "xla/codegen/mlir_kernel_definition.h"
-#include "xla/codegen/mlir_kernel_emitter.h"
+#include "xla/codegen/mlir_kernel_source.h"
 #include "xla/hlo/analysis/indexing_map.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/runtime/work_dimensions.h"
@@ -51,6 +49,10 @@ class ConcatenateFusionKernelEmitter final : public MlirKernelEmitter {
       WorkDimensions work_dimensions, absl::string_view entry_function_name,
       BackendKind backend_kind);
 
+  absl::string_view name() const final {
+    return "concatenate_fusion_kernel_emitter";
+  }
+
   absl::StatusOr<MlirKernelDefinition> EmitKernelDefinition() override;
 
   static IndexingMap ComputeWorkItemIdToOutputIndexing(
@@ -67,8 +69,6 @@ class ConcatenateFusionKernelEmitter final : public MlirKernelEmitter {
   // dimension of all operands.
   static int GetValidUnrollFactor(const HloFusionSpec& fusion_spec,
                                   int max_unroll_factor);
-
-  std::string name() const final { return "concatenate_fusion_kernel_emitter"; }
 
  private:
   IndexingMap ComputeWorkItemIdToOutputIndexing(
