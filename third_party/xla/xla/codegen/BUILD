@@ -81,13 +81,14 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
 cc_library(
-    name = "llvm_ir_kernel_source",
-    srcs = ["llvm_ir_kernel_source.cc"],
-    hdrs = ["llvm_ir_kernel_source.h"],
+    name = "llvm_kernel_source",
+    srcs = ["llvm_kernel_source.cc"],
+    hdrs = ["llvm_kernel_source.h"],
     deps = [
         ":kernel_source",
         "//xla/service/llvm_ir:llvm_util",
@@ -162,7 +163,7 @@ cc_library(
     hdrs = ["llvm_kernel_definition.h"],
     deps = [
         ":kernel_definition",
-        ":llvm_ir_kernel_source",
+        ":llvm_kernel_source",
     ],
 )
 
