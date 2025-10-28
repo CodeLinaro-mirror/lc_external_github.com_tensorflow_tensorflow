@@ -193,10 +193,18 @@ NB_MODULE(_extension, kernel_runner_module) {
   nb::class_<KernelSpec> kernel_spec(kernel_runner_module, "KernelSpec");
 
   nb::class_<KernelDefinitionBase>(kernel_runner_module, "KernelDefinitionBase")
-      .def("spec", &KernelDefinitionBase::spec,
-           nb::rv_policy::reference_internal)
-      .def("source", &KernelDefinitionBase::source,
-           nb::rv_policy::reference_internal);
+      .def(
+          "spec",
+          [](const KernelDefinitionBase* self) -> const KernelSpec& {
+            return self->spec();
+          },
+          nb::rv_policy::reference_internal)
+      .def(
+          "source",
+          [](const KernelDefinitionBase* self) -> const KernelSource& {
+            return self->source();
+          },
+          nb::rv_policy::reference_internal);
 
   nb::class_<MlirKernelDefinition, KernelDefinitionBase>(
       kernel_runner_module, "MlirKernelDefinition");
@@ -206,7 +214,7 @@ NB_MODULE(_extension, kernel_runner_module) {
   nb::class_<KernelEmitterBase>(kernel_runner_module, "KernelEmitterBase")
       .def("emit_kernel_definition", [](KernelEmitterBase* self) {
         absl::StatusOr<std::unique_ptr<KernelDefinitionBase>> definition =
-            self->EmitBaseKernelDefinition();
+            self->EmitKernelDefinitionBase();
         if (!definition.ok()) {
           throw std::runtime_error(std::string(definition.status().message()));
         }
