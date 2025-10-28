@@ -33,6 +33,7 @@ limitations under the License.
 #include "xla/backends/autotuner/codegen_backend.h"
 #include "xla/backends/autotuner/profiler.h"
 #include "xla/hlo/ir/hlo_instruction.h"
+#include "xla/pjrt/distributed/key_value_store_interface.h"
 #include "xla/service/executable.h"
 #include "xla/service/shaped_buffer.h"
 #include "xla/tsl/platform/threadpool.h"
@@ -81,6 +82,9 @@ struct AutotuneConfig {
   // Note: If cache is provided, the cached config will be used instead of the
   // default config.
   bool use_default_config = false;
+  // If true, dump the autotuned instructions to the modules's xla_dump_to or
+  // to stdout if not set.
+  bool dump_hlos = false;
 };
 
 class Autotuner {
@@ -102,6 +106,13 @@ class Autotuner {
   // ignored.
   absl::Status Autotune(HloModule* module,
                         const InstructionFilterFn& should_autotune);
+
+  // Same as above, but also takes a sharding KV store which helps to shard
+  // the autotuning work across multiple processes.
+  // This is used for distributed autotuning.
+  absl::Status Autotune(HloModule* module,
+                        const InstructionFilterFn& should_autotune,
+                        MultiProcessKeyValueStore& sharding_kv_store);
 
  private:
   using InstructionsByFingerprint =
@@ -170,6 +181,11 @@ class Autotuner {
   // Gets the best config for the given instruction by compiling and profiling
   // all supported configs.
   absl::StatusOr<Config> TuneBestConfig(HloInstruction* instr);
+  // Applies the given config to the given instruction. If dump_module is
+  // true, extracts the instruction into a module and dumps it before and after
+  // applying the config.
+  absl::Status ApplyConfig(HloInstruction* instr, const Config& config,
+                           bool dump_module = false);
 
   // TODO: b/407494653 - Directly use cache api when the configs are unified.
   // Translates from Autotuner::Config to AutotunerCacheInterface::Config and
@@ -204,6 +220,7 @@ class Autotuner {
   std::unique_ptr<AutotunerCacheInterface> cache_;
   tsl::thread::ThreadPool* thread_pool_;
   AutotuningLogs logs_;
+  int dump_counter_ = 0;
 };
 }  // namespace xla
 
