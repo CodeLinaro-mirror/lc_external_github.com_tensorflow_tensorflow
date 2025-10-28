@@ -27,7 +27,7 @@ limitations under the License.
 #include "xla/codegen/emitters/ir/xla_ops.h"
 #include "xla/codegen/emitters/kernel_arguments.h"
 #include "xla/codegen/hlo_fusion_spec.h"
-#include "xla/codegen/kernel_definition.h"
+#include "xla/codegen/kernel_emitter.h"
 #include "xla/codegen/kernel_spec.h"
 #include "xla/codegen/mlir_kernel_source.h"
 #include "xla/hlo/analysis/indexing_map.h"
@@ -46,7 +46,8 @@ namespace xla::emitters {
 // 3. a tuple op returning the result of several dynamic-update-slice ops
 // 4. a tuple op returning the result of several bitcast
 //    dynamic-update-slice ops
-class DynamicUpdateSliceKernelEmitter final : public MlirKernelEmitter {
+class DynamicUpdateSliceKernelEmitter final
+    : public KernelEmitter<MlirKernelSource> {
  public:
   DynamicUpdateSliceKernelEmitter(
       gpu::SymbolicExprContext& symbolic_expr_context,
@@ -56,7 +57,11 @@ class DynamicUpdateSliceKernelEmitter final : public MlirKernelEmitter {
       WorkDimensions work_dimensions, absl::string_view entry_function_name,
       BackendKind backend_kind);
 
-  absl::StatusOr<MlirKernelDefinition> EmitKernelDefinition() override;
+  absl::string_view name() const final {
+    return "dynamic_update_slice_kernel_emitter";
+  }
+
+  absl::StatusOr<KernelDefinition> EmitKernelDefinition() override;
 
   // Get the shape that will be used for loop indexing for the given fusion
   // specification.
@@ -65,10 +70,6 @@ class DynamicUpdateSliceKernelEmitter final : public MlirKernelEmitter {
   static IndexingMap ComputeWorkItemIdToOutputIndexing(
       const WorkDimensions& work_dimensions, const Shape& update_shape,
       gpu::SymbolicExprContext* ctx);
-
-  std::string name() const final {
-    return "dynamic_update_slice_kernel_emitter";
-  }
 
  private:
   IndexingMap ComputeWorkItemIdToInputIndexing(
