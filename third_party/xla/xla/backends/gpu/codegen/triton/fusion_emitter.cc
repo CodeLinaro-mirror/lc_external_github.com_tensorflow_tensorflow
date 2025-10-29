@@ -69,6 +69,7 @@ limitations under the License.
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
@@ -412,14 +413,24 @@ absl::StatusOr<ScalarOrTensor> EmitReduce(
                                                      neutral.UnwrapUnsafe()));
   }
 
-  ttir::ReduceOp reduction =
-      b.create<ttir::ReduceOp>(input.UnwrapUnsafe(), reduction_dimension);
+  auto init_value = values[tiled_hlo_reduce.operand(1)].UnwrapUnsafe();
+
+  if (values[tiled_hlo_reduce.operand(1)].IsScalar()) {
+    init_value = b.create<mlir::tensor::FromElementsOp>(
+        mlir::RankedTensorType::get({}, init_value.getType()), init_value);
+  }
+
+  stablehlo::ReduceOp reduction = b.create<stablehlo::ReduceOp>(
+      input.UnwrapTensor(), init_value, reduction_dimension);
   {
     TF_ASSIGN_OR_RETURN(Type result_ty,
                         TritonType(b, hlo_reduce.shape().element_type()));
+    result_ty = mlir::RankedTensorType::get({}, result_ty);
+
     mlir::Location loc = b.getLoc();
     mlir::Block* reducer = b.createBlock(&reduction->getRegion(0), {},
                                          {result_ty, result_ty}, {loc, loc});
+    b.setInsertionPointToStart(reducer);
 
     HloComputation* reduction_computation = hlo_reduce.to_apply();
 
@@ -430,10 +441,20 @@ absl::StatusOr<ScalarOrTensor> EmitReduce(
       if (instr->opcode() == HloOpcode::kParameter) {
         int parameter_number = instr->parameter_number();
         TF_RET_CHECK(parameter_number < 2);
-        TF_RET_CHECK(region_values
-                         .insert({instr, ScalarOrTensor(reducer->getArgument(
-                                             parameter_number))})
-                         .second);
+        auto argument = mlir::cast<mlir::TypedValue<mlir::RankedTensorType>>(
+            reducer->getArgument(parameter_number));
+
+        if (!argument) {
+          return Internal("Expected reducer argument to be a tensor.");
+        }
+
+        // Emit extract op so that the reducer can be lowered to triton, as the
+        // triton reducer can only work with scalars.
+        auto extracted_argument =
+            ScalarOrTensor(b.create<mlir::tensor::ExtractOp>(
+                                argument.getType().getElementType(), argument)
+                               .getResult());
+        TF_RET_CHECK(region_values.insert({instr, extracted_argument}).second);
       } else {
         to_emit.push_back(instr);
       }
@@ -441,16 +462,25 @@ absl::StatusOr<ScalarOrTensor> EmitReduce(
 
     TF_RET_CHECK(!to_emit.empty());
 
-    b.setInsertionPointToStart(reducer);
     TF_ASSIGN_OR_RETURN(
         ScalarOrTensor result,
         EmitScope(b, libdevice_path, device_info, /*analysis=*/nullptr, to_emit,
                   region_values));
-    b.create<ttir::ReduceReturnOp>(SmallVector<Value>({result.UnwrapUnsafe()}));
+    // Emit from_elements op so that the reducer can be lowered to triton, as
+    // the triton reducer can only work with scalars.
+    auto result_as_scalar = b.create<mlir::tensor::FromElementsOp>(
+        result_ty, result.UnwrapUnsafe());
+    b.create<stablehlo::ReturnOp>(SmallVector<Value>({result_as_scalar}));
     b.setInsertionPointAfter(reduction);
   }
 
-  return ScalarOrTensor(reduction.getResult().front());
+  auto result = reduction.getResult(0);
+  if (mlir::cast<ShapedType>(result.getType()).getRank() == 0) {
+    result = b.create<mlir::tensor::ExtractOp>(
+        mlir::cast<ShapedType>(result.getType()).getElementType(), result);
+  }
+
+  return ScalarOrTensor(result);
 }
 
 // Emit code corresponding to a fusion instruction somehow nested within the
@@ -585,8 +615,8 @@ ScalarOrTensor ReshapeTensorToScalar(EmitterLocOpBuilder b, Value input) {
   auto single_dim_tensor = input;
   if (mlir::cast<ShapedType>(input.getType()).getRank() > 1) {
     Type output_tensor_type = mlir::RankedTensorType::get({1}, element_type);
-    single_dim_tensor = b.create<ttir::ReshapeOp>(output_tensor_type, input,
-                                                  /*allow_reorder=*/true);
+    single_dim_tensor =
+        b.create<stablehlo::ReshapeOp>(output_tensor_type, input);
   }
 
   // Second, reduce to a scalar.
@@ -646,11 +676,8 @@ absl::StatusOr<ScalarOrTensor> EmitTiledReshape(EmitterLocOpBuilder b,
                      absl::StrJoin(output_tensor_type.getShape(), "x")));
   }
 
-  // Conservatively prevent Triton from reordering elements within the tile.
-  // TODO(b/353637689): see if this restriction can be lifted.
-  bool allow_reorder = false;
-  auto reshape = b.create<ttir::ReshapeOp>(output_tensor_type,
-                                           input.UnwrapUnsafe(), allow_reorder);
+  auto reshape =
+      b.create<stablehlo::ReshapeOp>(output_tensor_type, input.UnwrapUnsafe());
   return ScalarOrTensor(reshape.getResult());
 }
 
