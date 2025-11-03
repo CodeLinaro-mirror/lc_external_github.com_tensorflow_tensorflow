@@ -87,7 +87,11 @@ def EntryFuncOp : XTile_Op<"entry_func", [
                        TypeAttrOf<FunctionType>:$function_type,
                        OptionalAttr<DictArrayAttr>:$arg_attrs,
                        OptionalAttr<XTile_TilingInfoAttr>:$tile_info,
-                       OptionalAttr<DictArrayAttr>:$res_attrs
+                       OptionalAttr<DictArrayAttr>:$res_attrs,
+                       // The number of arguments that are opaque to tiling
+                       // infrastructure and hence do not correspond to a memref
+                       // argument.
+                       DefaultValuedAttr<I32Attr, "0">:$num_opaque_args
   );
 
   // The entry function has no return values.

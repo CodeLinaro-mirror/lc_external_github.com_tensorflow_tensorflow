@@ -63,10 +63,17 @@ namespace ma = ::mlir::arith;
 
 // Get the new arg types of the lowered function by translating memrefs to the
 // corresponding pointer types.
-llvm::SmallVector<mlir::Type> GetPtrArgTypes(mlir::ValueRange args) {
+llvm::SmallVector<mlir::Type> GetTransformedArgTypes(mlir::ValueRange args,
+                                                     int64_t num_opaque_args) {
   llvm::SmallVector<mlir::Type> arg_types;
   arg_types.reserve(args.size());
-  for (auto arg : args) {
+  const int64_t opaque_arg_start_index = args.size() - num_opaque_args;
+  for (auto [index, arg] : llvm::enumerate(args)) {
+    // If the argument is an opaque argument, it is passed as is.
+    if (index >= opaque_arg_start_index) {
+      arg_types.push_back(arg.getType());
+      continue;
+    }
     mlir::MemRefType memref_type = mlir::cast<mlir::MemRefType>(arg.getType());
     arg_types.push_back(
         ::xla::gpu::triton::GetGlobalPointerType(memref_type.getElementType()));
@@ -145,7 +152,8 @@ class XTileEntryToTriton
     mlir::ImplicitLocOpBuilder builder(module->getLoc(), module);
     builder.setInsertionPointToStart(module.getBody());
 
-    auto new_arg_types = GetPtrArgTypes(entry_op.getBufferArgs());
+    auto new_arg_types = GetTransformedArgTypes(entry_op.getBufferArgs(),
+                                                entry_op.getNumOpaqueArgs());
     auto new_func_op = builder.create<mlir::func::FuncOp>(
         entry_op.getName(), builder.getFunctionType(new_arg_types, {}));
 
