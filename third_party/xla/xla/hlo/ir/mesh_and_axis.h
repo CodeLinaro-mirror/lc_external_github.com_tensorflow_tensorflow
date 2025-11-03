@@ -33,6 +33,8 @@ limitations under the License.
 
 namespace xla {
 
+class AxisRef;
+
 // C++ representation for corresponding `OpSharding::Mesh` proto so same
 // documentation applies, except device assignment is represented in the array
 // format instead of list of device ids to align with various array specific
@@ -62,13 +64,7 @@ class Mesh {
              axes_names) {}
 
   explicit Mesh(TileAssignment device_assignment,
-                absl::Span<const std::string> axes_names)
-      : device_assignment_(std::move(device_assignment)),
-        axes_names_(axes_names.begin(), axes_names.end()) {
-    CHECK_EQ(device_assignment_.dimensions().size(), axes_names_.size())
-        << "Number of axes names must match number of dimensions in the "
-           "device assignment.";
-  }
+                absl::Span<const std::string> axes_names);
 
   bool operator==(const Mesh& other) const {
     return device_assignment_ == other.device_assignment_ &&
@@ -109,6 +105,8 @@ class Mesh {
 
   TileAssignment device_assignment() const { return device_assignment_; }
   std::vector<std::string> axis_names() const { return axes_names_; }
+  // Validates that the given axis ref is compatible for this mesh.
+  absl::Status ValidateAxisForMesh(const AxisRef& axis_ref) const;
   absl::Span<const int64_t> axis_sizes() const {
     return device_assignment_.dimensions();
   }
@@ -117,6 +115,7 @@ class Mesh {
   }
 
  private:
+  absl::Status ValidateMesh();
   // Dimensions of the `device_assignment_` array correspond to the axes of the
   // mesh.
   TileAssignment device_assignment_;
@@ -142,16 +141,9 @@ class AxisRef {
   std::optional<SubAxis> sub_axis_info_;
 
  public:
-  explicit AxisRef(int64_t mesh_axis_index)
-      : mesh_axis_index_(mesh_axis_index) {}
+  explicit AxisRef(int64_t mesh_axis_index);
 
-  explicit AxisRef(int64_t mesh_axis_index, SubAxis sub_axis_info)
-      : mesh_axis_index_(mesh_axis_index), sub_axis_info_(sub_axis_info) {}
-
-  explicit AxisRef(int64_t mesh_axis_index, int64_t sub_axis_pre_size,
-                   int64_t sub_axis_size)
-      : mesh_axis_index_(mesh_axis_index),
-        sub_axis_info_({sub_axis_pre_size, sub_axis_size}) {}
+  explicit AxisRef(int64_t mesh_axis_index, SubAxis sub_axis_info);
 
   bool operator==(const xla::AxisRef& other) const {
     if (mesh_axis_index_ != other.mesh_axis_index_) {
@@ -186,8 +178,13 @@ class AxisRef {
 
   bool CanCoexist(const AxisRef& other) const;
 
+  bool Overlaps(const AxisRef& other) const;
+
   int64_t mesh_axis_index() const { return mesh_axis_index_; }
   std::optional<SubAxis> sub_axis_info() const { return sub_axis_info_; }
+
+ private:
+  absl::Status ValidateAxisRef();
 };
 
 }  // namespace xla

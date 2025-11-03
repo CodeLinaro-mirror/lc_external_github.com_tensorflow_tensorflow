@@ -18,12 +18,16 @@ limitations under the License.
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/container/flat_hash_set.h"
+#include "absl/log/check.h"
+#include "absl/status/status.h"
 #include "absl/types/span.h"
 #include "llvm/ADT/STLExtras.h"
 #include "xla/array.h"
@@ -31,6 +35,82 @@ limitations under the License.
 #include "xla/xla_data.pb.h"
 
 namespace xla {
+
+absl::Status Mesh::ValidateMesh() {
+  if (device_assignment_.dimensions().empty() || axes_names_.empty()) {
+    return absl::InvalidArgumentError("Mesh must have at least one axis.");
+  }
+
+  if (device_assignment_.dimensions().size() != axes_names_.size()) {
+    return absl::InvalidArgumentError(
+        "Number of axes names must match number of dimensions in the device "
+        "assignment.");
+  }
+
+  absl::flat_hash_set<std::string> seen_axis_names;
+  for (const std::string& axis_name : axes_names_) {
+    if (!seen_axis_names.insert(axis_name).second) {
+      return absl::InvalidArgumentError("Mesh has duplicate axis names.");
+    }
+  }
+
+  // Validate device ids are permutation of iota in non-iota cases.
+  if (device_assignment_.iota().has_value()) {
+    return absl::OkStatus();
+  }
+  std::vector<int64_t> device_ids(device_assignment_.array().begin(),
+                                  device_assignment_.array().end());
+  for (int64_t device_id : device_assignment_.array()) {
+    if (device_id < 0) {
+      return absl::InvalidArgumentError(
+          "Mesh device ids must be non-negative.");
+    }
+  }
+  std::vector<int64_t> iota(device_ids.size());
+  std::iota(iota.begin(), iota.end(), 0);
+
+  // For non-iota cases the device ids should be a non-identity permutation
+  // of iota.
+  if (device_ids == iota) {
+    return absl::InvalidArgumentError(
+        "Non-iota device assignment has iota device id list [0,1,2,3...].");
+  }
+  absl::c_sort(device_ids);
+  if (device_ids != iota) {
+    return absl::InvalidArgumentError(
+        "Device ids must be a permutation of [0,1,2,3...].");
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Mesh::ValidateAxisForMesh(const AxisRef& axis_ref) const {
+  if (axis_ref.mesh_axis_index() >= axes_names_.size()) {
+    return absl::InvalidArgumentError(
+        "Axis index must be less than number of axes.");
+  }
+  if (!axis_ref.sub_axis_info().has_value()) {
+    return absl::OkStatus();
+  }
+
+  int64_t axis_size = device_assignment_.dim(axis_ref.mesh_axis_index());
+  if (axis_size % axis_ref.sub_axis_info()->pre_size != 0 ||
+      axis_size % axis_ref.sub_axis_info()->size != 0) {
+    return absl::InvalidArgumentError(
+        "Pre-size and size must divide the full axis size.");
+  }
+  if (axis_ref.sub_axis_info()->size >= axis_size) {
+    return absl::InvalidArgumentError(
+        "Sub-axis size must be strictly less than the full axis size.");
+  }
+  return absl::OkStatus();
+}
+
+Mesh::Mesh(TileAssignment device_assignment,
+           absl::Span<const std::string> axes_names)
+    : device_assignment_(std::move(device_assignment)),
+      axes_names_(axes_names.begin(), axes_names.end()) {
+  CHECK_OK(ValidateMesh());
+}
 
 MeshProto Mesh::ToProto() const {
   MeshProto proto;
@@ -56,7 +136,6 @@ MeshProto Mesh::ToProto() const {
 }
 
 Mesh Mesh::FromProto(const MeshProto& proto) {
-  // TODO(b/454008727): Add validators for Mesh and AxisRef FromProto methods.
   std::vector<int64_t> mesh_axis_sizes;
   std::vector<std::string> mesh_axis_names;
   mesh_axis_sizes.reserve(proto.axes_size());
@@ -102,6 +181,28 @@ AxisRef AxisRef::FromProto(const AxisRefProto& proto) {
   return axis_ref;
 }
 
+absl::Status AxisRef::ValidateAxisRef() {
+  if (!sub_axis_info_.has_value()) {
+    return absl::OkStatus();
+  }
+  if (sub_axis_info_->pre_size < 1) {
+    return absl::InvalidArgumentError("sub-axis pre-size must be >= 1");
+  }
+  if (sub_axis_info_->size <= 1) {
+    return absl::InvalidArgumentError("sub-axis size must be > 1");
+  }
+  return absl::OkStatus();
+}
+
+AxisRef::AxisRef(int64_t mesh_axis_index) : mesh_axis_index_(mesh_axis_index) {
+  CHECK_OK(ValidateAxisRef());
+}
+
+AxisRef::AxisRef(int64_t mesh_axis_index, SubAxis sub_axis_info)
+    : mesh_axis_index_(mesh_axis_index), sub_axis_info_(sub_axis_info) {
+  CHECK_OK(ValidateAxisRef());
+}
+
 bool canSubAxesCoexist(int64_t minPreSize, int64_t maxPreSize,
                        int64_t minNextPreSize, int64_t maxNextPreSize) {
   if (minNextPreSize > maxPreSize) {
@@ -138,6 +239,23 @@ bool AxisRef::CanCoexist(const AxisRef& other) const {
 
   return canSubAxesCoexist(min_pre_size, max_pre_size, min_next_pre_size,
                            max_next_pre_size);
+}
+
+bool AxisRef::Overlaps(const AxisRef& other) const {
+  if (mesh_axis_index() != other.mesh_axis_index()) {
+    return false;
+  }
+
+  // If one is a full axis then they must overlap.
+  if (!sub_axis_info_.has_value() || !other.sub_axis_info_.has_value()) {
+    return true;
+  }
+
+  const SubAxis& this_sub_axis = sub_axis_info_.value();
+  const SubAxis& other_sub_axis = other.sub_axis_info_.value();
+
+  return this_sub_axis.pre_size < other_sub_axis.next_pre_size() &&
+         other_sub_axis.pre_size < this_sub_axis.next_pre_size();
 }
 
 }  // namespace xla

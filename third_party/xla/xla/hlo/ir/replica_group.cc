@@ -157,7 +157,7 @@ bool ValidateSingleDimensionAxes(int64_t dim, std::vector<AxisRef>& axes,
     for (int64_t j = i + 1; j < axes.size(); ++j) {
       // CHECK will terminate the program on failure, matching original
       // behavior.
-      CHECK(axes[i].CanCoexist(axes[j]))
+      CHECK(axes[i].CanCoexist(axes[j]) && !axes[i].Overlaps(axes[j]))
           << "Overlapping sub-axes detected: " << axes[i].ToString(mesh_)
           << " and " << axes[j].ToString(mesh_);
     }
@@ -176,14 +176,9 @@ MeshAxesReplicaGroupList::MeshAxesReplicaGroupList(Mesh mesh,
   absl::flat_hash_set<int64_t> dimensions;
   absl::flat_hash_map<int64_t, std::vector<AxisRef>> dim_to_axes;
   for (const AxisRef& axis : axes_) {
+    CHECK_OK(mesh_.ValidateAxisForMesh(axis));
     dim_to_axes[axis.mesh_axis_index()].push_back(axis);
     dimensions.insert(axis.mesh_axis_index());
-    if (axis.sub_axis_info().has_value()) {
-      CHECK(mesh_.axis_size(axis.mesh_axis_index()) %
-                axis.sub_axis_info()->next_pre_size() ==
-            0)
-          << "Next pre-size must divide the full axis size.";
-    }
   }
 
   // Validate input AxisRefs.
