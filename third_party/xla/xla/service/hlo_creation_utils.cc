@@ -949,4 +949,60 @@ HloInstruction* MakeScalarLikeFromLiteral(HloInstruction* base,
       ShapeUtil::MakeStaticShape(base->shape()), scalar, {}));
 }
 
+std::unique_ptr<HloModule> NewModuleWithFusion(
+    const HloInstruction* instruction, HloInstruction::FusionKind fusion_kind) {
+  auto new_module = std::make_unique<HloModule>(
+      absl::StrCat("wrapped_module_", instruction->name()),
+      instruction->GetModule()->config());
+
+  // New computation  with a single instruction as given by the instruction
+  // parameter.
+  HloComputation::Builder fusion_builder(
+      absl::StrCat("wrapped_", instruction->name()));
+  std::vector<HloInstruction*> fusion_parameters;
+  fusion_parameters.reserve(instruction->operand_count());
+  for (int i = 0; i < instruction->operand_count(); ++i) {
+    const HloInstruction* operand = instruction->operand(i);
+    fusion_parameters.push_back(
+        fusion_builder.AddInstruction(HloInstruction::CreateParameter(
+            i, operand->shape(), absl::StrCat("param_", i))));
+  }
+  HloInstruction* fused_root =
+      fusion_builder.AddInstruction(instruction->CloneWithNewOperands(
+          instruction->shape(), fusion_parameters));
+
+  // Maybe the original instruction had any sub-computations (like to_apply),
+  if (!instruction->called_computations().empty()) {
+    HloCloneContext context(new_module.get());
+    fused_root->ReplaceCalledComputations([&](HloComputation* callee) {
+      if (callee->parent() != new_module.get()) {
+        return new_module->DeepCloneComputation(callee, &context);
+      }
+      return callee;
+    });
+  }
+
+  HloComputation* fused_computation =
+      new_module->AddEmbeddedComputation(fusion_builder.Build(fused_root));
+
+  // Entry computation for the new module.
+  HloComputation::Builder entry_builder("entry");
+  std::vector<HloInstruction*> entry_parameters;
+  entry_parameters.reserve(instruction->operand_count());
+  for (int i = 0; i < instruction->operand_count(); ++i) {
+    const HloInstruction* operand = instruction->operand(i);
+    entry_parameters.push_back(
+        entry_builder.AddInstruction(HloInstruction::CreateParameter(
+            i, operand->shape(), absl::StrCat("param_", i))));
+  }
+
+  HloInstruction* fusion_instruction = entry_builder.AddInstruction(
+      HloInstruction::CreateFusion(instruction->shape(), fusion_kind,
+                                   entry_parameters, fused_computation));
+
+  new_module->AddEntryComputation(entry_builder.Build(fusion_instruction));
+
+  return new_module;
+}
+
 }  // namespace xla
