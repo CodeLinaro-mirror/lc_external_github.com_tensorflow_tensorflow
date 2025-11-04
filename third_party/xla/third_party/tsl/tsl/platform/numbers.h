@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <type_traits>
 
 #include "absl/base/macros.h"
 #include "absl/strings/numbers.h"
@@ -173,36 +174,20 @@ inline bool safe_strtod(absl::string_view str, double* value) {
   return absl::SimpleAtod(str, value);
 }
 
-inline bool ProtoParseNumeric(absl::string_view s, int32_t* value) {
-  return absl::SimpleAtoi(s, value);
-}
-
-inline bool ProtoParseNumeric(absl::string_view s, uint32_t* value) {
-  return absl::SimpleAtoi(s, value);
-}
-
-inline bool ProtoParseNumeric(absl::string_view s, int64_t* value) {
-  return absl::SimpleAtoi(s, value);
-}
-
-inline bool ProtoParseNumeric(absl::string_view s, uint64_t* value) {
-  return absl::SimpleAtoi(s, value);
-}
-
-inline bool ProtoParseNumeric(absl::string_view s, float* value) {
-  return absl::SimpleAtof(s, value);
-}
-
-inline bool ProtoParseNumeric(absl::string_view s, double* value) {
-  return absl::SimpleAtod(s, value);
-}
-
 // Convert strings to number of type T.
 // Leading and trailing spaces are allowed.
 // Values may be rounded on over- and underflow.
 template <typename T>
 bool SafeStringToNumeric(absl::string_view s, T* value) {
-  return ProtoParseNumeric(s, value);
+  if constexpr (std::is_integral_v<T>) {
+    return absl::SimpleAtoi(s, value);
+  } else if constexpr (std::is_same_v<T, float>) {
+    return absl::SimpleAtof(s, value);
+  } else if constexpr (std::is_same_v<T, double>) {
+    return absl::SimpleAtod(s, value);
+  } else {
+    static_assert(false, "Unsupported type");
+  }
 }
 
 // Converts from an int64 to a human readable string representing the
