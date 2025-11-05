@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "xla/backends/gpu/codegen/triton/dot_algorithms.h"
 
-#include <cstdint>
 #include <limits>
 #include <optional>
 #include <string>
@@ -39,6 +38,8 @@ limitations under the License.
 #include "stablehlo/dialect/StablehloOps.h"
 #include "xla/backends/gpu/codegen/triton/emitter_helpers.h"
 #include "xla/codegen/emitter_loc_op_builder.h"
+#include "xla/codegen/xtile/ir/xtile_dialect.h"
+#include "xla/codegen/xtile/ir/xtile_ops.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/service/algorithm_util.h"
@@ -127,6 +128,10 @@ std::vector<Value> SplitF32(EmitterLocOpBuilder b, Value input,
   return split_inputs;
 }
 
+}  // namespace
+
+namespace internal {
+
 absl::StatusOr<ttir::ScaleDotElemType> GetScaleDotElemType(Type value) {
   auto type = getElementTypeOrSelf(value);
   if (type == mlir::Float8E4M3FNType::get(value.getContext())) {
@@ -145,12 +150,16 @@ absl::StatusOr<ttir::ScaleDotElemType> GetScaleDotElemType(Type value) {
       absl::StrCat("Unsupported type: ", llvm_ir::DumpToString(type)));
 }
 
+}  // namespace internal
+
+namespace {
+
 absl::StatusOr<Value> ScaledDot(EmitterLocOpBuilder b,
                                 ScaledDotOperands& operands) {
   TF_ASSIGN_OR_RETURN(auto lhs_dot_elem_type,
-                      GetScaleDotElemType(operands.lhs.getType()));
+                      internal::GetScaleDotElemType(operands.lhs.getType()));
   TF_ASSIGN_OR_RETURN(auto rhs_dot_elem_type,
-                      GetScaleDotElemType(operands.rhs.getType()));
+                      internal::GetScaleDotElemType(operands.rhs.getType()));
 
   Value lhs_scale;
   if (lhs_dot_elem_type != ttir::ScaleDotElemType::BF16) {
@@ -163,11 +172,16 @@ absl::StatusOr<Value> ScaledDot(EmitterLocOpBuilder b,
         rhs_scale, b.getDenseI64ArrayAttr({1, 0}));
   }
 
-  // make type with the same shape as the scale but with i8 type
-  return b.create<ttir::DotScaledOp>(
-      operands.accumulator.getType(), operands.lhs, operands.rhs,
-      operands.accumulator, lhs_scale, rhs_scale, lhs_dot_elem_type,
-      rhs_dot_elem_type, true);
+  auto dot_scaled_op =
+      b.create<xtile::DotScaledOp>(operands.accumulator.getType(), operands.lhs,
+                                   operands.rhs, lhs_scale, rhs_scale, true);
+
+  auto add_result =
+      mlir::isa<mlir::IntegerType>(
+          dot_scaled_op.getResult().getType().getElementType())
+          ? b.create<mlir::arith::AddIOp>(operands.accumulator, dot_scaled_op)
+          : b.create<mlir::arith::AddFOp>(operands.accumulator, dot_scaled_op);
+  return add_result->getResult(0);
 }
 
 Value IEEEDot(EmitterLocOpBuilder b, Value lhs, Value rhs, Value acc) {

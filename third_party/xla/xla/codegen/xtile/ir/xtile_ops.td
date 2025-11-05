@@ -26,6 +26,7 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/Interfaces.td"
+include "third_party/stablehlo/stablehlo/dialect/Base.td"
 include "xla/codegen/xtile/ir/xtile_dialect.td"
 include "xla/codegen/xtile/ir/xtile_attrs.td"
 
@@ -232,6 +233,38 @@ def ToTensorOp : XTile_Op<"to_tensor", [Pure, DeclareOpInterfaceMethods<InferTyp
   let assemblyFormat = "$input `:` type($input) attr-dict";
 
   let hasFolder = 1;
+}
+
+//
+// DotScaled Op
+//
+def DotScaledOp : XTile_Op<"dot_scaled", [Pure, AttrSizedOperandSegments]> {
+    let summary = "dot_scaled";
+
+    let description = [{
+        $result = matrix_multiply(scale($lhs, $lhs_scale), scale($rhs, $rhs_scale)).
+        Where scale(x, s) is a function that applies the scale per block following microscaling spec.
+    }];
+
+    let arguments = (
+      ins
+      // inputs are floats if we have a type for them, otherwise (fp4),
+      // they are packed in pairs in an I8Tensor
+      RankedTensorOf<[HLO_Float,I8]>:$lhs,
+      RankedTensorOf<[HLO_Float,I8]>:$rhs,
+      Optional<RankedTensorOf<[HLO_Float, I8]>>:$lhs_scale,
+      Optional<RankedTensorOf<[HLO_Float, I8]>>:$rhs_scale,
+      BoolAttr:$fastMath,
+      DefaultValuedAttr<BoolAttr, "true">:$lhs_k_pack,
+      DefaultValuedAttr<BoolAttr, "true">:$rhs_k_pack
+    );
+
+    let results = (outs RankedTensorOf<[HLO_Float]>:$result);
+
+    let assemblyFormat = [{
+      $lhs (`scale` $lhs_scale^)? `,` $rhs (`scale` $rhs_scale^)? attr-dict
+      `:` type($lhs) (`,` type($lhs_scale)^)? `*` type($rhs) (`,` type($rhs_scale)^)? `->` type($result)
+    }];
 }
 
 #endif // XLA_CODEGEN_XTILE_IR_XTILE_OPS

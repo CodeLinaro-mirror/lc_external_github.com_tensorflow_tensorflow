@@ -2261,6 +2261,7 @@ absl::Status LowerXTileToTriton(mlir::ModuleOp xtile_dialect_module,
     }
     pm.addPass(mlir::triton::xla::CreateTensorLowerToTritonPass());
     pm.addPass(mlir::triton::xla::CreateStableHLOLowerToTritonPass());
+    pm.addPass(mlir::triton::xla::CreateXTileLowerToTritonPass());
 
     std::string libdevice_path =
         GetLibdevicePath(fusion.GetModule()->config(), device_info);
