@@ -929,11 +929,11 @@ CompilePhaseHloRunnerPjRt::CreateExecutable(std::unique_ptr<HloModule> module,
 absl::StatusOr<std::unique_ptr<OpaqueExecutable>>
 ExecutePhaseHloRunnerPjRt::CreateExecutable(std::unique_ptr<HloModule> module,
                                             const bool run_hlo_passes) {
-  const std::string filename =
-      tsl::io::JoinPath(artifact_dir_, MakeFilename(*module, run_hlo_passes));
+  const std::string filename = MakeFilename(*module, run_hlo_passes);
+  const std::string path = tsl::io::JoinPath(artifact_dir_, filename);
   std::string serialized_executable;
   if (const absl::Status status = tsl::ReadFileToString(
-          tsl::Env::Default(), filename, &serialized_executable);
+          tsl::Env::Default(), path, &serialized_executable);
       !status.ok()) {
     if (!compile_if_not_found_) {
       return absl::NotFoundError(absl::StrCat(
@@ -942,6 +942,29 @@ ExecutePhaseHloRunnerPjRt::CreateExecutable(std::unique_ptr<HloModule> module,
     LOG(INFO) << "Failed to read serialized executable. " << status;
     return HloRunnerPjRt::CreateExecutable(std::move(module), run_hlo_passes);
   }
+
+  // If fail_duplicate_loads_ is enabled, fail if we previously loaded an
+  // executable at this path, and the file at this path exists.
+  if (fail_duplicate_loads_) {
+    if (const auto [unused_it, did_insert] =
+            loaded_executable_paths_.insert(path);
+        !did_insert) {
+      return absl::InvalidArgumentError(absl::StrFormat(
+          "ExecutePhaseHloRunnerPjRt::CreateExecutable called with a module "
+          "that loads an executable that was previously loaded. The module "
+          "name is %s and the filename is %s. If this is intentional, please "
+          "set fail_duplicate_loads to false. This error exists to snuff out "
+          "accidental duplicate loads originating from fingerprint collisions. "
+          "If you intended to load two different executables, this error "
+          "indicates that their fingerprints are the same. If you wish to "
+          "avoid this issue in a test, you can either force their fingerprints "
+          "to be different through some superficial change in the module (e.g. "
+          "the module name), or by disabling split compilation by setting "
+          "precompile_test = False in the corresponding xla_test.",
+          module->name(), filename));
+    }
+  }
+
   return DeserializeExecutable(serialized_executable);
 }
 
