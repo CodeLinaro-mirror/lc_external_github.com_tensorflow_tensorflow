@@ -51,6 +51,7 @@ _TF_ROCM_CONFIG_REPO = "TF_ROCM_CONFIG_REPO"
 _DISTRIBUTION_PATH = "rocm/rocm_dist"
 _OS = "OS"
 _ROCM_VERSION = "ROCM_VERSION"
+_TMPDIR = "TMPDIR"
 
 _DEFAULT_ROCM_TOOLKIT_PATH = "/opt/rocm"
 _TF_ROCM_MULTIPLE_PATHS = "TF_ROCM_MULTIPLE_PATHS"
@@ -613,6 +614,11 @@ def _create_local_rocm_repository(repository_ctx):
             "%{rocm_gpu_architectures}": str(rocm_config.amdgpu_targets),
             "%{rocm_version_number}": str(rocm_version_number),
             "%{rocm_hipblaslt}": "True" if rocm_libs["hipblaslt"] != None else "False",
+            "%{tmpdir}": get_host_environ(
+                repository_ctx,
+                _TMPDIR,
+                "",
+            ),
         },
     )
 
