@@ -38,6 +38,7 @@ limitations under the License.
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
@@ -356,7 +357,7 @@ int ParsePort(const std::string& addr, size_t it, uint32_t& parsed_port) {
     return -1;
   }
   for (size_t i = port_pos + 1; i < addr.size(); ++i) {
-    if (!(addr[i] >= '0' && addr[i] <= '9')) {
+    if (!absl::ascii_isdigit(addr[i])) {
       return -1;
     }
     parsed_port = parsed_port * 10 + (addr[i] - '0');

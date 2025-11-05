@@ -268,8 +268,7 @@ bool MemmappedFileSystem::IsMemmappedPackageFilename(const string& filename) {
 
 namespace {
 bool IsValidRegionChar(char c) {
-  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-         (c >= '0' && c <= '9') || c == '_' || c == '.';
+  return absl::ascii_isalnum(c) || c == '_' || c == '.';
 }
 }  // namespace
 
