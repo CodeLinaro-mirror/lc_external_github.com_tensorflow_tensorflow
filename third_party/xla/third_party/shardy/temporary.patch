@@ -1,15 +1,86 @@
+diff --git a/third_party/llvm/generated.patch b/third_party/llvm/generated.patch
+index 509398d..d5f112d 100644
+--- a/third_party/llvm/generated.patch
++++ b/third_party/llvm/generated.patch
+@@ -1 +1,66 @@
+ Auto generated patch. Do not edit or delete it, even if empty.
++diff -ruN --strip-trailing-cr a/llvm/lib/Target/BPF/BPFAsmPrinter.cpp b/llvm/lib/Target/BPF/BPFAsmPrinter.cpp
++--- a/llvm/lib/Target/BPF/BPFAsmPrinter.cpp
+++++ b/llvm/lib/Target/BPF/BPFAsmPrinter.cpp
++@@ -176,10 +176,6 @@
++         if (const GlobalValue *GV = Op.getGlobal())
++           if (GV->getName() == BPF_TRAP)
++             SawTrapCall = true;
++-      } else if (Op.isSymbol()) {
++-        if (const MCSymbol *Sym = Op.getMCSymbol())
++-          if (Sym->getName() == BPF_TRAP)
++-            SawTrapCall = true;
++       }
++     }
++   }
++diff -ruN --strip-trailing-cr a/mlir/lib/Dialect/MemRef/IR/MemRefOps.cpp b/mlir/lib/Dialect/MemRef/IR/MemRefOps.cpp
++--- a/mlir/lib/Dialect/MemRef/IR/MemRefOps.cpp
+++++ b/mlir/lib/Dialect/MemRef/IR/MemRefOps.cpp
++@@ -2568,11 +2568,6 @@
++     auto trailingReassocs = ArrayRef<int64_t>(reassoc).drop_front();
++     auto stride = SaturatedInteger::wrap(resultStrides[resultStrideIndex--]);
++     for (int64_t idx : llvm::reverse(trailingReassocs)) {
++-      // Dimensions of size 1 should be skipped, because their strides are
++-      // meaningless and could have any arbitrary value.
++-      if (srcShape[idx - 1] == 1)
++-        continue;
++-
++       stride = stride * SaturatedInteger::wrap(srcShape[idx]);
++ 
++       // Both source and result stride must have the same static value. In that
++@@ -2587,6 +2582,11 @@
++       if (strict && (stride.saturated || srcStride.saturated))
++         return failure();
++ 
+++      // Dimensions of size 1 should be skipped, because their strides are
+++      // meaningless and could have any arbitrary value.
+++      if (srcShape[idx - 1] == 1)
+++        continue;
+++
++       if (!stride.saturated && !srcStride.saturated && stride != srcStride)
++         return failure();
++     }
++diff -ruN --strip-trailing-cr a/mlir/test/Dialect/MemRef/ops.mlir b/mlir/test/Dialect/MemRef/ops.mlir
++--- a/mlir/test/Dialect/MemRef/ops.mlir
+++++ b/mlir/test/Dialect/MemRef/ops.mlir
++@@ -440,8 +440,7 @@
++          %arg4: index,
++          %arg5: index,
++          %arg6: index,
++-         %arg7: memref<4x?x4xf32>,
++-         %arg8: memref<1x1x18x?xsi8, strided<[?, ?, ?, 1], offset: ?>>) {
+++         %arg7: memref<4x?x4xf32>) {
++ //       CHECK:   memref.collapse_shape {{.*}} {{\[}}[0, 1], [2]]
++ //  CHECK-SAME:     memref<?x?x?xf32> into memref<?x?xf32>
++   %0 = memref.collapse_shape %arg0 [[0, 1], [2]] :
++@@ -490,10 +489,6 @@
++ //       CHECK:   memref.expand_shape {{.*}} {{\[}}[0, 1], [2], [3, 4]]
++   %4 = memref.expand_shape %arg7 [[0, 1], [2], [3, 4]] output_shape [2, 2, %arg4, 2, 2]
++         : memref<4x?x4xf32> into memref<2x2x?x2x2xf32>
++-
++-//       CHECK:   memref.collapse_shape {{.*}} {{\[}}[0, 1], [2], [3]]
++-//  CHECK-SAME:     memref<1x1x18x?xsi8, strided<[?, ?, ?, 1], offset: ?>> into memref<1x18x?xsi8, strided<[?, ?, 1], offset: ?>>
++-  %5 = memref.collapse_shape %arg8 [[0, 1], [2], [3]] : memref<1x1x18x?xsi8, strided<[?, ?, ?, 1], offset: ?>> into memref<1x18x?xsi8, strided<[?, ?, 1], offset: ?>>
++   return
++ }
++ 
 diff --git a/third_party/llvm/workspace.bzl b/third_party/llvm/workspace.bzl
-index 0859165..32e6a7a 100644
+index 32e6a7a..abdee76 100644
 --- a/third_party/llvm/workspace.bzl
 +++ b/third_party/llvm/workspace.bzl
 @@ -4,8 +4,8 @@ load("//third_party:repo.bzl", "tf_http_archive")
  
  def repo(name):
      """Imports LLVM."""
--    LLVM_COMMIT = "22079e3f3698d5c367c7b67f63de8c838791ae76"
--    LLVM_SHA256 = "d5616e9c0f4b761f13da5535a0d9ec94acf4ae5226bbec3e47ac2929ea60cac2"
-+    LLVM_COMMIT = "42a8ff877d47131ecb1280a1cc7e5e3c3bca6952"
-+    LLVM_SHA256 = "f768c5c3b987f68318b8ab3dd4530e54988dfe7d6bfb9b7c9c96acf503367d50"
+-    LLVM_COMMIT = "42a8ff877d47131ecb1280a1cc7e5e3c3bca6952"
+-    LLVM_SHA256 = "f768c5c3b987f68318b8ab3dd4530e54988dfe7d6bfb9b7c9c96acf503367d50"
++    LLVM_COMMIT = "2bc22ea02edda5926f3e53f141def9bf212ac1db"
++    LLVM_SHA256 = "4a034eda852b3c2d448d38e8661cbac45ae2233a29defeb55913fa5205cd29f7"
  
      tf_http_archive(
          name = name,
