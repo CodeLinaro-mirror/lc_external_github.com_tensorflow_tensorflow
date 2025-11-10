@@ -49,7 +49,7 @@ namespace se = stream_executor;
 namespace stream_executor::cuda {
 namespace {
 
-using xla::gpu::BufferDebugLogEntry;
+using xla::gpu::BufferDebugFloatCheckEntry;
 using xla::gpu::BufferDebugLogEntryId;
 using xla::gpu::ThunkId;
 
@@ -106,7 +106,7 @@ class FloatCheckKernelTest : public ::testing::Test {
         dim, stream_executor::BlockDim(1, 1, 1), stream_.get(), entry_id,
         device_input, device_input.ElementCount() * sizeof(T),
         buffer_debug_log.GetDeviceHeader(),
-        buffer_debug_log.GetDeviceEntries<BufferDebugLogEntry>()));
+        buffer_debug_log.GetDeviceEntries<BufferDebugFloatCheckEntry>()));
     TF_RETURN_IF_ERROR(stream_->BlockHostUntilDone());
 
     // The result gets stored in `buffer_debug_log`.
@@ -121,20 +121,31 @@ class FloatCheckKernelTest : public ::testing::Test {
 
 TEST_F(FloatCheckKernelTest, ChecksFloatsForF32) {
   se::DeviceMemory<uint8_t> mem = executor_->AllocateArray<uint8_t>(1024);
-  std::vector<float> input = {1.0f, std::numeric_limits<float>::quiet_NaN(),
-                              2.0f, std::numeric_limits<float>::quiet_NaN()};
+  std::vector<float> input = {
+      1.0f,
+      std::numeric_limits<float>::quiet_NaN(),
+      2.0f,
+      std::numeric_limits<float>::quiet_NaN(),
+      0.0f,
+      std::numeric_limits<float>::infinity(),
+      std::numeric_limits<float>::infinity(),
+      std::numeric_limits<float>::infinity(),
+  };
   TF_ASSERT_OK_AND_ASSIGN(
       se::gpu::BufferDebugLog device_log,
-      se::gpu::BufferDebugLog::CreateOnDevice<BufferDebugLogEntry>(*stream_,
-                                                                   mem));
+      se::gpu::BufferDebugLog::CreateOnDevice<BufferDebugFloatCheckEntry>(
+          *stream_, mem));
 
   TF_EXPECT_OK(AppendFloatCheckOnDevice<gpu::BufferDebugFloatCheckF32Kernel>(
       BufferDebugLogEntryId{123}, input, device_log));
 
   TF_ASSERT_OK_AND_ASSIGN(
-      auto host_log, device_log.ReadFromDevice<BufferDebugLogEntry>(*stream_));
+      auto host_log,
+      device_log.ReadFromDevice<BufferDebugFloatCheckEntry>(*stream_));
   ASSERT_GE(host_log.size(), 1);
-  EXPECT_EQ(host_log[0].value, 2);
+  EXPECT_EQ(host_log[0].nan_count, 2);
+  EXPECT_EQ(host_log[0].inf_count, 3);
+  EXPECT_EQ(host_log[0].zero_count, 1);
 }
 
 TEST_F(FloatCheckKernelTest, ChecksFloatsForBf16) {
@@ -143,19 +154,27 @@ TEST_F(FloatCheckKernelTest, ChecksFloatsForBf16) {
       xla::bfloat16(1.0f),
       xla::bfloat16(std::numeric_limits<float>::quiet_NaN()),
       xla::bfloat16(2.0f),
-      xla::bfloat16(std::numeric_limits<float>::quiet_NaN())};
+      xla::bfloat16(std::numeric_limits<float>::quiet_NaN()),
+      xla::bfloat16(0.0f),
+      xla::bfloat16(std::numeric_limits<float>::infinity()),
+      xla::bfloat16(std::numeric_limits<float>::infinity()),
+      xla::bfloat16(std::numeric_limits<float>::infinity()),
+  };
   TF_ASSERT_OK_AND_ASSIGN(
       se::gpu::BufferDebugLog device_log,
-      se::gpu::BufferDebugLog::CreateOnDevice<BufferDebugLogEntry>(*stream_,
-                                                                   mem));
+      se::gpu::BufferDebugLog::CreateOnDevice<BufferDebugFloatCheckEntry>(
+          *stream_, mem));
 
   TF_EXPECT_OK(AppendFloatCheckOnDevice<gpu::BufferDebugFloatCheckBf16Kernel>(
       BufferDebugLogEntryId{0}, input, device_log));
 
   TF_ASSERT_OK_AND_ASSIGN(
-      auto host_log, device_log.ReadFromDevice<BufferDebugLogEntry>(*stream_));
+      auto host_log,
+      device_log.ReadFromDevice<BufferDebugFloatCheckEntry>(*stream_));
   ASSERT_GE(host_log.size(), 1);
-  EXPECT_EQ(host_log[0].value, 2);
+  EXPECT_EQ(host_log[0].nan_count, 2);
+  EXPECT_EQ(host_log[0].inf_count, 3);
+  EXPECT_EQ(host_log[0].zero_count, 1);
 }
 
 TEST_F(FloatCheckKernelTest, ChecksFloatsInParallel) {
@@ -164,11 +183,14 @@ TEST_F(FloatCheckKernelTest, ChecksFloatsInParallel) {
   input[100] = std::numeric_limits<float>::quiet_NaN();
   input[200] = std::numeric_limits<float>::quiet_NaN();
   input[300] = std::numeric_limits<float>::quiet_NaN();
+  input[400] = 0.0f;
+  input[600] = std::numeric_limits<float>::infinity();
+  input[700] = std::numeric_limits<float>::infinity();
 
   TF_ASSERT_OK_AND_ASSIGN(
       se::gpu::BufferDebugLog device_log,
-      se::gpu::BufferDebugLog::CreateOnDevice<BufferDebugLogEntry>(*stream_,
-                                                                   mem));
+      se::gpu::BufferDebugLog::CreateOnDevice<BufferDebugFloatCheckEntry>(
+          *stream_, mem));
 
   TF_EXPECT_OK(AppendFloatCheckOnDevice<gpu::BufferDebugFloatCheckF32Kernel>(
       BufferDebugLogEntryId{0}, input, device_log, se::ThreadDim(2, 4, 8)));
@@ -176,10 +198,15 @@ TEST_F(FloatCheckKernelTest, ChecksFloatsInParallel) {
       BufferDebugLogEntryId{0}, input, device_log, se::ThreadDim(2, 4, 8)));
 
   TF_ASSERT_OK_AND_ASSIGN(
-      auto host_log, device_log.ReadFromDevice<BufferDebugLogEntry>(*stream_));
+      auto host_log,
+      device_log.ReadFromDevice<BufferDebugFloatCheckEntry>(*stream_));
   ASSERT_GE(host_log.size(), 2);
-  EXPECT_EQ(host_log[0].value, 3);
-  EXPECT_EQ(host_log[1].value, 3);
+  EXPECT_EQ(host_log[0].nan_count, 3);
+  EXPECT_EQ(host_log[0].inf_count, 2);
+  EXPECT_EQ(host_log[0].zero_count, 1);
+  EXPECT_EQ(host_log[1].nan_count, 3);
+  EXPECT_EQ(host_log[1].inf_count, 2);
+  EXPECT_EQ(host_log[1].zero_count, 1);
 }
 
 }  // namespace
