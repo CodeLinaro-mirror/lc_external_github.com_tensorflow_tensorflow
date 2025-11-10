@@ -182,6 +182,8 @@ class Compiler {
 
     // The number of devices in a fast-interconnect domain.
     int64_t slice_size = 0;
+
+    bool run_backend_only = false;
   };
 
   virtual ~Compiler() = default;

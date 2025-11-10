@@ -33,7 +33,9 @@ class NanoRtClient {
   // Compiles the given XLA computation to a NanoRtExecutable using the XLA:CPU
   // backend.
   absl::StatusOr<std::unique_ptr<NanoRtExecutable>> Compile(
-      const XlaComputation& computation);
+      const XlaComputation& computation,
+      const Compiler::CompileOptions& compile_options =
+          Compiler::CompileOptions());
 
   // Exports the given NanoRtExecutable to an AotCompilationResult.
   absl::StatusOr<std::unique_ptr<AotCompilationResult>> Export(
