@@ -321,6 +321,7 @@ cc_library(
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/service:buffer_assignment",
+        "//xla/service:platform_util",
         "//xla/stream_executor:blas",
         "//xla/stream_executor:device_memory",
         "//xla/stream_executor:gpu_solver_context",
@@ -335,6 +336,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -2575,6 +2577,7 @@ cc_library(
     srcs = ["thunk_proto_deserialization.cc"],
     hdrs = ["thunk_proto_deserialization.h"],
     deps = [
+        ":cholesky_thunk",
         ":conditional_thunk",
         ":convolution_reorder_thunk",
         ":convolution_thunk",
@@ -2586,10 +2589,12 @@ cc_library(
         ":fft_thunk",
         ":gemm_thunk",
         ":gpublas_lt_matmul_thunk",
+        ":host_execute_thunk",
         ":infeed_thunk",
         ":kernel_thunk",
         ":memset_thunk",
         ":norm_thunk",
+        ":outfeed_thunk",
         ":replica_id_thunk",
         ":sequential_thunk",
         ":thunk",
@@ -2617,6 +2622,7 @@ xla_cc_test(
     deps = [
         ":conditional_thunk",
         ":copy_thunk",
+        ":host_execute_thunk",
         ":sequential_thunk",
         ":thunk",
         ":thunk_proto_cc",
@@ -3139,16 +3145,23 @@ cc_library(
         "//xla/stream_executor/gpu:gpu_kernel_registry",
         "//xla/tsl/platform:errors",
         "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
     ],
 )
 
 xla_test(
     name = "buffers_checksum_thunk_test",
     srcs = ["buffers_checksum_thunk_test.cc"],
+    backend_tags = {
+        "gpu": [
+            "multi_gpu",
+        ],
+    },
     backends = ["gpu"],
     tags = [
         "cuda-only",
@@ -3164,7 +3177,10 @@ xla_test(
         "//xla/service:executable",
         "//xla/service/gpu:buffer_allocations",
         "//xla/service/gpu:resource_requests",
+        "//xla/stream_executor:device_description",
         "//xla/stream_executor:device_memory",
+        "//xla/stream_executor:mock_stream",
+        "//xla/stream_executor:mock_stream_executor",
         "//xla/stream_executor:platform",
         "//xla/stream_executor:platform_manager",
         "//xla/stream_executor:stream",
@@ -3173,6 +3189,7 @@ xla_test(
         "//xla/tsl/lib/core:status_test_util",
         "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",
     ],
 )
