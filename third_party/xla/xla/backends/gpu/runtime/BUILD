@@ -1880,6 +1880,7 @@ cc_library(
     hdrs = ["host_send_recv_thunk.h"],
     deps = [
         ":thunk",
+        ":thunk_proto_cc",
         "//xla:shape_util",
         "//xla:xla_data_proto_cc",
         "//xla/service:buffer_assignment",
@@ -1900,6 +1901,7 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/profiler/lib:traceme",
     ],
 )
@@ -2590,6 +2592,7 @@ cc_library(
         ":gemm_thunk",
         ":gpublas_lt_matmul_thunk",
         ":host_execute_thunk",
+        ":host_send_recv_thunk",
         ":infeed_thunk",
         ":kernel_thunk",
         ":memset_thunk",
@@ -2623,6 +2626,7 @@ xla_cc_test(
         ":conditional_thunk",
         ":copy_thunk",
         ":host_execute_thunk",
+        ":host_send_recv_thunk",
         ":sequential_thunk",
         ":thunk",
         ":thunk_proto_cc",
