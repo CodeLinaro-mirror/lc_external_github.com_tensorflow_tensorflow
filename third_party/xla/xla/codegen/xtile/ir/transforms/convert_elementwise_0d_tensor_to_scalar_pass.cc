@@ -30,13 +30,12 @@ limitations under the License.
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
-#include "xla/backends/gpu/codegen/triton/transforms/passes.h"
-#include "xla/codegen/xtile/ir/xtile_ops.h"
+#include "xla/codegen/xtile/ir/transforms/passes.h"
 
-namespace mlir::triton::xla {
+namespace xla::xtile {
 
-#define GEN_PASS_DEF_TRITONXLACONVERT0DTENSORTOSCALARPASS
-#include "xla/backends/gpu/codegen/triton/transforms/passes.h.inc"
+#define GEN_PASS_DEF_CONVERTELEMENTWISE0DTENSORTOSCALARPASS
+#include "xla/codegen/xtile/ir/transforms/passes.h.inc"
 
 namespace {
 
@@ -54,7 +53,7 @@ struct ElementwiseConverter
       return rewriter.notifyMatchFailure(op, "failed to convert type");
     }
 
-    mlir::Operation* new_op = Operation::create(
+    mlir::Operation* new_op = mlir::Operation::create(
         op->getLoc(), op->getName(), new_result_types, operands, op->getAttrs(),
         op->getPropertiesStorage(), op->getSuccessors(), op->getNumRegions());
     rewriter.replaceOp(op, rewriter.insert(new_op));
@@ -86,9 +85,9 @@ struct ConstantConversionPattern
   }
 };
 
-struct TritonXLAConvert0DTensorToScalarPass
-    : public impl::TritonXLAConvert0DTensorToScalarPassBase<
-          TritonXLAConvert0DTensorToScalarPass> {
+struct ConvertElementwise0DTensorToScalarPass
+    : public impl::ConvertElementwise0DTensorToScalarPassBase<
+          ConvertElementwise0DTensorToScalarPass> {
   void runOnOperation() override {
     mlir::TypeConverter type_converter;
     type_converter.addConversion([](mlir::Type type) { return type; });
@@ -148,8 +147,8 @@ struct TritonXLAConvert0DTensorToScalarPass
 
 }  // namespace
 
-std::unique_ptr<mlir::Pass> CreateTritonXLAConvert0DTensorToScalarPass() {
-  return std::make_unique<TritonXLAConvert0DTensorToScalarPass>();
+std::unique_ptr<mlir::Pass> CreateConvertElementwise0DTensorToScalarPass() {
+  return std::make_unique<ConvertElementwise0DTensorToScalarPass>();
 }
 
-}  // namespace mlir::triton::xla
+}  // namespace xla::xtile

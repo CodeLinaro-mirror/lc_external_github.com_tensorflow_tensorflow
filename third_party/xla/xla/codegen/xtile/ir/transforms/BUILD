@@ -31,6 +31,7 @@ gentbl_cc_library(
 cc_library(
     name = "passes",
     srcs = [
+        "convert_elementwise_0d_tensor_to_scalar_pass.cc",
         "verify_legal_xtile_ops.cc",
     ],
     hdrs = ["passes.h"],

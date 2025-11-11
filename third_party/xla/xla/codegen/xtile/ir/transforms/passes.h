@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <memory>  // IWYU pragma: keep
 
+#include "mlir/Dialect/Tensor/IR/Tensor.h"  // IWYU pragma: keep
 #include "mlir/IR/BuiltinOps.h"  // IWYU pragma: keep
 #include "mlir/Pass/Pass.h"  // IWYU pragma: keep
 
@@ -26,6 +27,8 @@ namespace xla::xtile {
 #define GEN_PASS_DECL
 #define GEN_PASS_REGISTRATION
 #include "xla/codegen/xtile/ir/transforms/passes.h.inc"
+
+std::unique_ptr<mlir::Pass> CreateConvertElementwise0DTensorToScalarPass();
 
 }  // namespace xla::xtile
 
