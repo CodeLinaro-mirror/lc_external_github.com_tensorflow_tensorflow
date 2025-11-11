@@ -2179,12 +2179,14 @@ absl::StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> EmitXTileModule(
       debug_options.xla_gpu_unsupported_annotate_with_emitter_loc());
 
   mlir::OwningOpRef<mlir::ModuleOp> triton_module =
-      llvm_ir::CreateMlirModuleOp(loc);
+      llvm_ir::CreateMlirModuleOp(loc, fusion->name());
   b.setInsertionPointToEnd(triton_module->getBody());
 
-  auto backend_config =
-      fusion->backend_config<GpuBackendConfig>()->fusion_backend_config();
-  absl::string_view fusion_kind = backend_config.kind();
+  absl::string_view fusion_kind = kTritonFusionKind;
+  if (auto backend_config = fusion->backend_config<GpuBackendConfig>();
+      backend_config.ok()) {
+    // fusion_kind = backend_config->fusion_backend_config().kind();
+  }
 
   // Build Triton kernel.
   SmallVector<Type> fn_arg_types;

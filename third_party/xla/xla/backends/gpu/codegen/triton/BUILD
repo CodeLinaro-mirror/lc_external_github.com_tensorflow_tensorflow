@@ -232,6 +232,7 @@ cc_library(
         ["fusion_emitter_stub.cc"],
     ),
     hdrs = ["fusion_emitter.h"],
+    compatible_with = ["//buildenv/target:non_prod"],
     deps = [
         "//xla:autotuning_proto_cc",
         "//xla/backends/gpu/codegen/triton/ir:triton_xla",
