@@ -365,6 +365,72 @@ TEST(MeshAxesReplicaGroupListTest, ValidatesIncompatibleAxes) {
       "Sub-axis size must be strictly less than the full axis size");
 }
 
+TEST(MeshAxesReplicaGroupListTest, ToReplicaGroupV2) {
+  Mesh mesh({6, 6}, {"a", "b"});
+
+  // a:(1)3
+  MeshAxesReplicaGroupList replica_group_a_1_3(mesh, {AxisRef(0, {1, 3})});
+  EXPECT_EQ(
+      replica_group_a_1_3.flattened_replica_groups(),
+      replica_group_a_1_3.ToIotaReplicaGroupList().flattened_replica_groups());
+
+  // b:(3)2
+  MeshAxesReplicaGroupList replica_group_b_3_2(mesh, {AxisRef(1, {3, 2})});
+  EXPECT_EQ(
+      replica_group_b_3_2.flattened_replica_groups(),
+      replica_group_b_3_2.ToIotaReplicaGroupList().flattened_replica_groups());
+
+  // a:(1)2, b:(1)2
+  MeshAxesReplicaGroupList replica_group_a_1_2_b_1_2(
+      mesh, {AxisRef(0, {1, 2}), AxisRef(1, {1, 2})});
+  EXPECT_EQ(replica_group_a_1_2_b_1_2.flattened_replica_groups(),
+            replica_group_a_1_2_b_1_2.ToIotaReplicaGroupList()
+                .flattened_replica_groups());
+
+  // a:(1)3, b:(1)3
+  MeshAxesReplicaGroupList replica_group_a_1_3_b_1_3(
+      mesh, {AxisRef(0, {1, 3}), AxisRef(1, {1, 3})});
+  EXPECT_EQ(replica_group_a_1_3_b_1_3.flattened_replica_groups(),
+            replica_group_a_1_3_b_1_3.ToIotaReplicaGroupList()
+                .flattened_replica_groups());
+
+  //  b:(1)3, a:(1)3 (Reverse order from above). This should produce the same
+  // replica groups as the above but with ids in a different order.
+  MeshAxesReplicaGroupList replica_group_b_1_3_a_1_3(
+      mesh, {AxisRef(1, {1, 3}), AxisRef(0, {1, 3})});
+  EXPECT_EQ(replica_group_a_1_3_b_1_3.flattened_replica_groups(),
+            replica_group_a_1_3_b_1_3.ToIotaReplicaGroupList()
+                .flattened_replica_groups());
+
+  // a:(1)3, a:(3)2 (Multiple subaxes on the same axis.)
+  MeshAxesReplicaGroupList replica_group_a_1_3_a_3_2(
+      mesh, {AxisRef(0, {1, 3}), AxisRef(0, {3, 2})});
+  EXPECT_EQ(replica_group_a_1_3_a_3_2.flattened_replica_groups(),
+            replica_group_a_1_3_a_3_2.ToIotaReplicaGroupList()
+                .flattened_replica_groups());
+
+  // b:(1)2, b:(2)3
+  MeshAxesReplicaGroupList replica_group_b_1_2_b_2_3(
+      mesh, {AxisRef(1, {1, 2}), AxisRef(1, {2, 3})});
+  EXPECT_EQ(replica_group_b_1_2_b_2_3.flattened_replica_groups(),
+            replica_group_b_1_2_b_2_3.ToIotaReplicaGroupList()
+                .flattened_replica_groups());
+}
+
+TEST(MeshAxesReplicaGroupListTest, ToCollectiveDeviceList) {
+  Mesh mesh({6, 6}, {"a", "b"});
+
+  MeshAxesReplicaGroupList replica_group_b(mesh, {AxisRef(0)});
+  EXPECT_EQ(
+      replica_group_b.flattened_replica_groups(),
+      replica_group_b.ToCollectiveDeviceList().flattened_replica_groups());
+
+  MeshAxesReplicaGroupList replica_group_a_1_3(mesh, {AxisRef(0, {1, 3})});
+  EXPECT_EQ(
+      replica_group_a_1_3.flattened_replica_groups(),
+      replica_group_a_1_3.ToCollectiveDeviceList().flattened_replica_groups());
+}
+
 TEST(CollectiveDeviceListTest, DefaultListToString) {
   EXPECT_EQ(CollectiveDeviceList().ToString(true), "{}");
   EXPECT_EQ(CollectiveDeviceList().ToString(false), "{}");

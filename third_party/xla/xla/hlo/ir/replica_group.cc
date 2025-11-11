@@ -218,16 +218,15 @@ void MeshAxesReplicaGroupList::InitializeDimToReshapeAndAggregateAxes() {
   dim_to_reshape_and_aggregate_axes_ = dim_map;
 }
 
-std::vector<std::vector<int64_t>>
-MeshAxesReplicaGroupList::flattened_replica_groups() {
+void MeshAxesReplicaGroupList::ComputeReindexedAxes(
+    std::vector<int64_t>& reindex_axis_sizes,
+    std::vector<int64_t>& reindexed_grouped_axes) {
   if (!dim_to_reshape_and_aggregate_axes_.has_value()) {
     InitializeDimToReshapeAndAggregateAxes();
   }
 
   absl::flat_hash_map<int64_t, ReshapeAndAggregateAxes> dim_map =
       dim_to_reshape_and_aggregate_axes_.value();
-  std::vector<int64_t> reindex_axis_sizes;
-  std::vector<int64_t> reindexed_grouped_axes;
   for (int64_t i = 0; i < mesh_.axis_sizes().size(); ++i) {
     int64_t axis_size = mesh_.axis_size(i);
     auto it = dim_map.find(i);
@@ -244,6 +243,13 @@ MeshAxesReplicaGroupList::flattened_replica_groups() {
       reindexed_grouped_axes.push_back(aggregate_dim + offset_index);
     }
   }
+}
+
+std::vector<std::vector<int64_t>>
+MeshAxesReplicaGroupList::flattened_replica_groups() {
+  std::vector<int64_t> reindex_axis_sizes;
+  std::vector<int64_t> reindexed_grouped_axes;
+  ComputeReindexedAxes(reindex_axis_sizes, reindexed_grouped_axes);
   return get_replica_groups_for_full_axes(
       mesh_, reindex_axis_sizes, reindexed_grouped_axes, num_replica_groups(),
       num_devices_per_group());
@@ -284,6 +290,31 @@ MeshAxesReplicaGroupList MeshAxesReplicaGroupList::FromProto(
     axes.push_back(AxisRef::FromProto(axis_proto));
   }
   return MeshAxesReplicaGroupList(mesh, axes);
+}
+
+IotaReplicaGroupList MeshAxesReplicaGroupList::ToIotaReplicaGroupList() {
+  CHECK(mesh_.device_assignment().iota().has_value());
+  std::vector<int64_t> reshape_dims;
+  std::vector<int64_t> reindexed_grouped_axes;
+  ComputeReindexedAxes(reshape_dims, reindexed_grouped_axes);
+
+  std::vector<int> transpose_perm;
+  for (int64_t reshape_dim = 0; reshape_dim < reshape_dims.size();
+       ++reshape_dim) {
+    if (!absl::c_linear_search(reindexed_grouped_axes, reshape_dim)) {
+      transpose_perm.push_back(reshape_dim);
+    }
+  }
+  for (int64_t grouped_axis : reindexed_grouped_axes) {
+    transpose_perm.push_back(grouped_axis);
+  }
+
+  return IotaReplicaGroupList(num_replica_groups(), num_devices_per_group(),
+                              reshape_dims, transpose_perm);
+}
+
+CollectiveDeviceList MeshAxesReplicaGroupList::ToCollectiveDeviceList() {
+  return CollectiveDeviceList(flattened_replica_groups());
 }
 
 /************** IotaReplicaGroupList implementation ***************************/
@@ -371,6 +402,16 @@ const std::vector<ReplicaGroup>& CollectiveDeviceList::replica_groups() const {
     CHECK(replica_groups_ != nullptr);
   }
   return *replica_groups_;
+}
+
+std::vector<std::vector<int64_t>>
+CollectiveDeviceList::flattened_replica_groups() const {
+  std::vector<std::vector<int64_t>> result;
+  result.reserve(replica_groups().size());
+  for (const ReplicaGroup& group : replica_groups()) {
+    result.emplace_back(group.replica_ids().begin(), group.replica_ids().end());
+  }
+  return result;
 }
 
 std::string CollectiveDeviceList::ToString(
