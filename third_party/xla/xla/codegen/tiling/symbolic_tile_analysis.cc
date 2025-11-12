@@ -1348,8 +1348,10 @@ std::vector<OperandIndexingSet> GetOperandIndexingMaps(
 absl::StatusOr<bool> SymbolicTileAnalysis::ParametersSatisfyConstraints(
     const Tiling& tiling) const {
   const ConstraintExpression& constraints = tiling_specification_.constraints();
+  llvm::errs() << "constraints: " << constraints.ToString() << "\n";
   CHECK(constraints.is_satisfiable());  // Crash OK
 
+  tiling_specification_.constraints().ToString();
   TF_ASSIGN_OR_RETURN(FlatTiling flat_tiling_parameters,
                       tiling.Flatten(tiling_specification_));
 
