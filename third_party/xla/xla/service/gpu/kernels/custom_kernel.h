@@ -1,3 +1,4 @@
+#include "xla/service/gpu/kernels/custom_kernel.pb.h"
 /* Copyright 2023 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +21,7 @@ limitations under the License.
 #include <optional>
 #include <string>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "xla/stream_executor/kernel_spec.h"
 #include "xla/stream_executor/launch_dim.h"
@@ -66,6 +68,12 @@ class CustomKernel {
   size_t shared_memory_bytes() const;
 
   std::string ToString() const;
+
+  absl::StatusOr<CustomKernelProto> ToProto() const;
+  static absl::StatusOr<CustomKernel> FromProto(
+      const CustomKernelProto& proto,
+      const std::optional<se::KernelLoaderSpec::SymbolResolver>&
+          symbol_resolver = std::nullopt);
 
  private:
   std::string name_;

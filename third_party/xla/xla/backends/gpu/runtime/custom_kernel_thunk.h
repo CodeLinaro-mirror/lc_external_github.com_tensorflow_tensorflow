@@ -1,3 +1,4 @@
+#include "xla/backends/gpu/runtime/thunk.pb.h"
 /* Copyright 2025 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,14 +19,17 @@ limitations under the License.
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/types/span.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/codegen/emitters/kernel_arguments.h"
 #include "xla/service/buffer_assignment.h"
@@ -70,7 +74,19 @@ class CustomKernelThunk : public Thunk {
 
   BufferUses buffer_uses() const override;
 
+  absl::StatusOr<ThunkProto> ToProto() const override;
+  static absl::StatusOr<std::unique_ptr<CustomKernelThunk>> FromProto(
+      ThunkInfo thunk_info, const CustomKernelThunkProto& proto,
+      absl::Span<const BufferAllocation> buffer_allocations,
+      const std::optional<se::KernelLoaderSpec::SymbolResolver>&
+          symbol_resolver = std::nullopt);
+
  private:
+  // Private constructor for deserialization.
+  CustomKernelThunk(Thunk::ThunkInfo thunk_info, CustomKernel custom_kernel,
+                    std::vector<BufferAllocation::Slice> args,
+                    std::vector<bool> written);
+
   // Buffer slices passed to the kernel as arguments.
   std::vector<BufferAllocation::Slice> args_;
 
