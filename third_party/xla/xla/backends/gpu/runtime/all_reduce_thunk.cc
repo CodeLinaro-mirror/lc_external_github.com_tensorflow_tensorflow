@@ -71,18 +71,6 @@ CollectiveOpGroupMode GetGroupModeInst(HloInstType* inst) {
 
 }  // namespace
 
-template <typename HloInstType>
-AllReduceConfig GetAllReduceConfigInst(HloInstType* inst) {
-  std::optional<ReductionKind> reduction_kind =
-      MatchReductionComputation(inst->called_computations().front());
-  CHECK(reduction_kind.has_value());
-
-  AllReduceConfig config;
-  config.config = GetCollectiveConfig(inst, inst->use_global_device_ids());
-  config.reduction_kind = *reduction_kind;
-  return config;
-}
-
 absl::Status RunAllReduce(ReductionKind reduction_kind,
                           std::vector<DeviceBufferPair>& buffers,
                           se::Stream& stream, Communicator* comm,
