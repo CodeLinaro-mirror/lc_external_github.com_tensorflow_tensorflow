@@ -27,6 +27,7 @@ xla_cc_test(
     srcs = ["tracked_cpu_device_buffer_test.cc"],
     deps = [
         ":abstract_cpu_buffer",
+        ":cpu_client",
         ":cpu_event",
         "//xla:util",
         "//xla/tsl/concurrency:async_value",
