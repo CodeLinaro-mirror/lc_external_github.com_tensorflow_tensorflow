@@ -20,6 +20,8 @@ limitations under the License.
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "mlir/Dialect/Vector/Utils/VectorUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -84,13 +86,28 @@ class LowerErfPattern : public mlir::OpRewritePattern<mlir::math::ErfOp> {
 
   mlir::LogicalResult matchAndRewrite(
       mlir::math::ErfOp op, mlir::PatternRewriter& rewriter) const override {
-    mlir::Type type = op.getType();
+    auto type = op.getType();
+    mlir::Type element_type = mlir::getElementTypeOrSelf(op.getType());
+    auto maybe_vector_type = mlir::dyn_cast<mlir::VectorType>(type);
+
+    if (maybe_vector_type && maybe_vector_type.getRank() != 1) {
+      return rewriter.notifyMatchFailure(op, "Vector rank is not 1.");
+    }
+
+    // Get the vectorized version of the given type if op has a vector type,
+    // else just return the given type.
+    auto get_vector_type = [&maybe_vector_type](mlir::Type type) -> mlir::Type {
+      if (maybe_vector_type) {
+        return maybe_vector_type.clone(type);
+      }
+      return type;
+    };
 
     // Extend the argument to f32 and truncate the result back unconditionally
     // as these will be cleaned up later if they are already f32.
-    if (type.isF16() || type.isF32()) {
+    if (element_type.isF16() || element_type.isF32()) {
       mlir::ImplicitLocOpBuilder b(op.getLoc(), rewriter);
-      mlir::Type f32_type = b.getF32Type();
+      mlir::Type f32_type = get_vector_type(b.getF32Type());
 
       mlir::Value input_value =
           b.create<mlir::arith::ExtFOp>(f32_type, op.getOperand());
@@ -106,12 +123,27 @@ class LowerErfPattern : public mlir::OpRewritePattern<mlir::math::ErfOp> {
       return mlir::success();
     }
 
-    if (type.isF64()) {
+    if (element_type.isF64()) {
       mlir::ImplicitLocOpBuilder b(op.getLoc(), rewriter);
 
       auto erf_decl = GetErf64Declaration(rewriter);
-      auto call_op = b.create<mlir::func::CallOp>(erf_decl, op.getOperand());
-      rewriter.replaceOp(op, call_op->getResults());
+
+      if (maybe_vector_type) {
+        llvm::SmallVector<mlir::Value> erf_results;
+        for (int64_t idx = 0; idx < maybe_vector_type.getNumElements(); ++idx) {
+          mlir::Value extracted = mlir::vector::ExtractOp::create(
+              rewriter, op.getLoc(), op.getOperand(), idx);
+          mlir::Value scalar_erf =
+              b.create<mlir::func::CallOp>(erf_decl, extracted).getResult(0);
+          erf_results.push_back(scalar_erf);
+        }
+        rewriter.replaceOpWithNewOp<mlir::vector::FromElementsOp>(op, type,
+                                                                  erf_results);
+        return mlir::success();
+      } else {
+        auto call_op = b.create<mlir::func::CallOp>(erf_decl, op.getOperand());
+        rewriter.replaceOp(op, call_op->getResults());
+      }
       return mlir::success();
     }
 
