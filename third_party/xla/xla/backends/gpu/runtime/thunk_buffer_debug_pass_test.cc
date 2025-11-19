@@ -42,6 +42,7 @@ limitations under the License.
 #include "xla/runtime/buffer_use.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/hlo_module_config.h"
+#include "xla/shape.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/tsl/platform/statusor.h"
 
@@ -189,6 +190,8 @@ TEST_F(ThunkBufferDebugPassTest, InsertsBuffersDebugChecksumThunks) {
   FakeThunkPassBufferAllocator allocator;
   // Create a fake thunk with a few different buffer uses.
   BufferAllocation alloc(0, 1024, 0);
+
+  Shape arg_shape = ShapeUtil::MakeShape(U8, {1});
   BufferAllocation::Slice slice_i(&alloc, 0, 1);
   BufferAllocation::Slice slice_o(&alloc, 1, 1);
   BufferAllocation::Slice slice_io(&alloc, 2, 1);
@@ -200,14 +203,14 @@ TEST_F(ThunkBufferDebugPassTest, InsertsBuffersDebugChecksumThunks) {
       Thunk::BufferUses{
           // Consume means the thunk can reuse the buffer for scratch space, so
           // only check it on input.
-          BufferUse::Consume(slice_i),
+          BufferUse::Consume(slice_i, arg_shape),
           // Write is undefined on input, but defined on output.
-          BufferUse::Write(slice_o),
+          BufferUse::Write(slice_o, arg_shape),
           // Unlike Consume, Read is supposed to preserve the contents of the
           // buffer, so we check it on input *and* output.
-          BufferUse::Read(slice_io),
+          BufferUse::Read(slice_io, arg_shape),
           // Scratch buffers are not checked at all.
-          BufferUse::Scratch(slice_scratch),
+          BufferUse::Scratch(slice_scratch, arg_shape),
       });
   Thunk* fake_thunk_ptr = fake_thunk.get();
   std::vector<std::unique_ptr<Thunk>> thunks;
@@ -453,10 +456,11 @@ TEST_F(ThunkBufferDebugPassTest, InsertsBuffersDebugFloatCheckThunks) {
   hlo_module.AddEntryComputation(std::move(entry_computation));
   // Create a fake thunk with a few different buffer uses.
   BufferAllocation alloc(0, 1024, 0);
-  BufferAllocation::Slice slice_i(&alloc, 0, 1, PrimitiveType::F32);
-  BufferAllocation::Slice slice_o(&alloc, 1, 1, PrimitiveType::F32);
-  BufferAllocation::Slice slice_io(&alloc, 2, 1, PrimitiveType::F32);
-  BufferAllocation::Slice slice_scratch(&alloc, 3, 1, PrimitiveType::F32);
+  Shape arg_shape = ShapeUtil::MakeShape(F32, {1});
+  BufferAllocation::Slice slice_i(&alloc, 0, 4, PrimitiveType::F32);
+  BufferAllocation::Slice slice_o(&alloc, 4, 4, PrimitiveType::F32);
+  BufferAllocation::Slice slice_io(&alloc, 8, 4, PrimitiveType::F32);
+  BufferAllocation::Slice slice_scratch(&alloc, 12, 4, PrimitiveType::F32);
   Thunk::ThunkInfo fake_thunk_info;
   fake_thunk_info.thunk_id = ThunkId(kTestThunkId);
   auto fake_thunk = std::make_unique<FakeThunk>(
@@ -464,14 +468,14 @@ TEST_F(ThunkBufferDebugPassTest, InsertsBuffersDebugFloatCheckThunks) {
       Thunk::BufferUses{
           // Consume means the thunk can reuse the buffer for scratch space, so
           // only check it on input.
-          BufferUse::Consume(slice_i),
+          BufferUse::Consume(slice_i, arg_shape),
           // Write is undefined on input, but defined on output.
-          BufferUse::Write(slice_o),
+          BufferUse::Write(slice_o, arg_shape),
           // Unlike Consume, Read is supposed to preserve the contents of the
           // buffer, so we check it on input *and* output.
-          BufferUse::Read(slice_io),
+          BufferUse::Read(slice_io, arg_shape),
           // Scratch buffers are not checked at all.
-          BufferUse::Scratch(slice_scratch),
+          BufferUse::Scratch(slice_scratch, arg_shape),
       });
   Thunk* fake_thunk_ptr = fake_thunk.get();
   std::vector<std::unique_ptr<Thunk>> thunks;
