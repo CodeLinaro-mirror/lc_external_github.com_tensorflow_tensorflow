@@ -46,6 +46,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/hlo/ir/hlo_schedule.h"
 #include "xla/hlo/pass/hlo_pass_interface.h"
+#include "xla/layout.h"
 #include "xla/map_util.h"
 #include "xla/service/hlo_buffer.h"
 #include "xla/service/hlo_cost_analysis.h"
@@ -614,7 +615,7 @@ class HloGraphNode {
   }
 
   // Nullptr is not a valid value for 'i'.
-  explicit HloGraphNode(const HloInstruction* i, int64_t original_position)
+  explicit HloGraphNode(HloInstruction* i, int64_t original_position)
       : instr_(i), opcode_(i->opcode()), original_position_(original_position) {
     InitBitFields();
   }
@@ -677,6 +678,7 @@ class HloGraphNode {
     }
   }
   const HloInstruction& GetInstr() const { return *instr_; }
+  HloInstruction& GetMutableInstr() { return *instr_; }
   HloOpcode GetOpcode() const { return opcode_; }
   bool IsScheduled() const { return scheduled_; }
   int32_t GetIndegree() const { return indegree_; }
@@ -942,7 +944,7 @@ class HloGraphNode {
   };
 
   // Instruction this Graph node represents
-  const HloInstruction* instr_;
+  HloInstruction* instr_;
   // Opcode of instr_, copied here for better cache behavior (so we can look at
   // the opcode without having to touch another cache line).
   HloOpcode opcode_;

@@ -177,10 +177,10 @@ absl::Status ProfileGuidedLatencyEstimator::CheckAccuracy(
         !comp->GetUniqueCaller(HloOpcode::kWhile)) {
       continue;
     }
-    for (const HloInstruction* instr : comp->MakeInstructionPostOrder()) {
+    for (HloInstruction* instr : comp->MakeInstructionPostOrder()) {
       NodeCost(instr);
       HloGraphNode from(instr, /*original_position=*/-1);
-      for (const HloInstruction* user : instr->users()) {
+      for (HloInstruction* user : instr->users()) {
         HloGraphNode to(user, /*original_position=*/-1);
         GetLatencyBetween(from, to);
       }

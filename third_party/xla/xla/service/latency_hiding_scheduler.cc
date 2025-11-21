@@ -1613,7 +1613,9 @@ class ReadySetLt {
             cand_node->GetResources());
     int64_t num_conflicting_resources = 0;
     for (int64_t resource : resources) {
-      if (!sched_state_.resource_occupiers_in_flight.count(resource)) continue;
+      if (!sched_state_.resource_occupiers_in_flight.count(resource)) {
+        continue;
+      }
       num_conflicting_resources +=
           sched_state_.resource_occupiers_in_flight.at(resource).size();
     }
@@ -2225,8 +2227,7 @@ std::vector<int64_t> GetPredecessorAnnotations(const HloGraphNode* node) {
 absl::StatusOr<HloGraphNode::TimeCost> DefaultSchedulerCore::ScheduleNode(
     HloGraphNode* n, DefaultSchedulerCore::SchedulingState* sched_state) const {
   // Insert the node into the sequence and mark it as scheduled.
-  sched_state->new_sequence_reversed.push_back(
-      const_cast<HloInstruction*>(&n->GetInstr()));
+  sched_state->new_sequence_reversed.push_back(&n->GetMutableInstr());
   n->SetScheduled();
   sched_state->nodes_holding_annotations.erase(n);
 
@@ -3244,9 +3245,9 @@ DefaultSchedulerCore::ScheduleComputation(
     XLA_VLOG_LINES(2, [&sched_state]() {
       struct LogFormatter {
         void operator()(std::string* out, const HloGraphNode* n) const {
-          out->append(absl::StrCat("\t", n->GetInstr().name(),
-                                   " Ready time: ", n->GetReadyTime(),
-                                   " Depth: ", n->GetGraphDepth()));
+          absl::StrAppend(out, "\t", n->GetInstr().name(),
+                          " Ready time: ", n->GetReadyTime(),
+                          " Depth: ", n->GetGraphDepth());
         }
       };
       return absl::StrJoin(sched_state->ready_set, "\n", LogFormatter());
