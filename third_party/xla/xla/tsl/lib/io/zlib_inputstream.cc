@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <zlib.h>
 
+#include "absl/status/status.h"
 #include "xla/tsl/platform/logging.h"
 #include "tsl/platform/strcat.h"
 
@@ -163,7 +164,7 @@ absl::Status ZlibInputStream::ReadFromStream() {
   // fill up the buffer in which case input_stream_->ReadNBytes would return an
   // OutOfRange error.
   if (data.empty()) {
-    return errors::OutOfRange("EOF reached");
+    return absl::OutOfRangeError("EOF reached");
   }
   if (absl::IsOutOfRange(s)) {
     return absl::OkStatus();

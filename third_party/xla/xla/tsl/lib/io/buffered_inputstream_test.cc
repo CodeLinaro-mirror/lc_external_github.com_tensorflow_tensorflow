@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/tsl/lib/io/buffered_inputstream.h"
 
+#include "absl/status/status.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/lib/io/random_inputstream.h"
 #include "xla/tsl/platform/env.h"
@@ -43,7 +44,7 @@ class ReadOnceInputStream : public InputStreamInterface {
     if (start_) {
       *result = "0123456789";
       start_ = false;
-      return errors::OutOfRange("Out of range.");
+      return absl::OutOfRangeError("Out of range.");
     }
     return errors::InvalidArgument(
         "Redudant call to ReadNBytes after an OutOfRange error.");

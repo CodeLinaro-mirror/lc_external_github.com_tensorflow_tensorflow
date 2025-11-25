@@ -389,7 +389,7 @@ TEST(SnappyBuffers, CorruptBlockLargeInputBuffer) {
     return;
   }
   CHECK_EQ(TestMultipleWrites(10000, 10000, 2000, 10000, 2, true, 1, true),
-           errors::OutOfRange("EOF reached"));
+           absl::OutOfRangeError("EOF reached"));
 }
 
 TEST(SnappyBuffers, CorruptBlockLargeInputStream) {

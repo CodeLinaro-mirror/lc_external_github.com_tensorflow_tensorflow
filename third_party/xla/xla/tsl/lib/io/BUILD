@@ -143,6 +143,7 @@ cc_library(
     deps = [
         ":inputstream_interface",
         "//xla/tsl/platform:env",
+        "@com_google_absl//absl/status",
         "@local_tsl//tsl/platform:cord",
     ],
     alwayslink = True,
@@ -169,6 +170,7 @@ cc_library(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@local_tsl//tsl/platform:raw_coding",
         "@local_tsl//tsl/platform:stringpiece",
         "@local_tsl//tsl/platform:tstring",
@@ -312,6 +314,7 @@ cc_library(
         "//xla/tsl/platform:macros",
         "//xla/tsl/platform:status",
         "//xla/tsl/platform:types",
+        "@com_google_absl//absl/status",
         "@local_tsl//tsl/platform:strcat",
         "@zlib",
     ],
@@ -468,10 +471,10 @@ tsl_cc_test(
         ":random_inputstream",
         "//xla/tsl/lib/core:status_test_util",
         "//xla/tsl/platform:env",
-        "//xla/tsl/platform:env_impl",
         "//xla/tsl/platform:test",
         "//xla/tsl/platform:test_benchmark",
         "//xla/tsl/platform:test_main",
+        "@com_google_absl//absl/status",
     ],
 )
 
@@ -516,8 +519,8 @@ tsl_cc_test(
     deps = [
         ":inputstream_interface",
         "//xla/tsl/lib/core:status_test_util",
-        "//xla/tsl/platform:errors",
         "//xla/tsl/platform:test",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
     ],
 )

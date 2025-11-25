@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "xla/tsl/lib/hash/crc32c.h"
 #include "xla/tsl/lib/io/buffered_inputstream.h"
 #include "xla/tsl/lib/io/compression.h"
@@ -124,7 +125,8 @@ absl::Status RecordReader::ReadChecksummed(uint64_t offset, size_t n,
 
   if (result->size() != expected) {
     if (result->empty()) {
-      return errors::OutOfRange("eof", GetChecksumErrorSuffix(offset));
+      return absl::OutOfRangeError(
+          absl::StrCat("eof", GetChecksumErrorSuffix(offset)));
     } else {
       return errors::DataLoss("truncated record at ", offset,
                               GetChecksumErrorSuffix(offset));

@@ -207,7 +207,7 @@ absl::Status SnappyInputBuffer::ReadFromFile() {
   // fill up the buffer in which case file_->ReadNBytes would return an
   // OutOfRange error.
   if (data.empty()) {
-    return errors::OutOfRange("EOF reached");
+    return absl::OutOfRangeError("EOF reached");
   }
   if (absl::IsOutOfRange(s)) {
     return absl::OkStatus();
