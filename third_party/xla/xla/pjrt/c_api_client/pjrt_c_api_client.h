@@ -633,11 +633,7 @@ class PjRtCApiExecutable : public PjRtExecutable {
     return pjrt::GetCompiledMemoryStats(c_api_, executable_.get());
   }
 
-  absl::StatusOr<std::vector<Shape>> GetOutputShapes() const override {
-    LOG(FATAL) << "PjRtExecutable::GetOutputShapes() not implemented in PJRT C "
-                  "API. Please use PjRtExecutable::GetOutputElementTypes() or "
-                  "PjRtExecutable::GetOutputDimensions().";
-  }
+  absl::StatusOr<std::vector<Shape>> GetOutputShapes() const override;
 
   absl::StatusOr<std::vector<std::vector<PrimitiveType>>>
   GetOutputElementTypes() const override;
@@ -713,10 +709,7 @@ class PjRtCApiLoadedExecutable : public PjRtLoadedExecutable {
   }
 
   absl::StatusOr<std::vector<Shape>> GetOutputShapes() const override {
-    LOG(FATAL)
-        << "PjRtLoadedExecutable::GetOutputShapes() not implemented in PJRT C "
-           "API. Please use PjRtLoadedExecutable::GetOutputElementTypes() or "
-           "PjRtLoadedExecutable::GetOutputDimensions().";
+    return executable_->GetOutputShapes();
   }
 
   absl::StatusOr<std::vector<std::vector<PrimitiveType>>>
