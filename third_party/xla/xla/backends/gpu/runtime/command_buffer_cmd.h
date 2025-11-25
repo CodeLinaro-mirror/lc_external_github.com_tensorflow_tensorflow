@@ -131,8 +131,9 @@ using ResourceUseVector = absl::InlinedVector<ResourceUse, 1>;
 
 class CommandBufferCmd {
  public:
-  CommandBufferCmd(CommandBufferCmdType cmd_type,
-                   se::StreamPriority priority = se::StreamPriority::Default)
+  explicit CommandBufferCmd(
+      CommandBufferCmdType cmd_type,
+      se::StreamPriority priority = se::StreamPriority::Default)
       : cmd_type_(cmd_type), priority_(priority) {
     token_ = Resource::Create(Resource::kToken);
     resources_.push_back(ResourceUse::Write(token_));
@@ -765,7 +766,7 @@ class MemcpyDeviceToDeviceCmd : public CommandBufferCmd {
 
 class MemzeroCmd : public CommandBufferCmd {
  public:
-  MemzeroCmd(BufferAllocation::Slice dst);
+  explicit MemzeroCmd(BufferAllocation::Slice dst);
 
   absl::StatusOr<const se::CommandBuffer::Command*> Record(
       const Thunk::ExecuteParams& execute_params,
@@ -804,7 +805,7 @@ class Memset32Cmd : public CommandBufferCmd {
 
 class ChildCmd : public CommandBufferCmd {
  public:
-  ChildCmd(CommandBufferCmdExecutor child_commands);
+  explicit ChildCmd(CommandBufferCmdExecutor child_commands);
 
   absl::Status Initialize(const Thunk::InitializeParams& params,
                           StateManager& state) override;
@@ -936,7 +937,7 @@ class GemmCmd : public TracedCommandBufferCmd {
 
 class CublasLtCmd : public TracedCommandBufferCmd, public CublasLtMatmulThunk {
  public:
-  CublasLtCmd(const CublasLtMatmulThunk& matmul_thunk);
+  explicit CublasLtCmd(const CublasLtMatmulThunk& matmul_thunk);
 
   absl::Status Initialize(const Thunk::InitializeParams& params,
                           StateManager& state) override;
