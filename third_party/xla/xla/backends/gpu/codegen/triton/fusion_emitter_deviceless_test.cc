@@ -128,7 +128,7 @@ ENTRY e {
 
   if constexpr (EmitterLocOpBuilder::kSourceLocationSupported) {
     EXPECT_THAT(RunFileCheck(annotated_ir, R"(
-      CHECK:  [[SOMETHING:.*]] "triton_dot -> [[FILE_LINE:fusion_emitter.*:.*]]"
+      CHECK:  [[SOMETHING:.*]] "triton_dot -> [[FILE_LINE:tiled_emitter.*:.*]]"
     )"),
                 absl_testing::IsOkAndHolds(true))
         << annotated_ir;
