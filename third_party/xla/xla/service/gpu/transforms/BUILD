@@ -1288,6 +1288,7 @@ xla_cc_test(
         "//xla:shape_util",
         "//xla:xla_data_proto_cc",
         "//xla:xla_proto_cc",
+        "//xla/backends/gpu:ffi",
         "//xla/ffi",
         "//xla/ffi:ffi_api",
         "//xla/hlo/builder:xla_builder",

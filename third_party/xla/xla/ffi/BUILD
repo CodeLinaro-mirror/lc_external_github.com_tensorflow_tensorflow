@@ -7,10 +7,18 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+package_group(
+    name = "ffi_internal",
+    packages = [
+        "//xla/backends/cpu",
+        "//xla/backends/gpu",
+    ],
+)
+
 cc_library(
     name = "api",
     hdrs = ["//xla/ffi/api:api_headers"],
-    visibility = ["//visibility:private"],
+    visibility = [":ffi_internal"],
     deps = [
         "//xla/ffi/api:c_api",
         "@com_google_absl//absl/strings:string_view",
@@ -139,9 +147,6 @@ cc_library(
         "//xla/ffi/api:c_api_internal",
         "//xla/hlo/ir:hlo",
         "//xla/stream_executor:device_memory",
-        "//xla/stream_executor:device_memory_allocator",
-        "//xla/stream_executor:scratch_allocator",
-        "//xla/stream_executor:stream",
         "//xla/tsl/concurrency:async_value",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",
@@ -286,6 +291,8 @@ xla_cc_test(
         ":type_registry",
         "//xla:executable_run_options",
         "//xla:xla_data_proto_cc",
+        "//xla/backends/cpu:ffi",
+        "//xla/backends/gpu:ffi",
         "//xla/ffi/api:c_api",
         "//xla/stream_executor:device_memory",
         "//xla/stream_executor:stream",
