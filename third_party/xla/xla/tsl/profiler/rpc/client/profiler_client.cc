@@ -16,15 +16,16 @@ limitations under the License.
 
 #include <limits>
 #include <memory>
+#include <string>
 
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "grpcpp/grpcpp.h"  // IWYU pragma: keep
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/logging.h"
 #include "xla/tsl/platform/status.h"
-#include "xla/tsl/platform/types.h"
 #include "xla/tsl/protobuf/error_codes.pb.h"
 
 namespace tsl {
@@ -135,7 +136,7 @@ void RemoteProfilerSession::ProfileAsync() {
 std::unique_ptr<ProfileResponse> RemoteProfilerSession::WaitForCompletion(
     absl::Status& out_status) {
   if (!response_) {
-    out_status = errors::FailedPrecondition(
+    out_status = absl::FailedPreconditionError(
         "WaitForCompletion must only be called once.");
     return nullptr;
   }

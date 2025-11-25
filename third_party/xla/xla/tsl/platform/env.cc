@@ -158,8 +158,8 @@ absl::Status Env::SetOption(const std::string& scheme, const std::string& key,
                             const std::string& value) {
   FileSystem* file_system = file_system_registry_->Lookup(scheme);
   if (!file_system) {
-    return errors::Unimplemented("File system scheme '", scheme,
-                                 "' not found to set configuration");
+    return absl::UnimplementedError(absl::StrCat(
+        "File system scheme '", scheme, "' not found to set configuration"));
   }
   return file_system->SetOption(key, value);
 }
@@ -168,8 +168,8 @@ absl::Status Env::SetOption(const std::string& scheme, const std::string& key,
                             const std::vector<std::string>& values) {
   FileSystem* file_system = file_system_registry_->Lookup(scheme);
   if (!file_system) {
-    return errors::Unimplemented("File system scheme '", scheme,
-                                 "' not found to set configuration");
+    return absl::UnimplementedError(absl::StrCat(
+        "File system scheme '", scheme, "' not found to set configuration"));
   }
   return file_system->SetOption(key, values);
 }
@@ -178,8 +178,8 @@ absl::Status Env::SetOption(const std::string& scheme, const std::string& key,
                             const std::vector<int64_t>& values) {
   FileSystem* file_system = file_system_registry_->Lookup(scheme);
   if (!file_system) {
-    return errors::Unimplemented("File system scheme '", scheme,
-                                 "' not found to set configuration");
+    return absl::UnimplementedError(absl::StrCat(
+        "File system scheme '", scheme, "' not found to set configuration"));
   }
   return file_system->SetOption(key, values);
 }
@@ -188,8 +188,8 @@ absl::Status Env::SetOption(const std::string& scheme, const std::string& key,
                             const std::vector<double>& values) {
   FileSystem* file_system = file_system_registry_->Lookup(scheme);
   if (!file_system) {
-    return errors::Unimplemented("File system scheme '", scheme,
-                                 "' not found to set configuration");
+    return absl::UnimplementedError(absl::StrCat(
+        "File system scheme '", scheme, "' not found to set configuration"));
   }
   return file_system->SetOption(key, values);
 }
