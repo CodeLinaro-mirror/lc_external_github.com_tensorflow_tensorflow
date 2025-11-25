@@ -132,8 +132,9 @@ absl::Status Env::GetFileSystemForFile(const std::string& fname,
       scheme = "[local]";
     }
 
-    return errors::Unimplemented("File system scheme '", scheme,
-                                 "' not implemented (file: '", fname, "')");
+    return absl::UnimplementedError(
+        absl::StrCat("File system scheme ", scheme,
+                     "' not implemented (file: ", fname, ")"));
   }
   *result = file_system;
   return absl::OkStatus();
@@ -259,8 +260,8 @@ bool Env::FilesExist(const std::vector<std::string>& files,
     if (!file_system) {
       fs_result = false;
       if (fs_status) {
-        absl::Status s = errors::Unimplemented("File system scheme '",
-                                               itr.first, "' not implemented");
+        absl::Status s = absl::UnimplementedError(
+            absl::StrCat("File system scheme ", itr.first, " not implemented"));
         local_status.resize(itr.second.size(), s);
       }
     } else {
@@ -364,8 +365,8 @@ absl::Status Env::RenameFile(const std::string& src,
   TF_RETURN_IF_ERROR(GetFileSystemForFile(src, &src_fs));
   TF_RETURN_IF_ERROR(GetFileSystemForFile(target, &target_fs));
   if (src_fs != target_fs) {
-    return errors::Unimplemented("Renaming ", src, " to ", target,
-                                 " not implemented");
+    return absl::UnimplementedError(
+        absl::StrCat("Renaming ", src, " to ", target, " not implemented"));
   }
   return src_fs->RenameFile(src, target);
 }
