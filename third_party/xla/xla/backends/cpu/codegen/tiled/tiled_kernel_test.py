@@ -28,9 +28,16 @@ create_literal = testlib_utilities.create_literal_from_np
 
 class InputSpec:
 
-  def __init__(self, shape: tuple[int, ...], input_value):
+  def __init__(self, shape: tuple[int, ...], use_arrange: bool = False):
+    """Initializes the InputSpec.
+
+    Args:
+      shape: The shape of the input array.
+      use_arrange: If true uses np.arrange to create the input array, otherwise
+        generates a random array.
+    """
     self.shape = shape
-    self.input_value = input_value
+    self.use_arrange = use_arrange
 
 
 def get_random_array(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
@@ -61,9 +68,9 @@ def compare_kernel(
   # Simply use a all-ones arrays as inputs to make it easy to debug the kernel
   # unless random inputs are requested.
   def get_input(spec: InputSpec):
-    if spec.input_value is None:
-      return get_random_array(spec.shape, dtype)
-    return np.full(shape=spec.shape, fill_value=spec.input_value, dtype=dtype)
+    if spec.use_arrange:
+      return np.arange(np.prod(spec.shape), dtype=dtype).reshape(spec.shape)
+    return get_random_array(spec.shape, dtype)
 
   inputs = [get_input(spec) for spec in input_specs]
 
@@ -105,7 +112,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "tiled_slice",
         1,
-        [InputSpec((5, 5), 1)],
+        [InputSpec((5, 5), True)],
         (5, 5),
         np.float32,
         lambda arg: arg.transpose(),
@@ -129,7 +136,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "tiled_slice",
         1,
-        [InputSpec((64, 64), 1)],
+        [InputSpec((64, 64), True)],
         (4, 32),
         np.float32,
         lambda arg: arg[::21, ::2],
@@ -156,7 +163,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "tiled_transpose",
         8,
-        [InputSpec((4096, 4096), 1)],
+        [InputSpec((4096, 4096), True)],
         (4096, 4096),
         np.float32,
         lambda arg: arg.transpose(),
@@ -185,7 +192,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "add_tranpose",
         8,
-        [InputSpec((4096, 4096), 1)],
+        [InputSpec((4096, 4096), True)],
         (4096, 4096),
         np.float32,
         lambda arg: arg + arg.transpose(),
@@ -213,7 +220,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "dot_single_tile",
         1,
-        [InputSpec((8, 16), 1), InputSpec((16, 8), 1)],
+        [InputSpec((8, 16), True), InputSpec((16, 8), True)],
         (8, 8),
         np.float32,
         lambda lhs, rhs: lhs @ rhs,
@@ -242,7 +249,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "test_dot_scalar_output",
         1,
-        [InputSpec((8, 16), 1), InputSpec((16, 8), 1)],
+        [InputSpec((8, 16), True), InputSpec((16, 8), True)],
         (),
         np.float32,
         lambda lhs, rhs: np.tensordot(lhs, rhs, axes=[[1, 0], [0, 1]]),
@@ -275,7 +282,11 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "dot_fusion_single_tile",
         1,
-        [InputSpec((8, 16), 1), InputSpec((8, 16), 1), InputSpec((16, 1), 1)],
+        [
+            InputSpec((8, 16), True),
+            InputSpec((8, 16), True),
+            InputSpec((16, 1), True),
+        ],
         (8, 1),
         np.float32,
         lambda lhs_0, lhs_1, rhs: np.tanh((lhs_0 + lhs_1) @ rhs),
@@ -312,7 +323,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "reduction_add_inner",
         4,
-        [InputSpec((1024, 32), 1), InputSpec((1,), 0)],
+        [InputSpec((1024, 32), True), InputSpec((1,), True)],
         (1024,),
         np.int32,
         lambda input, init: np.sum(input, axis=1) + init,
@@ -348,7 +359,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "reduction_add_outer",
         4,
-        [InputSpec((1024, 32), 1), InputSpec((1,), 0)],
+        [InputSpec((1024, 32), True), InputSpec((1,), True)],
         (32,),
         np.float32,
         lambda input, init: np.sum(input, axis=0),
@@ -381,7 +392,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "reduction_add_middle",
         1,
-        [InputSpec((8, 4, 2), 1), InputSpec((1,), 0)],
+        [InputSpec((8, 4, 2), True), InputSpec((1,), True)],
         (8, 2),
         np.float32,
         lambda input, init: np.sum(input, axis=1),
@@ -414,7 +425,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "reduction_add_outer_inner",
         1,
-        [InputSpec((8, 4, 2), 1), InputSpec((1,), 0)],
+        [InputSpec((8, 4, 2), True), InputSpec((1,), True)],
         (4,),
         np.float32,
         lambda input, init: np.sum(input, axis=(0, 2)),
@@ -439,7 +450,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "broadcast_in_dim_inner",
         1,
-        [InputSpec((4,), None)],
+        [InputSpec((4,))],
         (32, 4),
         np.float32,
         lambda input: np.broadcast_to(input, (32, 4)),
@@ -464,7 +475,7 @@ class XtileLoweringTest(absltest.TestCase):
         ir,
         "broadcast_in_dim_outer",
         1,
-        [InputSpec((4,), None)],
+        [InputSpec((4,))],
         (4, 32),
         np.float32,
         lambda input: np.transpose(np.broadcast_to(input, (32, 4))),
