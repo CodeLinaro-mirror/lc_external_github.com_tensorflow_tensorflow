@@ -49,7 +49,6 @@ limitations under the License.
 #include "stablehlo/dialect/StablehloOps.h"
 #include "xla/backends/gpu/codegen/triton/dot_algorithms.h"
 #include "xla/backends/gpu/codegen/triton/emitter_helpers.h"
-#include "xla/codegen/emitter_loc_op_builder.h"
 #include "xla/codegen/xtile/ir/xtile_ops.h"
 #include "xla/hlo/translate/mhlo_to_hlo/attribute_exporter.h"
 #include "xla/service/algorithm_util.h"
@@ -126,7 +125,7 @@ class LowerBroadcastInDim
   mlir::LogicalResult matchAndRewrite(
       stablehlo::BroadcastInDimOp op,
       mlir::PatternRewriter& rewriter) const override {
-    ::xla::EmitterLocOpBuilder builder(op.getLoc(), rewriter);
+    mlir::ImplicitLocOpBuilder builder(op.getLoc(), rewriter);
     auto input_tensor = op.getOperand();
     auto input_shape = input_tensor.getType().getShape();
     auto output_shape = op.getResult().getType().getShape();
@@ -400,11 +399,11 @@ struct TritonPrecisionSpec {
 mlir::Type ElementType(mlir::Value v) { return mlir::getElementTypeOrSelf(v); }
 
 using AlgorithmEmitter = absl::StatusOr<Value> (*)(
-    ::xla::EmitterLocOpBuilder, const ::xla::gpu::triton::DotOperands&,
+    mlir::ImplicitLocOpBuilder&, const ::xla::gpu::triton::DotOperands&,
     const TritonPrecisionSpec&);
 
 absl::StatusOr<Value> EmitDotAlgUnset(
-    ::xla::EmitterLocOpBuilder b,
+    mlir::ImplicitLocOpBuilder& b,
     const ::xla::gpu::triton::DotOperands& dot_operands,
     const TritonPrecisionSpec& precision_spec) {
   // Execute matrix multiplication of input tiles and pass the accumulator.
@@ -431,7 +430,7 @@ absl::StatusOr<Value> EmitDotAlgUnset(
 }
 
 absl::StatusOr<Value> EmitRegularDot(
-    ::xla::EmitterLocOpBuilder b,
+    mlir::ImplicitLocOpBuilder& b,
     const ::xla::gpu::triton::DotOperands& dot_operands,
     const TritonPrecisionSpec& precision_spec) {
   Value lhs = dot_operands.lhs;
@@ -471,7 +470,7 @@ absl::StatusOr<Value> EmitRegularDot(
 // We would get the wrong result if we sum these partial products. Instead, we
 // must override any accumulated result if the last partial product is
 // non-finite. See b/115844437.
-Value ZeroNaNs(::xla::EmitterLocOpBuilder b, Value input) {
+Value ZeroNaNs(mlir::ImplicitLocOpBuilder& b, Value input) {
   Value positive_inf = ::xla::gpu::triton::CreateConst<float>(
       b, b.getF32Type(), std::numeric_limits<float>::infinity(),
       mlir::cast<ShapedType>(input.getType()).getShape());
@@ -497,7 +496,7 @@ absl::Status ExpectType(Value v, Type expected_type) {
   return absl::OkStatus();
 }
 
-std::vector<Value> SplitF32(::xla::EmitterLocOpBuilder b, Value input,
+std::vector<Value> SplitF32(mlir::ImplicitLocOpBuilder& b, Value input,
                             int split_count) {
   std::vector<Value> split_inputs;
   split_inputs.reserve(split_count);
@@ -513,7 +512,7 @@ std::vector<Value> SplitF32(::xla::EmitterLocOpBuilder b, Value input,
   return split_inputs;
 }
 
-Value IEEEDot(::xla::EmitterLocOpBuilder b, Value lhs, Value rhs, Value acc) {
+Value IEEEDot(mlir::ImplicitLocOpBuilder& b, Value lhs, Value rhs, Value acc) {
   return ttir::DotOp::create(b, lhs, rhs, acc,
                              /*inputPrecision=*/ttir::InputPrecision::IEEE,
                              /*maxNumImpreciseAcc=*/0);
@@ -522,7 +521,7 @@ Value IEEEDot(::xla::EmitterLocOpBuilder b, Value lhs, Value rhs, Value acc) {
 // Leverages BF16 datatype for F32 matmul computation. It follows the guidance
 // from https://arxiv.org/pdf/1904.06376.pdf.
 absl::StatusOr<Value> EmitBF16x9Matmul(
-    ::xla::EmitterLocOpBuilder b,
+    mlir::ImplicitLocOpBuilder& b,
     const ::xla::gpu::triton::DotOperands& dot_operands,
     const TritonPrecisionSpec& precision_spec) {
   constexpr int kNumParts = 3;
@@ -561,7 +560,7 @@ absl::StatusOr<Value> EmitBF16x9Matmul(
 // Leverages BF16 datatype for F32 matmul computation. It follows the guidance
 // from https://arxiv.org/pdf/1904.06376.pdf.
 absl::StatusOr<Value> EmitBF16x6Matmul(
-    ::xla::EmitterLocOpBuilder b,
+    mlir::ImplicitLocOpBuilder& b,
     const ::xla::gpu::triton::DotOperands& dot_operands,
     const TritonPrecisionSpec& precision_spec) {
   constexpr int kNumParts = 3;
@@ -596,7 +595,7 @@ absl::StatusOr<Value> EmitBF16x6Matmul(
 // Compute F32 matmul with 3 BF16 dots. It is less accurate than
 // EmitBF16x6Matmul.
 absl::StatusOr<Value> EmitBF16x3Matmul(
-    ::xla::EmitterLocOpBuilder b,
+    mlir::ImplicitLocOpBuilder& b,
     const ::xla::gpu::triton::DotOperands& dot_operands,
     const TritonPrecisionSpec& precision_spec) {
   constexpr int kNumParts = 2;
@@ -712,7 +711,7 @@ LogicalResult RewriteDotGeneralToTritonDot(mlir::PatternRewriter& rewriter,
 
   auto algorithm_emitter = algorithm_emitter_or_status.value();
 
-  ::xla::EmitterLocOpBuilder builder(op->getLoc(), rewriter);
+  mlir::ImplicitLocOpBuilder builder(op->getLoc(), rewriter);
 
   ::xla::gpu::triton::DotOperands dot_operands{op.getLhs(), op.getRhs(),
                                                accumulator};
