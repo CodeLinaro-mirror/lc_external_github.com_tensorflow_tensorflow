@@ -2498,3 +2498,35 @@ cuda_library(
     ],
     alwayslink = 1,
 )
+
+xla_test(
+    name = "cuda_blas_lt_test",
+    srcs = ["cuda_blas_lt_test.cc"],
+    backends = ["gpu"],
+    tags = [
+        "cuda-only",
+        "gpu",
+    ],
+    deps = [
+        "//xla:autotuning_proto_cc",
+        "//xla:xla_proto_cc",
+        "//xla/backends/autotuner:codegen_backend",
+        "//xla/backends/gpu/autotuner:cublaslt",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:filecheck",
+        "//xla/hlo/testlib:hlo_hardware_independent_test_base",
+        "//xla/service:compiler",
+        "//xla/service:executable",
+        "//xla/service:platform_util",
+        "//xla/service/gpu:nvptx_compiler_impl",
+        "//xla/stream_executor:blas",
+        "//xla/stream_executor:device_description_proto_cc",
+        "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/lib/core:status_test_util",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

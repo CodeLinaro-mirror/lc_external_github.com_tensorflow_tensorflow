@@ -13,6 +13,8 @@ package(
     default_visibility = [
         "//xla/backends/autotuner:__subpackages__",
         "//xla/service/gpu:__subpackages__",
+        "//xla/stream_executor:__subpackages__",
+        "//xla/stream_executor/cuda:__pkg__",
     ],
     licenses = ["notice"],
 )
@@ -257,6 +259,7 @@ xla_test(
         "//xla/hlo/testlib:filecheck",
         "//xla/hlo/testlib:hlo_hardware_independent_test_base",
         "//xla/service:compiler",
+        "//xla/service:executable",
         "//xla/service:platform_util",
         "//xla/service/gpu:nvptx_compiler_impl",
         "//xla/stream_executor:blas",
