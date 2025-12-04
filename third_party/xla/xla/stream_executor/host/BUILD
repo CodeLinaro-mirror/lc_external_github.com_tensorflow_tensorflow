@@ -75,7 +75,7 @@ cc_library(
     ],
     deps = [
         ":host_event",
-        "//xla/stream_executor:device_memory",
+        "//xla/stream_executor:device_address",
         "//xla/stream_executor:event",
         "//xla/stream_executor:kernel",
         "//xla/stream_executor:launch_dim",
@@ -123,8 +123,8 @@ cc_library(
         ":host_event",
         ":host_stream",
         ":host_stream_factory",
+        "//xla/stream_executor:device_address",
         "//xla/stream_executor:device_description",
-        "//xla/stream_executor:device_memory",
         "//xla/stream_executor:event",
         "//xla/stream_executor:generic_memory_allocation",
         "//xla/stream_executor:generic_memory_allocator",

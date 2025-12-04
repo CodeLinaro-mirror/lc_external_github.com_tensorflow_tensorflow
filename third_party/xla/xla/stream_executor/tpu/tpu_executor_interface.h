@@ -22,7 +22,7 @@ limitations under the License.
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "xla/stream_executor/device_memory.h"
+#include "xla/stream_executor/device_address.h"
 #include "xla/stream_executor/stream_executor_common.h"
 #include "xla/stream_executor/tpu/tpu_platform_interface.h"
 #include "xla/stream_executor/tpu/tpu_topology.h"
@@ -39,15 +39,15 @@ class TpuExecutorInterface : public stream_executor::StreamExecutorCommon {
   explicit TpuExecutorInterface(stream_executor::Platform* platform)
       : StreamExecutorCommon(platform) {}
 
-  class TemporaryDeviceMemory {
+  class TemporaryDeviceAddress {
    public:
-    virtual ~TemporaryDeviceMemory() {}
-    virtual stream_executor::DeviceMemoryBase AsDeviceMemoryBase() const = 0;
+    virtual ~TemporaryDeviceAddress() {}
+    virtual stream_executor::DeviceAddressBase AsDeviceAddressBase() const = 0;
   };
 
-  virtual absl::StatusOr<std::unique_ptr<TemporaryDeviceMemory>>
-  CreateTemporaryDeviceMemory(int64_t memory_space, int64_t byte_offset,
-                              int64_t size) {
+  virtual absl::StatusOr<std::unique_ptr<TemporaryDeviceAddress>>
+  CreateTemporaryDeviceAddress(int64_t memory_space, int64_t byte_offset,
+                               int64_t size) {
     LOG(FATAL) << "Unimplemented.";
   }
 

@@ -74,21 +74,77 @@ cc_library(
 )
 
 cc_library(
+    name = "device_address",
+    hdrs = ["device_address.h"],
+    deps = [
+        "//xla/tsl/platform:logging",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/log:check",
+    ],
+)
+
+cc_library(
+    name = "device_address_handle",
+    srcs = ["device_address_handle.cc"],
+    hdrs = ["device_address_handle.h"],
+    deps = [
+        ":device_address",
+        ":stream_executor_h",
+        "@com_google_absl//absl/base:core_headers",
+    ],
+)
+
+xla_cc_test(
+    name = "device_address_handle_test",
+    srcs = ["device_address_handle_test.cc"],
+    deps = [
+        ":device_address",
+        ":device_address_handle",
+        ":mock_stream_executor",
+        "@com_google_googletest//:gtest_main",
+        "@local_tsl//tsl/platform:test",
+    ],
+)
+
+cc_library(
+    name = "device_address_allocator",
+    hdrs = ["device_address_allocator.h"],
+    deps = [
+        ":device_address",
+        ":platform",
+        "//xla/tsl/platform:errors",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
     name = "device_memory",
     hdrs = ["device_memory.h"],
     deps = [
-        "//xla/tsl/platform:logging",
+        ":device_address",
+        ":tensor_map",
         "@com_google_absl//absl/base:core_headers",
     ],
 )
 
 cc_library(
     name = "device_memory_handle",
-    srcs = ["device_memory_handle.cc"],
     hdrs = ["device_memory_handle.h"],
     deps = [
-        ":device_memory",
-        ":stream_executor_h",
+        ":device_address_handle",
+        "@com_google_absl//absl/base:core_headers",
+    ],
+)
+
+cc_library(
+    name = "device_memory_allocator",
+    hdrs = ["device_memory_allocator.h"],
+    deps = [
+        ":device_address_allocator",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -117,7 +173,7 @@ cc_library(
     hdrs = ["gpu_solver_context.h"],
     deps = [
         ":blas",
-        ":device_memory",
+        ":device_address",
         ":stream",
         "//xla:xla_data_proto_cc",
         "@com_google_absl//absl/status",
@@ -157,8 +213,8 @@ cc_library(
     testonly = True,
     hdrs = ["mock_stream.h"],
     deps = [
+        ":device_address",
         ":device_description",
-        ":device_memory",
         ":event",
         ":event_based_timer",
         ":launch_dim",
@@ -181,8 +237,8 @@ cc_library(
         ":allocator_stats",
         ":blas",
         ":command_buffer",
+        ":device_address",
         ":device_description",
-        ":device_memory",
         ":dnn",
         ":event",
         ":event_based_timer",
@@ -214,28 +270,16 @@ cc_library(
 )
 
 cc_library(
-    name = "device_memory_allocator",
-    hdrs = ["device_memory_allocator.h"],
+    name = "stream_executor_address_allocator",
+    srcs = ["stream_executor_address_allocator.cc"],
+    hdrs = ["stream_executor_address_allocator.h"],
     deps = [
-        ":device_memory",
-        ":platform",
-        "//xla/tsl/platform:errors",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-    ],
-)
-
-cc_library(
-    name = "stream_executor_memory_allocator",
-    srcs = ["stream_executor_memory_allocator.cc"],
-    hdrs = ["stream_executor_memory_allocator.h"],
-    deps = [
-        ":device_memory",
-        ":device_memory_allocator",
+        ":device_address",
+        ":device_address_allocator",
         ":platform",
         ":stream",
         ":stream_executor_h",
+        "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
@@ -244,9 +288,16 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
-        "@local_tsl//tsl/platform:logging",
         "@local_tsl//tsl/platform:numbers",
-        "@local_tsl//tsl/platform:statusor",
+    ],
+)
+
+cc_library(
+    name = "stream_executor_memory_allocator",
+    hdrs = ["stream_executor_memory_allocator.h"],
+    deps = [
+        ":stream_executor_address_allocator",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -335,7 +386,7 @@ cc_library(
     deps = [
         ":blas_proto_cc",
         ":data_type",
-        ":device_memory",
+        ":device_address",
         ":engine_options",
         ":scratch_allocator",
         ":stream",
@@ -355,8 +406,8 @@ cc_library(
     hdrs = ["dnn.h"],
     deps = [
         ":data_type",
+        ":device_address",
         ":device_description_proto_cc",
-        ":device_memory",
         ":engine_options",
         ":scratch_allocator",
         ":stream",
@@ -417,8 +468,8 @@ cc_library(
         ":allocator_stats",
         ":blas",
         ":command_buffer",
+        ":device_address",
         ":device_description",
-        ":device_memory",
         ":dnn",
         ":event",
         ":event_based_timer",
@@ -486,8 +537,8 @@ cc_library(
     srcs = ["stream.cc"],
     hdrs = ["stream.h"],
     deps = [
+        ":device_address",
         ":device_description",
-        ":device_memory",
         ":event",
         ":event_based_timer",
         ":launch_dim",
@@ -633,7 +684,7 @@ cc_library(
     srcs = ["kernel_argument_packing_spec.cc"],
     hdrs = ["kernel_argument_packing_spec.h"],
     deps = [
-        ":device_memory",
+        ":device_address",
         ":kernel_args_packed_vector",
         ":kernel_argument_packing_spec_proto_cc",
         "//xla/tsl/platform:statusor",
@@ -656,7 +707,7 @@ xla_cc_test(
     name = "kernel_argument_packing_spec_test",
     srcs = ["kernel_argument_packing_spec_test.cc"],
     deps = [
-        ":device_memory",
+        ":device_address",
         ":kernel_args_packed_vector",
         ":kernel_argument_packing_spec",
         "//xla/tsl/platform:statusor",
@@ -675,7 +726,7 @@ cc_library(
     name = "kernel",
     hdrs = ["kernel.h"],
     deps = [
-        ":device_memory",
+        ":device_address",
         ":kernel_args",
         ":kernel_argument_packing_spec",
         ":kernel_metadata",
@@ -745,8 +796,8 @@ cc_library(
     name = "scratch_allocator",
     hdrs = ["scratch_allocator.h"],
     deps = [
-        ":device_memory",
-        ":device_memory_allocator",
+        ":device_address",
+        ":device_address_allocator",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/status:statusor",
         "@local_tsl//tsl/platform:statusor",
@@ -791,7 +842,7 @@ cc_library(
     visibility = [":internal"],
     deps = [
         ":bit_pattern",
-        ":device_memory",
+        ":device_address",
         ":dnn",
         ":kernel",
         ":launch_dim",
@@ -881,8 +932,8 @@ cc_library(
         ":allocator_stats",
         ":blas",  # build_cleaner: keep
         ":command_buffer",  # build_cleaner: keep
+        ":device_address",
         ":device_description",
-        ":device_memory",
         ":dnn",
         ":executor_cache",
         ":fft",
@@ -896,6 +947,11 @@ cc_library(
         ":stream_executor_common",
         ":stream_executor_h",
     ] + if_oss(["//xla/tsl/protobuf:dnn_proto_cc_impl"]),
+)
+
+cc_library(
+    name = "tensor_map",
+    hdrs = ["tensor_map.h"],
 )
 
 #===--------------------------------------------------------------------------------------------===#
@@ -948,8 +1004,9 @@ cc_library(
     name = "kernel_args",
     hdrs = ["kernel_args.h"],
     deps = [
-        ":device_memory",
+        ":device_address",
         ":kernel_metadata",
+        ":tensor_map",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/functional:overload",
@@ -972,7 +1029,7 @@ xla_cc_test(
     name = "kernel_args_test",
     srcs = ["kernel_args_test.cc"],
     deps = [
-        ":device_memory",
+        ":device_address",
         ":kernel_args",
         ":kernel_metadata",
         "//xla/stream_executor/host:host_platform",
@@ -1034,18 +1091,6 @@ xla_cc_test(
         ":mock_stream_executor",
         ":module_spec",
         ":scoped_module_handle",
-        "@com_google_googletest//:gtest_main",
-        "@local_tsl//tsl/platform:test",
-    ],
-)
-
-xla_cc_test(
-    name = "device_memory_handle_test",
-    srcs = ["device_memory_handle_test.cc"],
-    deps = [
-        ":device_memory",
-        ":device_memory_handle",
-        ":mock_stream_executor",
         "@com_google_googletest//:gtest_main",
         "@local_tsl//tsl/platform:test",
     ],
