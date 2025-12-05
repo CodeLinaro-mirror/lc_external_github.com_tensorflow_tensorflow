@@ -2,6 +2,7 @@
 # Placeholder: load py_proto_library
 load("@local_xla//xla/tsl:tsl.bzl", "internal_visibility")
 load("@local_xla//xla/tsl/platform:build_config.bzl", "tf_proto_library")
+load("//devtools/clif/python:clif_build_rule.bzl", "pyclif_proto_library")
 
 # copybara:uncomment package(default_applicable_licenses = ["//tensorflow:license"])
 
@@ -17,6 +18,14 @@ tf_proto_library(
     srcs = ["xplane.proto"],
     make_default_target_header_only = True,
     visibility = internal_visibility([":friends"]),
+)
+
+pyclif_proto_library(
+    name = "xplane_pyclif",
+    proto_lib = ":xplane_proto",
+    visibility = [
+        "//visibility:public",
+    ],
 )
 
 tf_proto_library(
