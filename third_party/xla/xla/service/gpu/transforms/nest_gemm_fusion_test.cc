@@ -15,16 +15,21 @@ limitations under the License.
 
 #include "xla/service/gpu/transforms/nest_gemm_fusion.h"
 
+#include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/inlined_vector.h"
 #include "absl/log/log.h"
 #include "absl/status/status_matchers.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "mlir/IR/MLIRContext.h"
-#include "xla/hlo/analysis/symbolic_expr.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/hlo/ir/hlo_print_options.h"
@@ -36,7 +41,6 @@ limitations under the License.
 #include "xla/service/pattern_matcher.h"
 #include "xla/stream_executor/cuda/cuda_compute_capability.h"
 #include "xla/stream_executor/device_description.h"
-#include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/xla.pb.h"
 
@@ -1035,6 +1039,44 @@ CHECK-SAME: dimensions={1,2,0}
 }
 
 TEST_P(NestGemmFusionReshapeTest,
+       BitcastsWithSize1DimensionsAreHoistedUpThroughTransposes) {
+  HloOpcode opcode = GetParam();
+  absl::string_view hlo = R"(
+triton_dot {
+  p0 = f32[7,6] parameter(0)
+  transpose = f32[6,7] transpose(p0), dimensions={1,0}
+  bitcast = f32[1,6,7] $0(transpose)
+  p1 = f32[1,5,7] parameter(1)
+  ROOT result = f32[1,6,5] dot(bitcast, p1),
+    lhs_contracting_dims={2}, lhs_batch_dims={0},
+    rhs_contracting_dims={2}, rhs_batch_dims={0}
+}
+
+ENTRY e {
+  p0 = f32[7,6] parameter(0)
+  p1 = f32[1,5,7] parameter(1)
+  ROOT result = f32[1,6,5] fusion(p0, p1), kind=kCustom, calls=triton_dot,
+    backend_config={"fusion_backend_config": {kind: "__triton_gemm",
+    triton_gemm_config: {"block_m":16,"block_n":16,"block_k":8,
+    "split_k":1,"num_stages":1,"num_warps":1,"num_ctas":1}}}}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(
+                              absl::Substitute(hlo, HloOpcodeString(opcode))));
+  EXPECT_THAT(
+      NestGemmFusion(device_description_, &mlir_context_).Run(module.get()),
+      absl_testing::IsOkAndHolds(true));
+  ASSERT_OK(verifier().Run(module.get()).status());
+  EXPECT_THAT(
+      RunFileCheck(module->ToString(HloPrintOptions::ShortParsable()), R"(
+CHECK:      ROOT transpose
+CHECK-SAME: f32[1,6,7]{2,1,0} transpose
+CHECK-SAME: dimensions={1,2,0}
+)"),
+      absl_testing::IsOkAndHolds(true));
+}
+
+TEST_P(NestGemmFusionReshapeTest,
        RankReducingBitcastsAreNotHoistedUpThroughTransposes) {
   HloOpcode opcode = GetParam();
   absl::string_view hlo = R"(
@@ -1520,6 +1562,51 @@ INSTANTIATE_TEST_SUITE_P(NestGemmFusionReshapeTestSuite,
                          [](const ::testing::TestParamInfo<HloOpcode>& info) {
                            return std::string(HloOpcodeString(info.param));
                          });
+
+TEST(UtilTest, CommonFactorsMergingTrivialRanges) {
+  struct {
+    std::vector<int64_t> a, b;
+    absl::InlinedVector<std::pair<int64_t, int64_t>, 8> expected;
+  } test_cases[] = {{/*.a =*/{1}, /*.b =*/{}, /*.expected =*/{{0, 0}, {1, 0}}},
+                    {/*.a =*/{}, /*.b =*/{1}, /*.expected =*/{{0, 0}, {0, 1}}},
+                    {/*.a =*/{}, /*.b =*/{}, /*.expected =*/{{0, 0}}},
+                    {/*.a =*/{1, 2, 0},
+                     /*.b =*/{2, 0, 3},
+                     /*.expected =*/{{0, 0}, {3, 3}}},
+                    {/*.a =*/{2, 3, 0},
+                     /*.b =*/{1, 0, 1000},
+                     /*.expected =*/{{0, 0}, {3, 3}}},
+                    {/*.a =*/{1, 1, 1},
+                     /*.b =*/{1, 1},
+                     /*.expected =*/{{0, 0}, {1, 1}, {3, 2}}},
+                    {/*.a =*/{1, 1, 3},
+                     /*.b =*/{3, 1, 1},
+                     /*.expected =*/{{0, 0}, {3, 3}}},
+                    {/*.a =*/{2, 6},
+                     /*.b =*/{4, 3},
+                     /*.expected =*/{{0, 0}, {2, 2}}},
+                    {/*.a =*/{1, 2, 6},
+                     /*.b =*/{4, 1, 3, 1},
+                     /*.expected =*/{{0, 0}, {3, 4}}},
+                    {/*.a =*/{2, 3, 4, 5},
+                     /*.b =*/{6, 20},
+                     /*.expected =*/{{0, 0}, {2, 1}, {4, 2}}},
+                    {/*.a =*/{2, 3, 4, 5, 6},
+                     /*.b =*/{6, 20, 6},
+                     /*.expected =*/{{0, 0}, {2, 1}, {4, 2}, {5, 3}}},
+                    {/*.a =*/{2, 2, 2, 2},
+                     /*.b =*/{4, 4},
+                     /*.expected =*/{{0, 0}, {2, 1}, {4, 2}}},
+                    {/*.a =*/{2, 5, 1, 3},
+                     /*.b =*/{1, 10, 3, 1},
+                     /*.expected =*/{{0, 0}, {2, 2}, {4, 4}}}};
+  for (const auto& test_case : test_cases) {
+    EXPECT_EQ(test_case.expected, detail::CommonFactorsMergingTrivialRanges(
+                                      test_case.a, test_case.b))
+        << absl::StrCat("a=[", absl::StrJoin(test_case.a, ","), "], b=[",
+                        absl::StrJoin(test_case.b, ","), "]");
+  }
+}
 
 }  // namespace
 }  // namespace gpu
