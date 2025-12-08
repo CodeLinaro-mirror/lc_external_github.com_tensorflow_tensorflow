@@ -85,7 +85,7 @@ class AotCompilationResult {
   }
 
   virtual absl::StatusOr<std::unique_ptr<Executable>> LoadExecutable(
-      Compiler* compiler, const se::StreamExecutor* executor) && {
+      const se::StreamExecutor* executor) && {
     return Unimplemented("LoadExecutable unimplemented.");
   }
 
@@ -356,7 +356,7 @@ class Compiler {
 
   // Returns an AotCompilationResult of the executable for serialization.
   virtual absl::StatusOr<std::unique_ptr<AotCompilationResult>> Export(
-      Executable* executable) const {
+      Executable* executable) {
     return Unimplemented("Export unimplemented");
   }
 
