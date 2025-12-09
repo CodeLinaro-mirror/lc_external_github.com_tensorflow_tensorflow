@@ -987,6 +987,7 @@ cc_library(
     hdrs = ["tma_utils.h"],
     deps = [
         "//xla/backends/gpu/codegen/triton/ir:triton_xla",
+        "//xla/service/gpu:backend_configs_cc",
         "//xla/service/gpu:matmul_utils",
         "//xla/stream_executor/gpu:tma_metadata",
         "//xla/tsl/platform:statusor",
