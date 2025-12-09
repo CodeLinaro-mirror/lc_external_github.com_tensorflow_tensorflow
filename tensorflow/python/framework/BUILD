@@ -2104,6 +2104,7 @@ py_strict_library(
         ":tensor_shape",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/client:pywrap_tf_session",
+        "//tensorflow/python/trackable:data_structures",
         "//tensorflow/python/types:core",
         "//tensorflow/python/types:internal",
         "//tensorflow/python/util:compat",
