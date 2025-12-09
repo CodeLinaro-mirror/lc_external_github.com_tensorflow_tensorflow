@@ -111,15 +111,15 @@ ENTRY main {
 
 TEST_F(NeedsLayoutConversionTest, Call) {
   constexpr absl::string_view hlo_string = R"(
-HloModule m, entry_computation_layout={(bf16[8,512,128]{2,1,0})->f32[8,512,128]{2,1,0}}
+HloModule m, entry_computation_layout={(f32[8,512,128]{2,1,0})->f32[8,512,128]{2,1,0}}
 
 helper {
-  ROOT result = bf16[8,512,128]{2,1,0} parameter(0)
+  ROOT result = f32[8,512,128]{2,1,0} parameter(0)
 }
 
 ENTRY main {
-  arg0 = bf16[8,512,128]{2,1,0} parameter(0)
-  call = bf16[8,512,128]{2,1,0} call(arg0), to_apply=helper
+  arg0 = f32[8,512,128]{2,1,0} parameter(0)
+  call = f32[8,512,128]{2,1,0} call(arg0), to_apply=helper
   ROOT convert = f32[8,512,128]{2,1,0} convert(call)
 }
 )";
