@@ -268,13 +268,19 @@ void HloModule::MarkFusionDuplications(
   for (const HloComputation* computation : computations()) {
     for (auto* instruction : computation->instructions()) {
       if (instruction->opcode() == HloOpcode::kFusion) {
-        auto rep =
+        auto it =
             replacements.find(instruction->fused_instructions_computation());
-        if (rep != replacements.end()) {
-          xla::HloComputation* new_comp = rep->second;
-          if (new_comp->IsFusionComputation()) {
-            auto dedup_name = new_comp->FusionInstruction()->name();
-            new_comp->FusionInstruction()->set_metadata_deduplicated_name(
+        if (it != replacements.end()) {
+          HloComputation* representative = it->second;
+          // Follow chain to find the root representative.
+          auto it2 = replacements.find(representative);
+          while (it2 != replacements.end()) {
+            representative = it2->second;
+            it2 = replacements.find(representative);
+          }
+          if (representative->IsFusionComputation()) {
+            auto dedup_name = representative->FusionInstruction()->name();
+            representative->FusionInstruction()->set_metadata_deduplicated_name(
                 std::string(dedup_name));
             instruction->set_metadata_deduplicated_name(
                 std::string(dedup_name));

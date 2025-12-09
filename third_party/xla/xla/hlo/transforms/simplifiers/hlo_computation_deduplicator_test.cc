@@ -663,5 +663,53 @@ TEST_F(HloComputationDeduplicatorTest, DontDeduplicateReduceAllReduce) {
   EXPECT_EQ(computation_names.size(), 3);
 }
 
-}  //  namespace
+TEST_F(HloComputationDeduplicatorTest, DeduplicateChain) {
+  const char* const hlo_string = R"(
+HloModule module
+
+fusion0 {
+  p0 = f32[] parameter(0)
+  p1 = f32[] parameter(1)
+  ROOT add = f32[] add(p0, p1)
+}
+
+fusion1 {
+  p0 = f32[] parameter(0)
+  p1 = f32[] parameter(1)
+  ROOT add = f32[] add(p0, p1)
+}
+
+fusion2 {
+  p0 = f32[] parameter(0)
+  p1 = f32[] parameter(1)
+  ROOT add = f32[] add(p0, p1)
+}
+
+ENTRY entry {
+  p0 = f32[] parameter(0)
+  p1 = f32[] parameter(1)
+  fusion.0 = f32[] fusion(p0, p1), kind=kLoop, calls=fusion0
+  fusion.1 = f32[] fusion(p0, p1), kind=kLoop, calls=fusion1
+  fusion.2 = f32[] fusion(p0, p1), kind=kLoop, calls=fusion2
+  ROOT add = f32[] add(fusion.0, fusion.1)
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(auto module,
+                          ParseAndReturnVerifiedModule(hlo_string));
+  HloComputationDeduplicator dedup(/*mark_fusion_duplications=*/true);
+  TF_ASSERT_OK_AND_ASSIGN(bool changed, dedup.Run(module.get()));
+  EXPECT_TRUE(changed);
+  EXPECT_EQ(module->computation_count(), 4);
+  HloInstruction* fusion0 =
+      module->entry_computation()->GetInstructionWithName("fusion.0");
+  HloInstruction* fusion1 =
+      module->entry_computation()->GetInstructionWithName("fusion.1");
+  HloInstruction* fusion2 =
+      module->entry_computation()->GetInstructionWithName("fusion.2");
+  EXPECT_EQ(fusion0->metadata().deduplicated_name(), "fusion.0");
+  EXPECT_EQ(fusion1->metadata().deduplicated_name(), "fusion.0");
+  EXPECT_EQ(fusion2->metadata().deduplicated_name(), "fusion.0");
+}
+
+}  // namespace
 }  //  namespace xla
