@@ -47,6 +47,8 @@ class NamedSharding {
 
     absl::Span<const AxisRef> axes() const { return axes_; }
 
+    int64_t getShardedSize(const Mesh& mesh) const;
+
    private:
     std::vector<AxisRef> axes_;
     bool is_closed_;
@@ -64,8 +66,6 @@ class NamedSharding {
     return !(*this == other);
   }
 
-  const Mesh& mesh() const { return mesh_; }
-
   // TODO(b/456212087): Add validation checks
   explicit NamedSharding(Mesh mesh,
                          absl::Span<const DimensionSharding> dim_shardings = {},
@@ -77,6 +77,27 @@ class NamedSharding {
         replicated_axes_(replicated_axes.begin(), replicated_axes.end()),
         unreduced_axes_(unreduced_axes.begin(), unreduced_axes.end()),
         metadata_(metadata.begin(), metadata.end()) {}
+
+  const Mesh& mesh() const { return mesh_; }
+  absl::Span<const DimensionSharding> dim_shardings() const {
+    return dim_shardings_;
+  }
+  absl::Span<const AxisRef> replicated_axes() const { return replicated_axes_; }
+  absl::Span<const AxisRef> unreduced_axes() const { return unreduced_axes_; }
+  absl::Span<const OpMetadata> metadata() const { return metadata_; }
+
+  // Returns number of dimensions.
+  int64_t num_dimensions() const { return dim_shardings_.size(); }
+
+  // Returns size of the given dimension.
+  int64_t dimension(int64_t dim) const {
+    return dim_shardings_[dim].getShardedSize(mesh_);
+  }
+
+  // Returns the total number of devices used by sharding.
+  int64_t num_devices() const {
+    return mesh_.device_assignment().num_elements();
+  }
 
  private:
   friend class HloSharding;
