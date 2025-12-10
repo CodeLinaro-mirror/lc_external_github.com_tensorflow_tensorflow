@@ -215,38 +215,42 @@ absl::StatusOr<std::unique_ptr<CustomCallThunk>> CustomCallThunk::Create(
     ThunkInfo thunk_info, std::string target_name,
     std::vector<NullableShapedSlice> operands,
     std::vector<NullableShapedSlice> results, ffi::AttributesMap attributes,
-    const HloComputation* called_computation, absl::string_view platform_name) {
+    const HloComputation* called_computation, absl::string_view platform_name,
+    std::unique_ptr<ffi::ExecutionState> execution_state) {
   TF_ASSIGN_OR_RETURN(ffi::HandlerRegistration registration,
                       ffi::FindHandler(target_name, platform_name));
 
   return Create(thunk_info, std::move(target_name),
                 std::move(registration.bundle), std::move(operands),
-                std::move(results), std::move(attributes), called_computation);
+                std::move(results), std::move(attributes), called_computation,
+                std::move(execution_state));
 }
 
 absl::StatusOr<std::unique_ptr<CustomCallThunk>> CustomCallThunk::Create(
     ThunkInfo thunk_info, std::string target_name,
     XLA_FFI_Handler_Bundle bundle, std::vector<NullableShapedSlice> operands,
     std::vector<NullableShapedSlice> results, ffi::AttributesMap attributes,
-    const HloComputation* called_computation) {
-  auto execution_state = std::make_unique<ffi::ExecutionState>();
-
+    const HloComputation* called_computation,
+    std::unique_ptr<ffi::ExecutionState> execution_state) {
   // Initialize FFI handler state if it has an instantiate callback.
-  if (bundle.instantiate) {
-    // At FFI handler instantiation time, we don't have any arguments or
-    // results or access to the underlying device (stream, etc.)
-    CallFrameBuilder builder(/*num_args=*/0, /*num_rets=*/0);
+  if (execution_state == nullptr) {
+    execution_state = std::make_unique<ffi::ExecutionState>();
+    if (bundle.instantiate && execution_state) {
+      // At FFI handler instantiation time, we don't have any arguments or
+      // results or access to the underlying device (stream, etc.)
+      CallFrameBuilder builder(/*num_args=*/0, /*num_rets=*/0);
 
-    CallFrameBuilder::AttributesBuilder attrs;
-    attrs.Append(attributes);
+      CallFrameBuilder::AttributesBuilder attrs;
+      attrs.Append(attributes);
 
-    builder.AddAttributes(attrs.Build());
-    CallFrame call_frame = builder.Build();
+      builder.AddAttributes(attrs.Build());
+      CallFrame call_frame = builder.Build();
 
-    CallOptions options;
-    options.execution_state = execution_state.get();
-    TF_RETURN_IF_ERROR(Call(bundle.instantiate, call_frame, options,
-                            XLA_FFI_ExecutionStage_INSTANTIATE));
+      CallOptions options;
+      options.execution_state = execution_state.get();
+      TF_RETURN_IF_ERROR(Call(bundle.instantiate, call_frame, options,
+                              XLA_FFI_ExecutionStage_INSTANTIATE));
+    }
   }
 
   TF_ASSIGN_OR_RETURN(CallFrame call_frame,
@@ -602,6 +606,14 @@ absl::StatusOr<ThunkProto> CustomCallThunk::ToProto() const {
     *proto.mutable_custom_call_thunk()->mutable_attributes() =
         attributes_->ToProto();
   }
+  if (!execution_state_) {
+    return absl::FailedPreconditionError(
+        "CustomCallThunk was created without an execution state and cannot be "
+        "serialized to a proto");
+  }
+  TF_ASSIGN_OR_RETURN(
+      *proto.mutable_custom_call_thunk()->mutable_execution_state(),
+      execution_state_->ToProto());
   return proto;
 }
 
@@ -643,11 +655,14 @@ absl::StatusOr<std::unique_ptr<CustomCallThunk>> CustomCallThunk::FromProto(
           "' not found in the HloModule with name '", hlo_module->name(), "'"));
     }
   }
+  TF_ASSIGN_OR_RETURN(ffi::ExecutionState execution_state,
+                      ffi::ExecutionState::FromProto(proto.execution_state()));
 
-  return CustomCallThunk::Create(std::move(thunk_info), proto.target_name(),
-                                 std::move(operands), std::move(results),
-                                 std::move(attributes), called_computation,
-                                 platform_name);
+  return CustomCallThunk::Create(
+      std::move(thunk_info), proto.target_name(), std::move(operands),
+      std::move(results), std::move(attributes), called_computation,
+      platform_name,
+      std::make_unique<ffi::ExecutionState>(std::move(execution_state)));
 }
 
 }  // namespace gpu

@@ -18,6 +18,7 @@ limitations under the License.
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -35,8 +36,10 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/executable_run_options.h"
 #include "xla/ffi/attribute_map.h"
+#include "xla/ffi/execution_state.h"
 #include "xla/ffi/ffi.h"
 #include "xla/ffi/ffi_api.h"
+#include "xla/ffi/type_registry.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
@@ -55,6 +58,27 @@ limitations under the License.
 #include "xla/stream_executor/stream_executor_memory_allocator.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/util/proto/parse_text_proto.h"
+
+namespace xla::gpu {
+struct TestState {
+  std::string value;
+};
+}  // namespace xla::gpu
+
+namespace xla::ffi {
+template <>
+struct TypeRegistry::SerDes<xla::gpu::TestState> : public std::true_type {
+  static absl::StatusOr<std::string> Serialize(
+      const xla::gpu::TestState& value) {
+    return value.value;
+  }
+  static absl::StatusOr<std::unique_ptr<xla::gpu::TestState>> Deserialize(
+      absl::string_view data) {
+    return std::make_unique<xla::gpu::TestState>(
+        xla::gpu::TestState{std::string(data)});
+  }
+};
+}  // namespace xla::ffi
 
 namespace xla::gpu {
 namespace {
@@ -335,7 +359,8 @@ TEST(CustomCallThunkTest, CustomCallWithOwnedHandlersWithoutExecute) {
 absl::Status VerifyCallbackArguments(int my_attribute,
                                      ffi::AnyBuffer my_operand,
                                      ffi::Result<ffi::AnyBuffer> my_result,
-                                     const HloComputation* called_computation) {
+                                     const HloComputation* called_computation,
+                                     xla::gpu::TestState* state) {
   EXPECT_EQ(my_attribute, 42);
   EXPECT_EQ(my_operand.element_type(), xla::PrimitiveType::U8);
   EXPECT_EQ(my_operand.device_memory().opaque(),
@@ -344,6 +369,7 @@ absl::Status VerifyCallbackArguments(int my_attribute,
   EXPECT_EQ(my_result->device_memory().opaque(),
             absl::bit_cast<void*>(static_cast<intptr_t>(0xABCDEF)));
   EXPECT_EQ(called_computation->name(), "test_computation");
+  EXPECT_EQ(state->value, "some state");
   return absl::OkStatus();
 }
 
@@ -352,7 +378,8 @@ XLA_FFI_DEFINE_HANDLER(kVerifyCallbackArguments, VerifyCallbackArguments,
                            .Attr<int>("my_attribute")
                            .Arg<ffi::AnyBuffer>()
                            .Ret<ffi::AnyBuffer>()
-                           .Ctx<ffi::CalledComputation>(),
+                           .Ctx<ffi::CalledComputation>()
+                           .Ctx<ffi::State<xla::gpu::TestState>>(),
                        {ffi::Traits::kCmdBufferCompatible});
 
 constexpr absl::string_view kVerifyCallbackArgumentsCustomCallName =
@@ -383,6 +410,11 @@ TEST(CustomCallThunkTest, ProtoConversion) {
   ShapedSlice result_slice{BufferAllocation::Slice{&alloc1, 0, 1024},
                            ShapeUtil::MakeShape(U16, {512})};
 
+  auto execution_state = std::make_unique<ffi::ExecutionState>();
+  ASSERT_THAT(execution_state->Set(
+                  std::make_unique<TestState>(TestState{"some state"})),
+              IsOk());
+
   TF_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<CustomCallThunk> original_thunk,
       CustomCallThunk::Create(
@@ -391,9 +423,10 @@ TEST(CustomCallThunkTest, ProtoConversion) {
           /*operands=*/{operand_slice},
           /*results=*/{result_slice}, /*attributes=*/{{"my_attribute", 42}},
           hlo_module.entry_computation(),
-          /*platform_name=*/kTestPlatformName));
+          /*platform_name=*/kTestPlatformName, std::move(execution_state)));
   TF_ASSERT_OK_AND_ASSIGN(ThunkProto proto, original_thunk->ToProto());
   ASSERT_TRUE(proto.has_custom_call_thunk());
+  ASSERT_TRUE(proto.custom_call_thunk().has_execution_state());
   original_thunk.reset();
 
   std::array allocations = {alloc0, alloc1};
