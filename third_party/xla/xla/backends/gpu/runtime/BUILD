@@ -1790,6 +1790,22 @@ cc_library(
     ],
 )
 
+xla_cc_test(
+    name = "collective_thunk_test",
+    srcs = ["collective_thunk_test.cc"],
+    deps = [
+        ":collective_thunk",
+        ":thunk",
+        ":thunk_proto_cc",
+        "//xla/service:buffer_assignment",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/util/proto:proto_matchers",
+        "@com_google_absl//absl/log:check",
+        "@com_google_googletest//:gtest_main",
+        "@local_tsl//tsl/platform:protobuf",
+    ],
+)
+
 cc_library(
     name = "p2p_thunk_common",
     srcs = ["p2p_thunk_common.cc"],
@@ -2797,6 +2813,7 @@ cc_library(
     srcs = ["thunk_proto_deserialization.cc"],
     hdrs = ["thunk_proto_deserialization.h"],
     deps = [
+        ":collective_thunk",
         ":conditional_thunk",
         ":convolution_reorder_thunk",
         ":convolution_thunk",

@@ -299,6 +299,18 @@ message CustomKernelThunkProto {
   CustomKernelProto custom_kernel = 3;
 }
 
+message CollectiveThunkProto {
+  int32 thunk_kind = 1;
+  AsyncStreamKind async_stream_kind = 2;
+  uint64 async_events_unique_id = 3;
+}
+
+message CollectiveDoneThunkProto {
+  int32 thunk_kind = 1;
+  AsyncStreamKind async_stream_kind = 2;
+  uint64 async_events_unique_id = 3;
+}
+
 message ThunkProto {
   ThunkInfoProto thunk_info = 1;
 
@@ -337,6 +349,7 @@ message ThunkProto {
     HostRecvThunkProto host_recv_thunk = 34;
     HostRecvDoneThunkProto host_recv_done_thunk = 35;
     CustomKernelThunkProto custom_kernel_thunk = 36;
+    CollectiveDoneThunkProto collective_done_thunk = 37;
   }
 }
 
