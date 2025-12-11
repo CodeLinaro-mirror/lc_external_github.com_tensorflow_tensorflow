@@ -196,6 +196,11 @@ xla_test(
     },
     backends = ["gpu"],
     deps = [
+        # TODO(b/467915739): Replace with gunit_main once the bug is fixed.
+        "@com_google_googletest//:gtest_main_no_heapcheck",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "//xla:error_spec",
         "//xla:shape_util",
         "//xla:xla_data_proto_cc",
@@ -223,15 +228,10 @@ xla_test(
         "//xla/stream_executor:platform_manager",
         "//xla/stream_executor:stream",
         "//xla/stream_executor:stream_executor_h",
-        "//xla/stream_executor/cuda:cuda_compute_capability",
         "//xla/tests:hlo_test_base",
         "//xla/tsl/platform:errors",
         "//xla/tsl/platform:statusor",
         "//xla/tsl/platform:test",
-        "@com_google_absl//absl/algorithm:container",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 
