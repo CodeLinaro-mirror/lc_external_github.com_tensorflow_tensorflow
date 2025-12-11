@@ -39,6 +39,17 @@ limitations under the License.
 #include "xla/util.h"
 
 namespace xla {
+namespace {
+
+std::shared_ptr<HloModule> CloneHloModule(const HloModule& hlo_module) {
+  auto clone =
+      HloModule::CreateFromProto(hlo_module.ToProto(), hlo_module.config());
+  CHECK_OK(clone);
+  return std::shared_ptr<HloModule>(std::move(*clone));
+}
+
+}  // namespace
+
 absl::StatusOr<std::string> StreamExecutorExecutable::SerializeExecutable()
     const {
   std::string serialized;
@@ -79,6 +90,27 @@ absl::StatusOr<std::string> StreamExecutorExecutable::SerializeExecutable()
   TF_ASSIGN_OR_RETURN(*proto.mutable_compile_options(),
                       compile_options_.ToProto());
   return proto.SerializeAsString();
+}
+
+StreamExecutorExecutable::StreamExecutorExecutable(
+    const CompileOptions& compile_options,
+    std::vector<std::unique_ptr<xla::AotCompilationResult>> executables,
+    int num_replicas, int num_partitions, absl::string_view name,
+    absl::string_view fingerprint, absl::string_view default_memory_kind)
+    : compile_options_(compile_options),
+      executables_(std::move(executables)),
+      num_replicas_(num_replicas),
+      num_partitions_(num_partitions),
+      name_(name),
+      fingerprint_(fingerprint),
+      default_memory_kind_(default_memory_kind) {
+  std::vector<std::shared_ptr<HloModule>> hlo_modules;
+  for (const auto& executable :
+       std::get<std::vector<std::unique_ptr<xla::AotCompilationResult>>>(
+           executables_)) {
+    hlo_modules.push_back(CloneHloModule(*executable->optimized_module()));
+  }
+  hlo_modules_ = std::move(hlo_modules);
 }
 
 StreamExecutorExecutable::StreamExecutorExecutable(
