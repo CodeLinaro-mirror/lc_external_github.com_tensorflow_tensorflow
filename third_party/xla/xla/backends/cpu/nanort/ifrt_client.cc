@@ -1260,6 +1260,8 @@ class NanoDevice final : public llvm::RTTIExtends<NanoDevice, ifrt::Device> {
     return *attributes;
   }
 
+  absl::string_view PlatformName() const override { return "cpu"; }
+
   absl::string_view Kind() const override { return "cpu"; }
 
   absl::string_view ToString() const override { return "NanoRT CPU"; }
