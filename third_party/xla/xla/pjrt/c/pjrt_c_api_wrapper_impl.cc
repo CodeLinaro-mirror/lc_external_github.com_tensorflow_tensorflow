@@ -63,6 +63,7 @@ limitations under the License.
 #include "xla/pjrt/proto/compile_options.pb.h"
 #include "xla/pjrt/proto/topology_description.pb.h"
 #include "xla/pjrt/raw_buffer.h"
+#include "xla/pjrt/scoped_async_tracking_event.h"
 #include "xla/runtime/device_id.h"
 #include "xla/service/computation_placer.h"
 #include "xla/service/hlo.pb.h"
@@ -771,6 +772,48 @@ PJRT_Error* PJRT_AsyncHostToDeviceTransferManager_TransferLiteral(
           args->buffer_index, *literal_ptr,
           std::move(on_done_with_d2h_transfer)));
   args->done_with_h2d_transfer = new PJRT_Event{std::move(future)};
+  return nullptr;
+}
+
+PJRT_Error* PJRT_Device_PoisonExecution(
+    PJRT_Device_PoisonExecution_Args* args) {
+  PJRT_RETURN_IF_ERROR(ActualStructSizeIsGreaterOrEqual(
+      "PJRT_Device_PoisonExecution_Args",
+      PJRT_Device_PoisonExecution_Args_STRUCT_SIZE, args->struct_size));
+
+  absl::Status error = absl::Status(
+      pjrt::PjrtErrorCodeToStatusCode(args->error_code),
+      absl::string_view(args->error_message, args->error_message_size));
+
+  PJRT_ASSIGN_OR_RETURN(args->poisoned, args->device->device->PoisonExecution(
+                                            args->launch_id, error));
+  return nullptr;
+}
+
+PJRT_Error* PJRT_Device_CreateAsyncTrackingEvent(
+    PJRT_Device_CreateAsyncTrackingEvent_Args* args) {
+  PJRT_RETURN_IF_ERROR(ActualStructSizeIsGreaterOrEqual(
+      "PJRT_Device_CreateAsyncTrackingEvent_Args",
+      PJRT_Device_CreateAsyncTrackingEvent_Args_STRUCT_SIZE,
+      args->struct_size));
+
+  absl::string_view description(args->description, args->description_size);
+  std::unique_ptr<xla::ScopedAsyncTrackingEvent> event =
+      args->device->device->CreateAsyncTrackingEvent(description);
+  if (event == nullptr) {
+    args->event = nullptr;
+  } else {
+    args->event = new PJRT_AsyncTrackingEvent{std::move(event)};
+  }
+  return nullptr;
+}
+
+PJRT_Error* PJRT_AsyncTrackingEvent_Destroy(
+    PJRT_AsyncTrackingEvent_Destroy_Args* args) {
+  PJRT_RETURN_IF_ERROR(ActualStructSizeIsGreaterOrEqual(
+      "PJRT_AsyncTrackingEvent_Destroy_Args",
+      PJRT_AsyncTrackingEvent_Destroy_Args_STRUCT_SIZE, args->struct_size));
+  delete args->event;
   return nullptr;
 }
 
@@ -3227,6 +3270,11 @@ PJRT_Api CreatePjrtApi(PJRT_Client_Create* create_fn,
       pjrt::PJRT_AsyncHostToDeviceTransferManager_TransferLiteral,
       /*PJRT_Buffer_CopyRawToHostFuture=*/
       pjrt::PJRT_Buffer_CopyRawToHostFuture,
+      /*PJRT_Device_PoisonExecution=*/pjrt::PJRT_Device_PoisonExecution,
+      /*PJRT_Device_CreateAsyncTrackingEvent=*/
+      pjrt::PJRT_Device_CreateAsyncTrackingEvent,
+      /*PJRT_AsyncTrackingEvent_Destroy=*/
+      pjrt::PJRT_AsyncTrackingEvent_Destroy,
   };
 }
 

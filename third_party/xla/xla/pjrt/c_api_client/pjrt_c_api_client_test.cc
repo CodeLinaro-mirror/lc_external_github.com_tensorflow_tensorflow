@@ -58,13 +58,17 @@ limitations under the License.
 #include "xla/tests/literal_test_util.h"
 #include "xla/tsl/lib/core/status_test_util.h"
 #include "xla/tsl/platform/env.h"
+#include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/tsl/platform/threadpool.h"
 #include "xla/types.h"
+#include "xla/util.h"
 
 using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
+using ::testing::status::IsOkAndHolds;
+using ::testing::status::StatusIs;
 
 namespace xla {
 namespace {
@@ -668,8 +672,64 @@ TEST(PjRtCApiClientTest, CopyRawToHostFuture) {
   result = buffer->CopyRawToHostFuture(error_dst_future, 0, size);
   error_dst_promise.Set(absl::InternalError("Future error"));
   absl::Status status = result.Await();
-  EXPECT_EQ(status.code(), absl::StatusCode::kInternal);
-  EXPECT_EQ(status.message(), "Future error");
+  EXPECT_THAT(status, StatusIs(absl::StatusCode::kInternal, "Future error"));
+}
+
+TEST(PjRtCApiClientTest, PoisonExecution) {
+  SetUpCpuPjRtApi();
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<PjRtClient> client,
+                       GetCApiClient("cpu"));
+
+  ASSERT_OK_AND_ASSIGN(auto hlo_module, ParseAndReturnUnverifiedModule(R"(
+HloModule Identity
+ENTRY Identity() -> f32[2, 2] {
+    ROOT %result = f32[2, 2] parameter(0)
+})",
+                                                                       {}));
+  XlaComputation xla_computation(hlo_module->ToProto());
+  ASSERT_OK_AND_ASSIGN(auto pjrt_executable,
+                       client->CompileAndLoad(xla_computation, {}));
+
+  Shape shape = ShapeUtil::MakeShape(F32, {2, 2});
+  ASSERT_OK_AND_ASSIGN(auto transfer_manager,
+                       client->CreateBuffersForAsyncHostToDevice(
+                           {shape}, client->memory_spaces()[0]));
+  auto buffer = transfer_manager->RetrieveBuffer(0);
+
+  const int32_t kLaunchId = 123;
+  ExecuteOptions opts;
+  opts.launch_id = kLaunchId;
+  // PoisonExecution only works for asynchronous executions. Synchronous
+  // executions are executed inline and will not be poisonable.
+  opts.execution_mode = ExecuteOptions::ExecutionMode::kAsynchronous;
+
+  auto result =
+      pjrt_executable->Execute(/*argument_handles=*/{{buffer.get()}}, opts);
+  ASSERT_OK(result);
+
+  // Poisoning the execution should succeed because the execution has not
+  // started with the input buffer not defined yet.
+  auto poison_result = client->addressable_devices().front()->PoisonExecution(
+      kLaunchId, Internal("foobar1"));
+  ASSERT_THAT(poison_result, IsOkAndHolds(true));
+
+  // The buffer is expected to be poisoned with the error.
+  ASSERT_EQ(result->size(), 1);
+  ASSERT_EQ(result->at(0).size(), 1);
+  EXPECT_THAT(result->at(0).at(0)->ToLiteral().Await(),
+              StatusIs(tsl::error::INTERNAL, HasSubstr("foobar1")));
+
+  // A later error (propagated from the input buffer) would not affect the
+  // already poisoned output buffer.
+  transfer_manager->SetBufferError(0, Internal("foobar2"));
+
+  EXPECT_THAT(result->at(0).at(0)->ToLiteral().Await(),
+              StatusIs(tsl::error::INTERNAL, HasSubstr("foobar1")));
+
+  // Attempting to poison a non-existent execution should fail.
+  poison_result = client->addressable_devices().front()->PoisonExecution(
+      kLaunchId + 12, Internal("foobar3"));
+  EXPECT_THAT(poison_result, IsOkAndHolds(false));
 }
 
 }  // namespace
