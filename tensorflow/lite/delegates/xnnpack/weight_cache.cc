@@ -120,12 +120,17 @@ bool WeightCacheBuilder::Start(const char* path, const FileDescriptor& fd) {
   XNNPackCacheHeader header{XNNPackCacheHeader::kInvalidHeader};
   header.buffer_list_offset = sizeof(header);
 
-  XNNPACK_RETURN_CHECK(fd_.Truncate(0), "could not truncate weight cache");
+  XNNPACK_RETURN_CHECK(fd_.Truncate(0), "could not truncate weight cache.");
+  XNNPACK_RETURN_CHECK(fd_.SetPos(0) == 0, "couldn't move to file start.");
   XNNPACK_RETURN_CHECK(fd_.Write(&header, sizeof(header)),
                        "could not write initial cache header in %s: %s.",
                        file_path_.c_str(), strerror(errno));
 
   schema_.base_offset = Align(sizeof(header), kMinAlignment);
+
+  XNNPACK_RETURN_CHECK(StartBuildStep(), "failed to start initial write step.");
+  XNNPACK_RETURN_CHECK(StopBuildStep(), "failed to write initial step.");
+
   return true;
 }
 
@@ -672,12 +677,14 @@ bool IsCompatibleCacheFile(const char* path) {
   return IsCompatibleCacheFile(std::move(fd));
 }
 
-bool IsCompatibleCacheFile(const FileDescriptor& fd) {
+bool IsCompatibleCacheFile(FileDescriptorView fd) {
   XNNPACK_RETURN_CHECK(fd.IsValid(), "Invalid file descriptor: %d.",
                        fd.Value());
   const size_t current_pos = fd.GetPos();
   ScopeGuard reset_pos_on_return(
       [current_pos, &fd] { fd.SetPos(current_pos); });
+  XNNPACK_RETURN_CHECK(fd.SetPos(0) != -1,
+                       "Couldn't move to the start of the file.");
 
   XNNPackCacheHeader header;
   XNNPACK_RETURN_CHECK(fd.Read(&header, sizeof(header)),
