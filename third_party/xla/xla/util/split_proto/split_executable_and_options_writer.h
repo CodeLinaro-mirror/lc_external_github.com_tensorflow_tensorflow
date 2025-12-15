@@ -13,27 +13,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef XLA_UTIL_SPLIT_PROTO_SPLIT_PROTO_READER_H_
-#define XLA_UTIL_SPLIT_PROTO_SPLIT_PROTO_READER_H_
+#ifndef XLA_UTIL_SPLIT_PROTO_SPLIT_EXECUTABLE_AND_OPTIONS_WRITER_H_
+#define XLA_UTIL_SPLIT_PROTO_SPLIT_EXECUTABLE_AND_OPTIONS_WRITER_H_
 
 #include <memory>
 
 #include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "google/protobuf/message.h"
-#include "riegeli/bytes/reader.h"
-#include "xla/service/gpu/gpu_executable.pb.h"
+#include "riegeli/bytes/writer.h"
+#include "xla/pjrt/proto/compile_options.pb.h"
 
 namespace xla {
 
-// Reads a split proto into writing it into a the regular `proto` messages.
-// See proto_splitter.proto for more details on the split proto format.
-absl::Status ReadSplitProto(std::unique_ptr<riegeli::Reader> reader,
-                            google::protobuf::Message& proto);
-
-// Return true if the data being read by the reader is a split proto.
-absl::StatusOr<bool> IsSplitProto(riegeli::Reader& reader);
+// Serialized the `executable_and_options` into the `writer` using the split
+// proto format. This supports serializing protos bigger than 2GiB, unlike
+// regular proto serialization.
+absl::Status WriteSplitExecutableAndOptions(
+    const ExecutableAndOptionsProto& executable_and_options,
+    std::unique_ptr<riegeli::Writer> writer);
 
 }  // namespace xla
 
-#endif  // XLA_UTIL_SPLIT_PROTO_SPLIT_PROTO_READER_H_
+#endif  // XLA_UTIL_SPLIT_PROTO_SPLIT_EXECUTABLE_AND_OPTIONS_WRITER_H_
