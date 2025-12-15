@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -148,6 +149,39 @@ bool CollectiveConfig::IsDegenerate(int64_t replica_count,
   }
 }
 
+CollectiveConfigProto CollectiveConfig::ToProto() const {
+  CollectiveConfigProto proto;
+
+  for (PrimitiveType element_type : operand_element_type) {
+    proto.add_operand_element_type(element_type);
+  }
+
+  absl::c_copy(replica_groups, tsl::protobuf::RepeatedFieldBackInserter(
+                                   proto.mutable_replica_groups()));
+  proto.set_group_mode(group_mode);
+  proto.set_use_symmetric_buffer(use_symmetric_buffer);
+
+  return proto;
+}
+
+CollectiveConfig CollectiveConfig::FromProto(
+    const CollectiveConfigProto& proto) {
+  CollectiveConfig config;
+
+  config.operand_element_type.reserve(proto.operand_element_type_size());
+  for (int element_type : proto.operand_element_type()) {
+    config.operand_element_type.push_back(
+        static_cast<PrimitiveType>(element_type));
+  }
+
+  absl::c_copy(proto.replica_groups(),
+               std::back_inserter(config.replica_groups));
+
+  config.group_mode = proto.group_mode();
+  config.use_symmetric_buffer = proto.use_symmetric_buffer();
+  return config;
+}
+
 CollectiveConfig GetCollectiveConfig(
     const HloInstruction* hlo, std::optional<bool> use_global_device_ids) {
   CollectiveConfig config;
@@ -175,6 +209,13 @@ CollectiveThunk::CollectiveThunk(Kind kind, ThunkInfo thunk_info, bool is_sync,
     : Thunk(kind, thunk_info),
       stream_kind_(stream_kind),
       async_events_(is_sync ? nullptr : std::make_shared<AsyncEvents>()) {}
+
+CollectiveThunk::CollectiveThunk(Kind kind, ThunkInfo thunk_info,
+                                 std::shared_ptr<AsyncEvents> async_events,
+                                 AsyncStreamKind stream_kind)
+    : Thunk(kind, thunk_info),
+      stream_kind_(stream_kind),
+      async_events_(async_events) {}
 
 absl::StatusOr<GpuCliqueKey> GetCollectiveGpuCliqueKey(
     const CollectiveParams& params, const CollectiveConfig& collective_config,
@@ -244,6 +285,34 @@ absl::Status MaybeRegisterBuffers(se::StreamExecutor* executor,
     }
   }
   return absl::OkStatus();
+}
+
+absl::StatusOr<CollectiveBufferProto> CollectiveThunk::Buffer::ToProto() const {
+  CollectiveBufferProto proto;
+  proto.set_element_count(element_count);
+  TF_ASSIGN_OR_RETURN(*proto.mutable_source_buffer(), source_buffer.ToProto());
+  TF_ASSIGN_OR_RETURN(*proto.mutable_destination_buffer(),
+                      destination_buffer.ToProto());
+  proto.set_source_memory_space(source_memory_space);
+  proto.set_destination_memory_space(destination_memory_space);
+  return proto;
+}
+
+absl::StatusOr<CollectiveThunk::Buffer> CollectiveThunk::Buffer::FromProto(
+    const CollectiveBufferProto& buffer_proto,
+    absl::Span<const BufferAllocation> buffer_allocations) {
+  CollectiveThunk::Buffer res;
+  res.element_count = buffer_proto.element_count();
+  TF_ASSIGN_OR_RETURN(res.source_buffer,
+                      BufferAllocation::Slice::FromProto(
+                          buffer_proto.source_buffer(), buffer_allocations));
+  TF_ASSIGN_OR_RETURN(
+      res.destination_buffer,
+      BufferAllocation::Slice::FromProto(buffer_proto.destination_buffer(),
+                                         buffer_allocations));
+  res.source_memory_space = buffer_proto.source_memory_space();
+  res.destination_memory_space = buffer_proto.destination_memory_space();
+  return res;
 }
 
 absl::Status CollectiveThunk::AsyncEvents::Initialize(

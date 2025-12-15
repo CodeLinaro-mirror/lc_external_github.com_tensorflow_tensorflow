@@ -21,6 +21,7 @@ limitations under the License.
 
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
+#include "absl/types/span.h"
 #include "xla/backends/gpu/collectives/gpu_clique_key.h"
 #include "xla/backends/gpu/collectives/gpu_collectives.h"
 #include "xla/backends/gpu/collectives/gpu_communicator.h"
@@ -30,6 +31,7 @@ limitations under the License.
 #include "xla/future.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
+#include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/transforms/collectives/collective_ops_utils.h"
 #include "xla/shape.h"
@@ -44,7 +46,7 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
-namespace impl {
+namespace {
 AllGatherConfig GetAllGatherConfig(const HloAllGatherInstruction* inst) {
   AllGatherConfig config;
   config.config = GetCollectiveConfig(inst, inst->use_global_device_ids());
@@ -67,7 +69,16 @@ absl::Status CheckImplementableInst(const HloAllGatherInstruction* inst) {
 
   return absl::OkStatus();
 }
-}  // namespace impl
+}  // namespace
+
+AllGatherStartThunk::AllGatherStartThunk(
+    ThunkInfo thunk_info,
+    std::shared_ptr<CollectiveThunk::AsyncEvents> async_events,
+    CollectiveConfig config, std::vector<Buffer> buffers)
+    : CollectiveThunk(Thunk::kAllGatherStart, thunk_info, async_events,
+                      AsyncStreamKind::ASYNC_STREAM_KIND_COLLECTIVE),
+      config_(config),
+      buffers_(std::move(buffers)) {}
 
 AllGatherStartThunk::AllGatherStartThunk(ThunkInfo thunk_info,
                                          const HloAllGatherInstruction* inst,
@@ -76,7 +87,7 @@ AllGatherStartThunk::AllGatherStartThunk(ThunkInfo thunk_info,
     : CollectiveThunk(Thunk::kAllGatherStart, thunk_info,
                       IsGPUSyncCollective(*inst),
                       AsyncStreamKind::ASYNC_STREAM_KIND_COLLECTIVE),
-      config_(impl::GetAllGatherConfig(inst)),
+      config_(GetAllGatherConfig(inst)),
       buffers_(std::move(buffers)) {
   CHECK_EQ(config_.config.operand_element_type.size(), buffers_.size());
 }
@@ -85,12 +96,59 @@ AllGatherStartThunk::AllGatherStartThunk(ThunkInfo thunk_info,
     const HloAllGatherInstruction* inst, int64_t replica_count,
     int64_t partition_count) {
   return AddOpDescription<AllGatherStartThunk>(
-      impl::CheckImplementableInst(inst), inst, replica_count, partition_count);
+      CheckImplementableInst(inst), inst, replica_count, partition_count);
 }
 
 /*static*/ CollectiveOpGroupMode AllGatherStartThunk::GetGroupMode(
     const HloAllGatherInstruction* inst) {
-  return impl::GetAllGatherConfig(inst).config.group_mode;
+  return GetAllGatherConfig(inst).config.group_mode;
+}
+
+absl::StatusOr<std::unique_ptr<AllGatherStartThunk>>
+AllGatherStartThunk::FromProto(
+    ThunkInfo thunk_info, const AllGatherStartThunkProto& thunk_proto,
+    absl::Span<const BufferAllocation> buffer_allocations,
+    CollectiveThunk::AsyncEventsMap& async_events_map) {
+  std::vector<CollectiveThunk::Buffer> buffers;
+  buffers.reserve(thunk_proto.buffers_size());
+  for (const CollectiveBufferProto& proto : thunk_proto.buffers()) {
+    TF_ASSIGN_OR_RETURN(
+        CollectiveThunk::Buffer buffer,
+        CollectiveThunk::Buffer::FromProto(proto, buffer_allocations));
+    buffers.push_back(buffer);
+  }
+
+  std::shared_ptr<CollectiveThunk::AsyncEvents>& async_events =
+      async_events_map[AsyncEventsUniqueId{
+          thunk_proto.async_events_unique_id()}];
+  if (!async_events) {
+    async_events = std::make_shared<CollectiveThunk::AsyncEvents>();
+  }
+
+  return std::make_unique<AllGatherStartThunk>(
+      std::move(thunk_info), async_events,
+      CollectiveConfig::FromProto(thunk_proto.collective_config()),
+      std::move(buffers));
+}
+
+absl::StatusOr<ThunkProto> AllGatherStartThunk::ToProto() const {
+  ThunkProto proto;
+  *proto.mutable_thunk_info() = thunk_info().ToProto();
+
+  AllGatherStartThunkProto* thunk_proto =
+      proto.mutable_all_gather_start_thunk();
+
+  std::optional<AsyncEventsUniqueId> async_events_id = GetAsyncEventsUniqueId();
+  if (!async_events_id.has_value()) {
+    return absl::FailedPreconditionError("AsyncEvents is not set.");
+  }
+  thunk_proto->set_async_events_unique_id(async_events_id->value());
+
+  for (const Buffer& buffer : buffers_) {
+    TF_ASSIGN_OR_RETURN(*thunk_proto->add_buffers(), buffer.ToProto());
+  }
+  *thunk_proto->mutable_collective_config() = config_.config.ToProto();
+  return proto;
 }
 
 absl::StatusOr<bool> AllGatherStartThunk::RunCollective(

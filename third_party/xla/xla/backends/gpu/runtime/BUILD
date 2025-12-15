@@ -1246,6 +1246,7 @@ cc_library(
         "//xla/backends/gpu/collectives:gpu_communicator",
         "//xla/core/collectives:communicator",
         "//xla/hlo/ir:hlo",
+        "//xla/service:buffer_assignment",
         "//xla/service/gpu:backend_configs_cc",
         "//xla/service/gpu/transforms/collectives:collective_ops_utils",
         "//xla/stream_executor:stream",
@@ -1257,6 +1258,23 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/platform:casts",
+    ],
+)
+
+xla_cc_test(
+    name = "all_gather_thunk_test",
+    srcs = ["all_gather_thunk_test.cc"],
+    deps = [
+        ":all_gather_thunk",
+        ":collective_thunk",
+        ":thunk",
+        ":thunk_proto_cc",
+        "//xla/service:buffer_assignment",
+        "//xla/tsl/platform:statusor",
+        "//xla/tsl/util/proto:parse_text_proto",
+        "//xla/tsl/util/proto:proto_matchers",
+        "@com_google_absl//absl/log:check",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -2842,6 +2860,7 @@ cc_library(
     srcs = ["thunk_proto_deserialization.cc"],
     hdrs = ["thunk_proto_deserialization.h"],
     deps = [
+        ":all_gather_thunk",
         ":collective_thunk",
         ":conditional_thunk",
         ":convolution_reorder_thunk",
