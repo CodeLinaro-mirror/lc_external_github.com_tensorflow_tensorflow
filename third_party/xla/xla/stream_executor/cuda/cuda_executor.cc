@@ -412,27 +412,8 @@ bool CanEnablePeerAccess(CUdevice from, CUdevice to) {
     LOG(ERROR) << "failed to detect peer access capability: " << status;
     return false;
   }
+
   return can_access_peer;
-}
-
-bool CanEnablePeerAccess(Context* from, Context* to) {
-  if (from == to) {
-    return true;  // A context can always access its own memory.
-  }
-
-  auto from_device = DeviceFromContext(from);
-  if (!from_device.ok()) {
-    LOG(ERROR) << "failed to resolve 'from' peer access context to a device: "
-               << from_device.status();
-    return false;
-  }
-  auto to_device = DeviceFromContext(to);
-  if (!to_device.ok()) {
-    LOG(ERROR) << "failed to resolve 'to' peer access context to a device: "
-               << to_device.status();
-    return false;
-  }
-  return CanEnablePeerAccess(from_device.value(), to_device.value());
 }
 
 absl::Status EnablePeerAccess(Context* from, Context* to) {
@@ -949,7 +930,7 @@ absl::StatusOr<void*> CudaExecutor::VmmAllocateMemory(uint64_t bytes) {
   int device_count = 0;
   TF_RETURN_IF_ERROR(cuda::ToStatus(cudaGetDeviceCount(&device_count)));
   for (int peer = 0; peer < device_count; peer++) {
-    if (peer == device_ordinal() || CanEnablePeerAccess(peer, device_)) {
+    if (peer == device_ordinal() || CanEnablePeerAccessTo(peer)) {
       CUmemAccessDesc accessDesc = GetVmmAccessDescriptor(peer);
       TF_RETURN_IF_ERROR(
           cuda::ToStatus(cuMemSetAccess(ptr, padded_size, &accessDesc, 1)));
@@ -1080,6 +1061,16 @@ absl::Status CudaExecutor::Init() {
                    .value_or(tsl::port::kNUMANoAffinity);
   if (numa_node_ == tsl::port::kNUMANoAffinity) {
     XLA_VLOG_DEVICE(2, device_ordinal()) << "Could not determine NUMA node";
+  }
+
+  int cuda_device_count = 0;
+  TF_RETURN_IF_ERROR(cuda::ToStatus(cudaGetDeviceCount(&cuda_device_count)));
+  for (int i = 0; i < cuda_device_count; ++i) {
+    if (i == device_ordinal()) {
+      peer_access_cache_[i] = true;
+    }
+
+    peer_access_cache_[i] = CanEnablePeerAccess(device_, i);
   }
   return absl::OkStatus();
 }
@@ -1604,7 +1595,25 @@ fft::FftSupport* CudaExecutor::AsFft() {
 
 bool CudaExecutor::CanEnablePeerAccessTo(StreamExecutor* other) {
   CudaExecutor* cuda_other = static_cast<CudaExecutor*>(other);
-  return CanEnablePeerAccess(cuda_context_, cuda_other->cuda_context_);
+  auto to_device = DeviceFromContext(cuda_other->cuda_context_);
+  if (!to_device.ok()) {
+    LOG(ERROR) << "failed to resolve 'to' peer access context to a device: "
+               << to_device.status();
+    return false;
+  }
+  return CanEnablePeerAccessTo(to_device.value());
+}
+
+bool CudaExecutor::CanEnablePeerAccessTo(int other_device_ordinal) {
+  auto it = peer_access_cache_.find(other_device_ordinal);
+  if (it != peer_access_cache_.end()) {
+    return it->second;
+  }
+
+  LOG(WARNING) << "Attemping to enable peer access from: " << device_ordinal()
+               << " to: " << other_device_ordinal
+               << " which was not available during initialization.";
+  return false;
 }
 
 absl::Status CudaExecutor::EnablePeerAccessTo(StreamExecutor* other) {
