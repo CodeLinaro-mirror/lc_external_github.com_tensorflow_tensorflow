@@ -147,33 +147,64 @@ class TransposePlan {
  protected:
   // Methods protected so they can be accessed by tests.
 
-  // Removes any size-1 dimensions.
-  static void RemoveTrivialDimensions(
-      absl::InlinedVector<int64_t, 4>& a_dims,
-      absl::InlinedVector<int64_t, 4>& permutation,
-      absl::InlinedVector<int64_t, 4>& lda,
-      absl::InlinedVector<int64_t, 4>& lda_tile,
-      absl::InlinedVector<int64_t, 4>& a_tiling,
-      absl::InlinedVector<int64_t, 4>& b_tiling);
+  struct Loop {
+    // Dimension number in A from which this loop originated. This is mostly
+    // for debugging the plan.
+    int dim_in_a;
 
-  // Collapses together dimensions that are adjacent both in `dims` and
-  // `permutation`.
-  static void CoalesceDimensions(absl::InlinedVector<int64_t, 4>& a_dims,
-                                 absl::InlinedVector<int64_t, 4>& permutation,
-                                 absl::InlinedVector<int64_t, 4>& lda,
-                                 absl::InlinedVector<int64_t, 4>& lda_tile,
-                                 absl::InlinedVector<int64_t, 4>& a_tiling,
-                                 absl::InlinedVector<int64_t, 4>& b_tiling);
+    // If true, the loop iterates over the interior of a tile.
+    // For an untiled dimension, this is always false. For a tiled dimension,
+    // we will have two loops: one over the tile exteriors and one over the tile
+    // interiors.
+    bool tile_interior;
+
+    // Size of the iteration space.
+    int64_t dim_size;
+
+    // Size of the tiles, if this a tiled dimension.
+    int64_t tile_size;
+
+    int64_t lda;  // Stride in A for this loop.
+    int64_t ldb;  // Stride in B for this loop.
+
+    // Is this the innermost (stride 1) dimension in A or B? These dimensions
+    // are special for the kernels.
+    bool is_inner_dim_in_a;
+    bool is_inner_dim_in_b;
+
+    // Number of parallel threads to use for this loop.
+    int64_t parallelism;
+
+    // Iteration bounds for this chunk. Initially [0, full_iterations).
+    // After chunk splitting, each chunk's loops have narrowed bounds.
+    int64_t start = 0;  // Inclusive start of iteration range
+    int64_t end = 0;    // Exclusive end of iteration range
+
+    bool operator==(const Loop& other) const;
+  };
+
+  // Exposed for testing.
+  static void RemoveTrivialLoops(std::vector<Loop>& loops);
+  static void CoalesceLoops(std::vector<Loop>& loops);
 
  private:
   // Performs plan initialization that cannot fail.
   void Initialize();
 
-  void BuildPlanNodes(absl::Span<int64_t const> inverse_permutation,
-                      int thread_id, std::vector<Node>& output_nodes);
+  void BuildPlanNodes(int chunk_id, std::vector<Node>& nodes);
 
-  std::vector<int> ChooseParallelizationStrategy(
-      absl::Span<int64_t const> inverse_permutation);
+  // Chooses a parallelism for each loop. Returns the number of separate chunks
+  // in the plan, and populates the `parallelism` field of each loop.
+  int ChooseParallelizationStrategy(std::vector<Loop>& loop_order);
+
+  // Creates per-chunk loop vectors by splitting loop_order_ into per-chunk
+  // loops. Returns a vector of loop vectors, one per chunk. Each chunk's
+  // loops have their start/end bounds narrowed to represent that chunk's work.
+  static void PartitionLoops(
+      int num_chunks, const std::vector<Loop>& loop_order,
+      std::vector<std::vector<TransposePlan::Loop>>& result,
+      std::vector<int64_t>& input_offset_bytes,
+      std::vector<int64_t>& output_offset_bytes);
 
   // The signature of ExecuteTyped uses char* pointers because we perform
   // address calculations with strides in bytes; the strides need not be
@@ -220,15 +251,13 @@ class TransposePlan {
   bool a_is_tiled_;
   bool b_is_tiled_;
 
-  // Order to traverse dimensions, from slowest-varying to fastest-varying.
-  struct Loop {
-    // The integers are dimension numbers in A.
-    int dim_in_a;
-    // If true, the loop iterates over the interior of a tile.
-    bool tile_interior;
-  };
-  std::vector<Loop> loop_order_;
-  std::vector<int> loop_parallelism_;
+  // Per-chunk loop nests. Each loop nest has its own start/end bounds
+  // representing one chunk of the work.
+  std::vector<std::vector<Loop>> chunk_loops_;
+
+  // Per-chunk byte offsets into the input and output arrays.
+  std::vector<int64_t> input_offset_bytes_;
+  std::vector<int64_t> output_offset_bytes_;
 
   // Root nodes of the plan, i.e., pointing to the outermost loops in the loop
   // nest. The outer vector is indexed on the thread ID.
@@ -245,6 +274,10 @@ class TransposePlan {
   // cache blocking and need not be equal between input and output.
   int outer_block_elems_a_ = 4;
   int outer_block_elems_b_ = 4;
+
+  // Strides used by an inner transpose kernel. Unused for memcpy kernels.
+  int64_t sentinel_lda_ = -1;
+  int64_t sentinel_ldb_ = -1;
 
   // Transformations to apply to the input before transposition.
   // Currently the only supported transformation is EF57 conversion, which is
