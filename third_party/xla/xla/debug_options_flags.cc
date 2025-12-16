@@ -368,6 +368,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_experimental_enable_fusion_block_level_rewriter(false);
 
   opts.set_xla_gpu_enable_llvm_module_compilation_parallelism(false);
+  opts.set_xla_gpu_default_to_alg_dot_bf16_bf16_f32(false);
   opts.set_xla_gpu_enable_libnvptxcompiler(
       stream_executor::IsLibNvPtxCompilerSupported());
   opts.set_xla_gpu_libnvjitlink_mode(DebugOptions::LIB_NV_JIT_LINK_MODE_AUTO);
@@ -1531,6 +1532,12 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       "--xla_gpu_force_compilation_parallelism flag and the thread pool "
       "supplied to GpuCompiler."));
 
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_default_to_alg_dot_bf16_bf16_f32",
+      bool_setter_for(
+          &DebugOptions::set_xla_gpu_default_to_alg_dot_bf16_bf16_f32),
+      debug_options->xla_gpu_default_to_alg_dot_bf16_bf16_f32(),
+      "Guarantees run-to-run determinism on GPU."));
   flag_list->push_back(
       tsl::Flag("xla_gpu_deterministic_ops",
                 bool_setter_for(&DebugOptions::set_xla_gpu_deterministic_ops),
