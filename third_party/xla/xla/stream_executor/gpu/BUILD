@@ -255,24 +255,6 @@ cc_library(
 )
 
 cc_library(
-    name = "gpu_types_header",
-    hdrs = ["gpu_types.h"],
-    defines = if_rocm_is_configured([
-        "TENSORFLOW_USE_ROCM=1",
-    ]) + if_sycl_is_configured([
-        "TENSORFLOW_USE_SYCL=1",
-    ]),
-    tags = ["gpu"],
-    deps = if_cuda_is_configured([
-        "@local_config_cuda//cuda:cuda_headers",
-    ]) + if_rocm_is_configured([
-        "@local_config_rocm//rocm:rocm_headers",
-    ]) + if_sycl_is_configured([
-        "@local_config_sycl//sycl:sycl_headers",
-    ]),
-)
-
-cc_library(
     name = "gpu_asm_opts",
     hdrs = ["gpu_asm_opts.h"],
     visibility = internal_visibility([
