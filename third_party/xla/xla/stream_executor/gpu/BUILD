@@ -651,9 +651,6 @@ xla_test(
     size = "small",
     srcs = ["gpu_executor_test.cc"],
     backends = ["gpu"],
-    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
-        "TENSORFLOW_USE_ROCM=1",
-    ]),
     deps = [
         "//xla/service:platform_util",
         "//xla/stream_executor:platform",
