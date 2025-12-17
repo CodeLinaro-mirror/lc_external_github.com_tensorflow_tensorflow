@@ -360,6 +360,39 @@ TEST_F(HloFusionAnalysisTest, ConcatFusion) {
             HloFusionAnalysis::EmitterFusionKind::kConcatenate);
 }
 
+TEST_F(HloFusionAnalysisTest, SortFusion) {
+  TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(R"(
+    HloModule test_module
+
+    less_than {
+      lhs.0 = f32[] parameter(0)
+      rhs.0 = f32[] parameter(1)
+      lhs.1 = s32[] parameter(2)
+      rhs.1 = s32[] parameter(3)
+      ROOT lt = pred[] compare(lhs.0, rhs.0), direction=LT
+    }
+
+    fused_computation {
+      p0 = f32[256] parameter(0)
+      iota = s32[256] iota(), iota_dimension=0
+      ROOT sort = (f32[256], s32[256]) sort(p0, iota), dimensions={0}, to_apply=less_than, is_stable=false
+    }
+
+    ENTRY main {
+      p = f32[256] parameter(0)
+      ROOT fusion = (f32[256], s32[256]) fusion(p), kind=kInput, calls=fused_computation
+    })"));
+
+  auto device_info = TestGpuDeviceInfo::RTXA6000DeviceInfo();
+
+  auto* root = module->entry_computation()->root_instruction();
+  auto analysis = HloFusionAnalysis::Create(
+      FusionBackendConfig::default_instance(),
+      HloFusionAdaptor::ForInstruction(root), &device_info);
+  EXPECT_EQ(analysis.emitter_fusion_kind(),
+            HloFusionAnalysis::EmitterFusionKind::kSort);
+}
+
 TEST_F(HloFusionAnalysisTest, ExtractValidGpuBackendConfig) {
   TF_ASSERT_OK_AND_ASSIGN(auto module, ParseAndReturnVerifiedModule(R"(
     HloModule module
