@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef XLA_TESTS_CLIENT_LIBRARY_TEST_RUNNER_MIXIN_H_
 #define XLA_TESTS_CLIENT_LIBRARY_TEST_RUNNER_MIXIN_H_
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -32,9 +33,12 @@ limitations under the License.
 #include "xla/execution_options_util.h"
 #include "xla/hlo/builder/xla_builder.h"
 #include "xla/hlo/builder/xla_computation.h"
+#include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_module.h"
+#include "xla/hlo/ir/hlo_schedule.h"
 #include "xla/literal.h"
 #include "xla/literal_util.h"
+#include "xla/service/computation_placer.h"
 #include "xla/service/hlo_module_config.h"
 #include "xla/service/hlo_module_util.h"
 #include "xla/shape.h"
@@ -113,6 +117,23 @@ class ClientLibraryTestRunnerMixin : public T {
     TF_ASSIGN_OR_RETURN(std::unique_ptr<HloModule> module,
                         BuildAndVerifyHloModule(computation, argument_shapes,
                                                 &execution_options));
+    if (execution_options.num_replicas() > 1) {
+      const int64_t num_partitions =
+          std::max(1, execution_options.num_partitions());
+      std::optional<DeviceAssignment> device_assignment;
+      DeviceAssignment* device_assignment_ptr = nullptr;
+      if (execution_options.has_device_assignment()) {
+        device_assignment = module->config().static_device_assignment();
+        device_assignment_ptr = &*device_assignment;
+      }
+      ASSIGN_OR_RETURN(std::vector<Literal> results,
+                       this->ExecuteReplicated(
+                           std::move(module), arguments,
+                           execution_options.num_replicas() * num_partitions,
+                           device_assignment_ptr, /*run_hlo_passes=*/true,
+                           /*use_threads=*/true));
+      return std::move(results.front());
+    }
     return this->Execute(std::move(module), arguments);
   }
 
