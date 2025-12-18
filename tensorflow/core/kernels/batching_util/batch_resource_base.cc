@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -30,8 +31,10 @@ limitations under the License.
 #include "absl/container/fixed_array.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/bind_front.h"
+#include "absl/log/log.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/blocking_counter.h"
 #include "absl/synchronization/mutex.h"
@@ -80,6 +83,11 @@ limitations under the License.
 namespace tensorflow {
 namespace serving {
 namespace {
+
+constexpr int64_t kCriticalPlusCapacityFractionDenom = 2;
+constexpr int64_t kCriticalCapacityFractionDenom = 4;
+constexpr int64_t kSheddablePlusCapacityFractionDenom = 8;
+constexpr int64_t kSheddableCapacityFractionDenom = 16;
 
 // TODO(b/181883417): Replace with RecordPaddingSizeV2.
 void RecordPaddingSize(int32_t padding_size, const std::string& model_name,
@@ -577,7 +585,8 @@ BatchResourceBase::GetBatcherQueueOptions(
       /*low_priority_max_enqueued_batches=*/0,
       /*low_priority_allowed_batch_sizes=*/{},
       /*mixed_priority_batching_policy*/
-      MixedPriorityBatchingPolicy::kLowPriorityPaddingWithMaxBatchSize);
+      MixedPriorityBatchingPolicy::kLowPriorityPaddingWithMaxBatchSize,
+      /*enable_priority_aware_batch_scheduler=*/false);
 }
 
 /*static*/ BatchResourceBase::BatcherT::QueueOptions
@@ -590,7 +599,8 @@ BatchResourceBase::GetBatcherQueueOptions(
     int32_t low_priority_batch_timeout_micros,
     int32_t low_priority_max_enqueued_batches,
     const std::vector<int32_t>& low_priority_allowed_batch_sizes,
-    MixedPriorityBatchingPolicy mixed_priority_batching_policy) {
+    MixedPriorityBatchingPolicy mixed_priority_batching_policy,
+    bool enable_priority_aware_batch_scheduler) {
   BatcherT::QueueOptions batcher_queue_options;
   batcher_queue_options.input_batch_size_limit = max_batch_size;
   batcher_queue_options.max_enqueued_batches = max_enqueued_batches;
@@ -599,6 +609,67 @@ BatchResourceBase::GetBatcherQueueOptions(
       std::string(batch_padding_policy);
   if (low_priority_max_batch_size > 0) {
     batcher_queue_options.enable_priority_queue = true;
+  }
+  LOG(INFO) << "Batcher queue options: "
+            << "num_batch_threads=" << num_batch_threads << ", "
+            << "max_batch_size=" << max_batch_size << ", "
+            << "batch_timeout_micros=" << batch_timeout_micros << ", "
+            << "max_enqueued_batches=" << max_enqueued_batches << ", "
+            << "allowed_batch_sizes=["
+            << absl::StrJoin(allowed_batch_sizes, ",") << "], "
+            << "enable_large_batch_splitting=" << enable_large_batch_splitting
+            << ", "
+            << "disable_padding=" << disable_padding << ", "
+            << "batch_padding_policy=" << batch_padding_policy << ", "
+            << "low_priority_max_batch_size=" << low_priority_max_batch_size
+            << ", "
+            << "low_priority_batch_timeout_micros="
+            << low_priority_batch_timeout_micros << ", "
+            << "low_priority_max_enqueued_batches="
+            << low_priority_max_enqueued_batches << ", "
+            << "low_priority_allowed_batch_sizes=["
+            << absl::StrJoin(low_priority_allowed_batch_sizes, ",") << "], "
+            << "mixed_priority_batching_policy="
+            << static_cast<int>(mixed_priority_batching_policy) << ", "
+            << "enable_priority_aware_batch_scheduler="
+            << enable_priority_aware_batch_scheduler;
+  if (enable_priority_aware_batch_scheduler) {
+    batcher_queue_options.enable_priority_aware_batch_scheduler = true;
+
+    int64_t effective_max_execution_batch_size = max_batch_size;
+    if (!allowed_batch_sizes.empty()) {
+      effective_max_execution_batch_size = *allowed_batch_sizes.rbegin();
+    }
+    int64_t total_allowed_enqueued_entries =
+        effective_max_execution_batch_size * max_enqueued_batches;
+
+    // TODO(b/483419412): Add testing coverage for this logic.
+
+    // The total enqueued batch size is split across criticality bands to
+    // provide isolation and prioritize higher-criticality requests.
+    // CRITICAL_PLUS traffic is allocated 1/2 of total capacity, CRITICAL 1/4,
+    // SHEDDABLE_PLUS 1/8, and SHEDDABLE 1/16. This split ensures higher
+    // priority traffic can be buffered more than lower priority traffic,
+    // preventing starvation of lower priority requests.
+    std::map<tsl::criticality::Criticality, size_t> per_criticality_queue_size;
+    per_criticality_queue_size[tsl::criticality::Criticality::kCriticalPlus] =
+        std::max(
+            total_allowed_enqueued_entries / kCriticalPlusCapacityFractionDenom,
+            static_cast<int64_t>(1));
+    per_criticality_queue_size[tsl::criticality::Criticality::kCritical] =
+        std::max(
+            total_allowed_enqueued_entries / kCriticalCapacityFractionDenom,
+            static_cast<int64_t>(1));
+    per_criticality_queue_size[tsl::criticality::Criticality::kSheddablePlus] =
+        std::max(total_allowed_enqueued_entries /
+                     kSheddablePlusCapacityFractionDenom,
+                 static_cast<int64_t>(1));
+    per_criticality_queue_size[tsl::criticality::Criticality::kSheddable] =
+        std::max(
+            total_allowed_enqueued_entries / kSheddableCapacityFractionDenom,
+            static_cast<int64_t>(1));
+    batcher_queue_options.priority_aware_scheduler_options
+        .per_criticality_queue_size = per_criticality_queue_size;
   }
   batcher_queue_options.high_priority_queue_options.input_batch_size_limit =
       max_batch_size;
