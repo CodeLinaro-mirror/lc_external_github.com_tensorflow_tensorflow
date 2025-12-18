@@ -1996,6 +1996,7 @@ cc_library(
     hdrs = ["norm_thunk.h"],
     deps = [
         ":thunk",
+        ":thunk_proto_cc",
         "//xla:util",
         "//xla:xla_data_proto_cc",
         "//xla/runtime:buffer_use",
@@ -2038,7 +2039,9 @@ cc_library(
     hdrs = ["outfeed_thunk.h"],
     deps = [
         ":shaped_slice",
+        ":shaped_slice_proto_cc",
         ":thunk",
+        ":thunk_proto_cc",
         "//xla:shape_tree",
         "//xla:shape_util",
         "//xla:status_macros",
@@ -3041,6 +3044,7 @@ cc_library(
         ":p2p_thunk_common",
         ":thunk",
         "//xla:status_macros",
+        "//xla:xla_data_proto_cc",
         "//xla/backends/gpu/collectives:gpu_collectives",
         "//xla/core/collectives:communicator",
         "//xla/core/collectives:rank_id",
@@ -3072,6 +3076,7 @@ cc_library(
         ":p2p_thunk_common",
         ":thunk",
         "//xla:status_macros",
+        "//xla:xla_data_proto_cc",
         "//xla/backends/gpu/collectives:gpu_collectives",
         "//xla/core/collectives:communicator",
         "//xla/core/collectives:rank_id",
