@@ -142,10 +142,9 @@ absl::StatusOr<ThunkProto> AllGatherStartThunk::ToProto() const {
       proto.mutable_all_gather_start_thunk();
 
   std::optional<AsyncEventsUniqueId> async_events_id = GetAsyncEventsUniqueId();
-  if (!async_events_id.has_value()) {
-    return absl::FailedPreconditionError("AsyncEvents is not set.");
+  if (async_events_id.has_value()) {
+    thunk_proto->set_async_events_unique_id(async_events_id->value());
   }
-  thunk_proto->set_async_events_unique_id(async_events_id->value());
 
   for (const Buffer& buffer : buffers_) {
     ASSIGN_OR_RETURN(*thunk_proto->add_buffers(), buffer.ToProto());
