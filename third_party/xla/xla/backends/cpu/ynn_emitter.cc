@@ -437,16 +437,12 @@ static ynn_status DefineConvolution(
     const std::vector<size_t>& filter_dims, const std::vector<size_t>& out_dims,
     size_t feature_group_count, size_t input_channels,
     size_t kernel_output_channels, const std::vector<int32_t>& stencil_axes,
-    const std::vector<int32_t>& new_axes,
     const std::vector<size_t>& stencil_dims,
     const std::vector<size_t>& stencil_strides,
     const std::vector<size_t>& stencil_dilations,
     const std::vector<int64_t>& padding_lows,
     const std::vector<int64_t>& padding_highs) {
   ynn_status status;
-
-  // Make a copy in case we need to shift these for grouped convolution.
-  std::vector<int32_t> new_axes_shifted = new_axes;
 
   // We will need to create an intermediate buffer for the output if it's
   // grouped convolution.
@@ -455,18 +451,6 @@ static ynn_status DefineConvolution(
 
   if (feature_group_count != 1) {
     uint32_t split_id = YNN_INVALID_VALUE_ID;
-
-    // [n, h, w, ci] -> [n, h, w, g, 1, ci/g].
-    size_t input_split[] = {feature_group_count, 1,
-                            input_channels / feature_group_count};
-    status =
-        ynn_define_split_dim(subgraph, /*axis=*/-1, /*num_splits=*/3,
-                             input_split, input1_id, &split_id, /*flags=*/0);
-    if (status != ynn_status_success) {
-      return status;
-    }
-    input1_id = split_id;
-    split_id = YNN_INVALID_VALUE_ID;
     CHECK_EQ(filter_dims.size(), 4);
     // [kh, kw, ci/g, co] -> [kh, kw, ci/g, g, co/g].
     size_t filter_split[] = {feature_group_count,
@@ -506,11 +490,6 @@ static ynn_status DefineConvolution(
     if (status != ynn_status_success) {
       return status;
     }
-
-    // Shift new stencil axes by two.
-    for (int i = 0; i < new_axes_shifted.size(); ++i) {
-      new_axes_shifted[i] += 2;
-    }
   }
 
   // If any of paddings is not zero, define a padding value and pad the input.
@@ -543,12 +522,35 @@ static ynn_status DefineConvolution(
     padding_id = YNN_INVALID_VALUE_ID;
   }
 
+  std::vector<size_t> grouped_stencil_dims = stencil_dims;
+  std::vector<int32_t> grouped_stencil_axes = stencil_axes;
+  std::vector<int32_t> grouped_new_axes(stencil_axes.size());
+  std::vector<size_t> grouped_stencil_strides = stencil_strides;
+  std::vector<size_t> grouped_stencil_dilations = stencil_dilations;
+
+  if (feature_group_count != 1) {
+    // (n, y, x, c) -> (n, y, x, [g, 1,] dy, dx, c)
+    grouped_stencil_dims.push_back(feature_group_count);
+    grouped_stencil_dims.push_back(1);
+    grouped_stencil_axes.push_back(3);
+    grouped_stencil_axes.push_back(3);
+    grouped_new_axes = {-3, -2, -5, -4};
+    grouped_stencil_strides.push_back(1);
+    grouped_stencil_strides.push_back(1);
+    grouped_stencil_dilations.push_back(input_channels / feature_group_count);
+    grouped_stencil_dilations.push_back(1);
+  } else {
+    grouped_new_axes = {-3, -2};
+  }
+
   uint32_t stencil_id = YNN_INVALID_VALUE_ID;
   // Make a stenciled view of the input [n, h, w, ci] -> [n, h, w, kh, kw, ci].
   status = ynn_define_stencil_copy(
-      subgraph, /*num_stencils=*/stencil_dims.size(), stencil_axes.data(),
-      new_axes_shifted.data(), stencil_dims.data(), stencil_strides.data(),
-      stencil_dilations.data(), input1_id, YNN_INVALID_VALUE_ID, &stencil_id,
+      subgraph, /*num_stencils=*/grouped_stencil_dims.size(),
+      grouped_stencil_axes.data(), grouped_new_axes.data(),
+      grouped_stencil_dims.data(), grouped_stencil_strides.data(),
+      grouped_stencil_dilations.data(), input1_id, YNN_INVALID_VALUE_ID,
+      &stencil_id,
       /*flags=*/0);
   if (status != ynn_status_success) {
     return status;
@@ -714,7 +716,6 @@ static absl::StatusOr<YnnSubgraph> EmitYnnConvolutionSubgraph(
       conv->convolution_dimension_numbers();
 
   std::vector<int32_t> stencil_axes(conv_window_dims_size);
-  std::vector<int32_t> new_axes(conv_window_dims_size);
   std::vector<size_t> stencil_dims(conv_window_dims_size);
   std::vector<size_t> stencil_strides(conv_window_dims_size);
   std::vector<size_t> stencil_dilations(conv_window_dims_size);
@@ -730,8 +731,6 @@ static absl::StatusOr<YnnSubgraph> EmitYnnConvolutionSubgraph(
     padding_highs[i] = conv_window.dimensions(i).padding_high();
   }
 
-  std::iota(new_axes.begin(), new_axes.end(), lhs_dims.size() - 1);
-
   YNN_RETURN_IF_ERROR(DefineConvolution(
       subgraph.get(), ynn_lhs_type, ynn_out_type, lhs_id, rhs_id, out_id,
       rhs_dims, out_dims, conv->feature_group_count(),
@@ -739,7 +738,7 @@ static absl::StatusOr<YnnSubgraph> EmitYnnConvolutionSubgraph(
           conv_dimensions.input_feature_dimension()),
       conv->operand(1)->shape().dimensions(
           conv_dimensions.kernel_output_feature_dimension()),
-      stencil_axes, new_axes, stencil_dims, stencil_strides, stencil_dilations,
+      stencil_axes, stencil_dims, stencil_strides, stencil_dilations,
       padding_lows, padding_highs));
 
   ynn_status status = ynn_optimize_subgraph(
