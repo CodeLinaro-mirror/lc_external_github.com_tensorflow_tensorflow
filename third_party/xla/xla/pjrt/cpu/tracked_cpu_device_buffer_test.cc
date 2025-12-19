@@ -57,8 +57,7 @@ TEST(TrackedCpuDeviceBufferTest, Basic) {
     definition_event.SetStateConcrete();
   });
 
-  TrackedCpuDeviceBuffer tracked_buffer(
-      /*owns_buffers=*/true, buffer, definition_event);
+  TrackedCpuDeviceBuffer tracked_buffer(buffer, definition_event);
 
   BlockUntilReady(tracked_buffer.definition_event().GetAsyncValue());
 
@@ -85,8 +84,7 @@ TEST(TrackedCpuDeviceBufferTest, BasicError) {
         Internal("tracked_cpu_device_buffer_test error."));
   });
 
-  TrackedCpuDeviceBuffer tracked_buffer(
-      /*owns_buffers=*/true, buffer, definition_event);
+  TrackedCpuDeviceBuffer tracked_buffer(buffer, definition_event);
 
   BlockUntilReady(tracked_buffer.definition_event().GetAsyncValue());
 
@@ -108,7 +106,7 @@ TEST(TrackedCpuDeviceBufferTest, DelayedAllocation) {
 
   auto definition_event = MakeConstructedAsyncValueRef<CpuEvent>();
   TrackedCpuDeviceBuffer tracked_buffer(
-      /*owns_buffers=*/true, tsl::MakeRef<CpuRawBuffer>(memory_space, buffer),
+      tsl::MakeRef<CpuRawBuffer>(memory_space, buffer, /*is_mutable=*/true),
       expected.size(), definition_event);
   auto result = tracked_buffer.buffer();
   ASSERT_FALSE(result.IsAvailable());

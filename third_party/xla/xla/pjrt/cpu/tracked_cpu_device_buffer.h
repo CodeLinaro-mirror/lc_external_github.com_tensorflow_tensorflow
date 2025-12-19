@@ -147,12 +147,11 @@ class TrackedCpuDeviceBuffer : public AbstractTrackedDeviceBuffer {
   // Constructor for allocated cpu memory, i.e., `buffer` should have concrete
   // states. Definition event is after the list of `definition_events`.
   TrackedCpuDeviceBuffer(
-      bool owns_buffers, tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
+      tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
       absl::InlinedVector<tsl::AsyncValueRef<CpuEvent>, 4> definition_events);
 
   // Variant with single definition event.
-  TrackedCpuDeviceBuffer(bool owns_buffers,
-                         tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
+  TrackedCpuDeviceBuffer(tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
                          tsl::AsyncValueRef<CpuEvent> definition_event);
 
   // Constructor for unallocated cpu memory, i.e., `buffer` will have
@@ -161,13 +160,11 @@ class TrackedCpuDeviceBuffer : public AbstractTrackedDeviceBuffer {
   // list of `definition_events`. Callers need to ensure cpu memory is allocated
   // before the definition event is ready.
   TrackedCpuDeviceBuffer(
-      bool owns_buffers, tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
-      size_t buffer_size,
+      tsl::RCReference<CommonPjRtRawBuffer> raw_buffer, size_t buffer_size,
       absl::InlinedVector<tsl::AsyncValueRef<CpuEvent>, 4> definition_events);
 
   // Variant with single definition event.
-  TrackedCpuDeviceBuffer(bool owns_buffers,
-                         tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
+  TrackedCpuDeviceBuffer(tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
                          size_t buffer_size,
                          tsl::AsyncValueRef<CpuEvent> definition_event);
 
@@ -196,8 +193,6 @@ class TrackedCpuDeviceBuffer : public AbstractTrackedDeviceBuffer {
   absl::InlinedVector<tsl::AsyncValueRef<CpuEvent>, 4>
   LockUseAndTransferUsageEvents();
 
-  bool owns_buffers() const { return owns_buffers_; }
-
   std::vector<tsl::RCReference<tsl::AsyncValue>> GetAsyncValueDefinitionEvents()
       override;
 
@@ -215,8 +210,6 @@ class TrackedCpuDeviceBuffer : public AbstractTrackedDeviceBuffer {
 
  private:
   void ConfirmDonation() override;
-
-  bool owns_buffers_;
 
   // Should equal raw_buffer()->GetOnDeviceSizeInBytes();
   size_t buffer_size_;

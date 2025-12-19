@@ -211,23 +211,21 @@ absl::Status CpuDeviceMemory::AllocateInto(
 //===----------------------------------------------------------------------===//
 
 TrackedCpuDeviceBuffer::TrackedCpuDeviceBuffer(
-    bool owns_buffers, tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
+    tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
     absl::InlinedVector<tsl::AsyncValueRef<CpuEvent>, 4> definition_events)
-    : TrackedCpuDeviceBuffer(owns_buffers, std::move(raw_buffer),
+    : TrackedCpuDeviceBuffer(std::move(raw_buffer),
                              AfterAll(definition_events)) {}
 
 TrackedCpuDeviceBuffer::TrackedCpuDeviceBuffer(
-    bool owns_buffers, tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
-    size_t buffer_size,
+    tsl::RCReference<CommonPjRtRawBuffer> raw_buffer, size_t buffer_size,
     absl::InlinedVector<tsl::AsyncValueRef<CpuEvent>, 4> definition_events)
-    : TrackedCpuDeviceBuffer(owns_buffers, std::move(raw_buffer), buffer_size,
+    : TrackedCpuDeviceBuffer(std::move(raw_buffer), buffer_size,
                              AfterAll(definition_events)) {}
 
 TrackedCpuDeviceBuffer::TrackedCpuDeviceBuffer(
-    bool owns_buffers, tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
+    tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
     tsl::AsyncValueRef<CpuEvent> definition_event)
     : AbstractTrackedDeviceBuffer(std::move(raw_buffer)),
-      owns_buffers_(owns_buffers),
       definition_event_(std::move(definition_event)) {
   DCHECK(definition_event_);
   CHECK(tensorflow::down_cast<CpuRawBuffer*>(this->raw_buffer().get())
@@ -237,10 +235,9 @@ TrackedCpuDeviceBuffer::TrackedCpuDeviceBuffer(
 }
 
 TrackedCpuDeviceBuffer::TrackedCpuDeviceBuffer(
-    bool owns_buffers, tsl::RCReference<CommonPjRtRawBuffer> raw_buffer,
-    size_t buffer_size, tsl::AsyncValueRef<CpuEvent> definition_event)
+    tsl::RCReference<CommonPjRtRawBuffer> raw_buffer, size_t buffer_size,
+    tsl::AsyncValueRef<CpuEvent> definition_event)
     : AbstractTrackedDeviceBuffer(std::move(raw_buffer)),
-      owns_buffers_(owns_buffers),
       buffer_size_(buffer_size),
       definition_event_(std::move(definition_event)) {
   DCHECK(definition_event_);

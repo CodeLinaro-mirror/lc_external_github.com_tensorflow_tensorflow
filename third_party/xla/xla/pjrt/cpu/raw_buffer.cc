@@ -110,13 +110,15 @@ CpuRawBuffer::Allocate(PjRtMemorySpace* memory_space, size_t size_bytes,
                        const CpuDeviceMemory::Allocator& allocator) {
   TF_ASSIGN_OR_RETURN(auto memory,
                       CpuDeviceMemory::Allocate(size_bytes, allocator));
-  return tsl::MakeRef<CpuRawBuffer>(memory_space, std::move(memory));
+  return tsl::MakeRef<CpuRawBuffer>(memory_space, std::move(memory),
+                                    /*is_mutable=*/true);
 }
 
 /*static*/ absl::StatusOr<tsl::RCReference<CpuRawBuffer>>
 CpuRawBuffer::ImportForeignMemory(
     void* data, absl::AnyInvocable<void() &&> on_delete_callback,
-    size_t on_device_bytes_count, PjRtMemorySpace* memory_space) {
+    size_t on_device_bytes_count, PjRtMemorySpace* memory_space,
+    bool is_mutable) {
   if ((absl::bit_cast<std::uintptr_t>(data) & (cpu::MinAlign() - 1)) != 0) {
     return InvalidArgument(
         "Can't create a view of buffer with unaligned data, ptr: %#x is not "
@@ -126,7 +128,8 @@ CpuRawBuffer::ImportForeignMemory(
   return tsl::MakeRef<CpuRawBuffer>(
       memory_space,
       CpuDeviceMemory::CreateForeignMemory(data, on_device_bytes_count,
-                                           std::move(on_delete_callback)));
+                                           std::move(on_delete_callback)),
+      is_mutable);
 }
 
 size_t CpuRawBuffer::GetOnDeviceSizeInBytes() const {
