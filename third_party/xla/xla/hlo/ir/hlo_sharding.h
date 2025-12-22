@@ -208,7 +208,7 @@ class HloSharding {
   bool IsReplicatedLeaf() const {
     DCHECK(!IsTuple());
     if (UseNamedShardingLeaf()) {
-      return named_sharding_->IsReplicated();
+      return named_sharding_->IsFullyReplicated();
     }
     return replicated_;
   }

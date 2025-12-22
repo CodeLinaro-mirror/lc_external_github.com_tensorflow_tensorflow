@@ -19,15 +19,40 @@ limitations under the License.
 #include <map>
 #include <numeric>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/types/span.h"
+#include "xla/hlo/ir/hlo_op_metadata.h"
 #include "xla/hlo/ir/mesh_and_axis.h"
 
 namespace xla {
+
+void NamedSharding::DimensionSharding::Append(
+    const NamedSharding::DimensionSharding& other, const Mesh& mesh) {
+  // TODO Discuss: If one is closed and other is open, what should be the
+  // result ?
+  if (axes_.empty()) {
+    axes_ = other.axes_;
+    return;
+  }
+
+  if (other.axes_.empty()) {
+    return;
+  }
+
+  // Merge last element of `axes_` with first element of `other.axes_`
+  if (!axes_.back().Merge(other.axes_.front(), mesh)) {
+    axes_.push_back(other.axes_.front());
+  }
+
+  axes_.insert(axes_.end(), other.axes_.begin() + 1, other.axes_.end());
+}
 
 std::optional<NamedSharding::DimensionSharding>
 NamedSharding::DimensionSharding::Slice(const Mesh& mesh, int64_t slice_size) {
@@ -86,6 +111,104 @@ int64_t NamedSharding::DimensionSharding::getShardedSize(
                          [&mesh](int64_t cur, const AxisRef& axis) {
                            return cur * axis.size(mesh);
                          });
+}
+
+std::string NamedSharding::DimensionSharding::ToString(const Mesh* mesh) const {
+  if (axes_.empty()) {
+    return is_closed_ ? "{}" : "{?}";
+  }
+
+  std::string result = "{";
+  absl::StrAppend(
+      &result,
+      absl::StrJoin(axes_, ", ", [mesh](std::string* out, const AxisRef& axis) {
+        absl::StrAppend(out, axis.ToString(mesh));
+      }));
+  absl::StrAppend(&result, (is_closed_ ? "" : ", ?"));
+  absl::StrAppend(&result, "}");
+  return result;
+}
+
+std::string NamedSharding::ToString(bool include_metadata) const {
+  std::string result = "{";
+
+  auto print_metadata = [&] {
+    if (include_metadata && !metadata_.empty()) {
+      absl::StrAppend(&result, ", metadata={");
+      absl::StrAppend(
+          &result,
+          absl::StrJoin(
+              metadata_, ", ", [&](std::string* out, const auto& netadata) {
+                absl::StrAppend(out, "{", OpMetadataToString(netadata), "}");
+              }));
+      absl::StrAppend(&result, "}");
+    }
+  };
+
+  // Special cases
+  if (IsFullyReplicated()) {
+    absl::StrAppend(&result, "replicated");
+    print_metadata();
+    absl::StrAppend(&result, "}");
+    return result;
+  }
+
+  if (IsMaximal()) {
+    absl::StrAppend(&result, "maximal device=");
+    absl::StrAppend(&result, *mesh_.device_assignment().array().begin());
+    print_metadata();
+    absl::StrAppend(&result, "}");
+    return result;
+  }
+
+  // Mesh
+  absl::StrAppend(&result, mesh_.ToString());
+
+  // Dimension sharding
+  absl::StrAppend(&result, ", [");
+  absl::StrAppend(
+      &result,
+      absl::StrJoin(dim_shardings_, ", ",
+                    [&](std::string* out, const DimensionSharding& ds) {
+                      absl::StrAppend(out, ds.ToString(&mesh_));
+                    }));
+  absl::StrAppend(&result, "]");
+
+  // Replicated axes
+  if (!replicated_axes_.empty()) {
+    absl::StrAppend(&result, ", replicated={");
+    absl::StrAppend(&result,
+                    absl::StrJoin(replicated_axes_, ", ",
+                                  [&](std::string* out, const AxisRef& axis) {
+                                    absl::StrAppend(out, axis.ToString(&mesh_));
+                                  }));
+    absl::StrAppend(&result, "}");
+  }
+
+  // Unreduced axes
+  if (!unreduced_axes_.empty()) {
+    absl::StrAppend(&result, ", unreduced={");
+    absl::StrAppend(&result,
+                    absl::StrJoin(unreduced_axes_, ", ",
+                                  [&](std::string* out, const AxisRef& axis) {
+                                    absl::StrAppend(out, axis.ToString(&mesh_));
+                                  }));
+    absl::StrAppend(&result, "}");
+  }
+
+  print_metadata();
+  absl::StrAppend(&result, "}");
+
+  return result;
+}
+
+std::ostream& operator<<(std::ostream& out,
+                         const NamedSharding::DimensionSharding& sharding) {
+  return out << sharding.ToString();
+}
+
+std::ostream& operator<<(std::ostream& out, const NamedSharding& sharding) {
+  return out << sharding.ToString();
 }
 
 namespace test_utils {

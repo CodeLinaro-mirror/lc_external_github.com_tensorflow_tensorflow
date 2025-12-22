@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <cstdint>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +41,12 @@ class NamedSharding {
       return axes_ == other.axes_ && is_closed_ == other.is_closed_;
     }
 
+    bool operator!=(const DimensionSharding& other) const {
+      return !(*this == other);
+    }
+
+    std::string ToString(const Mesh* mesh = nullptr) const;
+
     // Note that by default we assume closed sharding.
     explicit DimensionSharding() : is_closed_(true) {};
 
@@ -49,6 +56,11 @@ class NamedSharding {
     absl::Span<const AxisRef> axes() const { return axes_; }
 
     int64_t getShardedSize(const Mesh& mesh) const;
+
+    // Appends `other` to this dimension sharding. This function assumes that
+    // both the dimension shardings corresponds to use same mesh represented by
+    // `mesh` argument.
+    void Append(const DimensionSharding& other, const Mesh& mesh);
 
     // Slice axes of size `slice_size` from this dimension sharding and update
     // this dimension sharding with remaining axes.
@@ -77,6 +89,8 @@ class NamedSharding {
   bool operator!=(const NamedSharding& other) const {
     return !(*this == other);
   }
+
+  std::string ToString(bool include_metadata = false) const;
 
   // TODO(b/456212087): Add validation checks
   explicit NamedSharding(Mesh mesh,
@@ -153,11 +167,12 @@ class NamedSharding {
                          /*unreduced_axes=*/{}, metadata);
   }
 
-  bool IsReplicated() const {
+  bool IsFullyReplicated() const {
     return !IsMaximal() &&
-           absl::c_all_of(dim_shardings_, [](const DimensionSharding& s) {
-             return s.axes().empty();
-           });
+           absl::c_all_of(
+               dim_shardings_,
+               [](const DimensionSharding& s) { return s.axes().empty(); }) &&
+           replicated_axes_.empty() && unreduced_axes_.empty();
   }
 
   bool IsMaximal() const { return mesh_.IsMaximal(); }
@@ -166,7 +181,7 @@ class NamedSharding {
   //
   // This checks for both replicated and maximal sharding, as in both cases tile
   // size is same as input size.
-  bool IsTileMaximal() const { return IsReplicated() || IsMaximal(); }
+  bool IsTileMaximal() const { return IsFullyReplicated() || IsMaximal(); }
 
   const TileAssignment& device_assignment() const {
     return mesh_.device_assignment();
@@ -185,6 +200,11 @@ class NamedSharding {
   // we can remove this field.
   std::vector<int64_t> sharded_sizes_;
 };
+
+std::ostream& operator<<(std::ostream& out,
+                         const NamedSharding::DimensionSharding& sharding);
+
+std::ostream& operator<<(std::ostream& out, const NamedSharding& sharding);
 
 // Contains test only helper functions.
 namespace test_utils {

@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -156,7 +157,7 @@ class AxisRef {
 
   bool operator!=(const xla::AxisRef& other) const { return !(*this == other); }
 
-  std::string ToString(const Mesh& mesh) const;
+  std::string ToString(const Mesh* mesh = nullptr) const;
 
   AxisRefProto ToProto() const;
 
@@ -165,6 +166,9 @@ class AxisRef {
   bool CanCoexist(const AxisRef& other) const;
   bool Overlaps(const AxisRef& other) const;
   bool CanCoexistWithoutOverlap(const AxisRef& other) const;
+
+  bool CanMerge(const AxisRef& other) const;
+  bool Merge(const AxisRef& other, const Mesh& mesh);
 
   // Validates that the given mesh is compatible for this axis ref.
   absl::Status Validate(const Mesh& mesh) const;
@@ -176,6 +180,10 @@ class AxisRef {
  private:
   absl::Status ValidateAxisRef();
 };
+
+std::ostream& operator<<(std::ostream& out, const Mesh& mesh);
+
+std::ostream& operator<<(std::ostream& out, const AxisRef& axis);
 
 bool AxesCanCoexistWithoutOverlap(absl::Span<const AxisRef> axes);
 

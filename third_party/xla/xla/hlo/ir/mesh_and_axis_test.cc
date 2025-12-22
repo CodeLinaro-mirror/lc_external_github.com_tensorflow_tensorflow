@@ -218,12 +218,29 @@ TEST(MeshAndAxisTest, MeshAxesToString) {
       TileAssignment(/*dims=*/{2, 4, 4, 2}, /*reshape_dims=*/{1, 4, 1, 16},
                      /*transpose_perm=*/{2, 3, 0, 1}),
       {"a", "b", "c", "d"});
-  EXPECT_EQ(mesh_abcd.ToString(), "@mesh<a=2,b=4,c=4,d=2>([4,16]T(1,0))");
+  EXPECT_EQ(mesh_abcd.ToString(),
+            "@mesh<a=2,b=4,c=4,d=2>, device_ids=([4,16]T(1,0))");
 
   Array<int64_t> array({{8, 3, 7, 5, 4, 2, 6, 0, 1, 9}});
   array.Reshape({10});
   Mesh mesh_ooo(array, {"ooo"});
-  EXPECT_EQ(mesh_ooo.ToString(), "@mesh<ooo=10>(8,3,7,5,4,2,6,0,1,9)");
+  EXPECT_EQ(mesh_ooo.ToString(),
+            "@mesh<ooo=10>, device_ids=(8,3,7,5,4,2,6,0,1,9)");
+
+  Mesh maximal_mesh(5);
+  EXPECT_EQ(maximal_mesh.ToString(), "@maximal_mesh<device_ids=[5]>");
+}
+
+TEST(MeshAndAxisTest, AxisRefToString) {
+  EXPECT_EQ(AxisRef(1).ToString(), "1");
+  EXPECT_EQ(AxisRef(2, {3, 4}).ToString(), "2:(3)4");
+
+  Mesh mesh({10, 12, 15}, {"u", "v", "w"});
+  EXPECT_EQ(AxisRef(0).ToString(&mesh), "u");
+  EXPECT_EQ(AxisRef(1).ToString(&mesh), "v");
+  EXPECT_EQ(AxisRef(2).ToString(&mesh), "w");
+  EXPECT_EQ(AxisRef(0, {1, 2}).ToString(&mesh), "u:(1)2");
+  EXPECT_EQ(AxisRef(1, {3, 4}).ToString(&mesh), "v:(3)4");
 }
 
 TEST(MeshAndAxisTest, ValidateAxisForMesh) {
@@ -360,6 +377,32 @@ TEST(MeshAndAxisTest, AxisRefSize) {
   EXPECT_EQ(AxisRef(1, {3, 11}).size(mesh), 11);
   EXPECT_EQ(AxisRef(2, {1, 5}).size(mesh), 5);
   EXPECT_EQ(AxisRef(2, {5, 13}).size(mesh), 13);
+}
+
+TEST(MeshAndAxisTest, AxisRefCanMerge) {
+  EXPECT_TRUE(AxisRef(0, {1, 2}).CanMerge(AxisRef(0, {2, 4})));
+  EXPECT_TRUE(AxisRef(0, {2, 4}).CanMerge(AxisRef(0, {8, 2})));
+  EXPECT_FALSE(AxisRef(0, {1, 2}).CanMerge(AxisRef(0, {1, 2})));
+  EXPECT_FALSE(AxisRef(0, {1, 2}).CanMerge(AxisRef(0, {4, 2})));
+  EXPECT_FALSE(AxisRef(0).CanMerge(AxisRef(0, {1, 2})));
+  EXPECT_FALSE(AxisRef(0, {1, 2}).CanMerge(AxisRef(0)));
+  EXPECT_FALSE(AxisRef(0).CanMerge(AxisRef(0)));
+  EXPECT_FALSE(AxisRef(0, {1, 2}).CanMerge(AxisRef(1, {2, 4})));
+}
+
+TEST(MeshAndAxisTest, AxisRefMerge) {
+  Mesh mesh({16}, {"a"});
+  AxisRef axis_ref1(0, {1, 2});
+  EXPECT_TRUE(axis_ref1.Merge(AxisRef(0, {2, 4}), mesh));
+  EXPECT_EQ(axis_ref1, AxisRef(0, {1, 8}));
+
+  AxisRef axis_ref2(0, {1, 8});
+  EXPECT_TRUE(axis_ref2.Merge(AxisRef(0, {8, 2}), mesh));
+  EXPECT_EQ(axis_ref2, AxisRef(0));
+
+  AxisRef axis_ref3(0, {2, 4});
+  EXPECT_FALSE(axis_ref3.Merge(AxisRef(0, {1, 2}), mesh));
+  EXPECT_EQ(axis_ref3, AxisRef(0, {2, 4}));
 }
 
 }  // namespace xla
