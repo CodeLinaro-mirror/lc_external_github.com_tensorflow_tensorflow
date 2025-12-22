@@ -554,8 +554,11 @@ cc_library(
     hdrs = ["convolution_reorder_thunk.h"],
     deps = [
         ":convolution_filter_thunk_proto_cc",
+        ":shaped_slice",
         ":thunk",
         ":thunk_proto_cc",
+        "//xla:shape_util",
+        "//xla:util",
         "//xla/runtime:buffer_use",
         "//xla/service:buffer_assignment",
         "//xla/service:buffer_assignment_proto_cc",
@@ -590,6 +593,7 @@ tf_proto_library(
     name = "convolution_filter_thunk_proto",
     srcs = ["convolution_filter_thunk.proto"],
     protodeps = ["//xla/service:buffer_assignment_proto"],
+    deps = [":shaped_slice_proto"],
 )
 
 cc_library(
