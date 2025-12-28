@@ -29,6 +29,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/pass/hlo_pass_pipeline.h"
 #include "xla/service/compiler.h"
+#include "xla/service/gpu_topology.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/xla.pb.h"
 
@@ -50,9 +51,14 @@ class FissionBackend : public GpuCodegenBackend {
                  std::unique_ptr<HloPassPipeline> rewriter_pipeline,
                  mlir::MLIRContext* mlir_context,
                  stream_executor::StreamExecutor* stream_executor = nullptr)
-      : GpuCodegenBackend(absl::StrCat(backend->name(), "_fission"),
-                          debug_options, compiler, target_config,
-                          stream_executor),
+      : GpuCodegenBackend(
+            absl::StrCat(backend->name(), "_fission"), debug_options, compiler,
+            GetSingleDeviceGpuTopology(
+                stream_executor
+                    ? stream_executor->GetDeviceDescription().platform_version()
+                    : "",
+                *target_config),
+            stream_executor),
         rewriter_pipeline_(std::move(rewriter_pipeline)),
         codegen_backend_(std::move(backend)),
         mlir_context_(mlir_context) {}

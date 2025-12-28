@@ -51,7 +51,10 @@ class CublasBackend : public GpuCodegenBackend {
                          const DebugOptions* debug_options, Compiler* compiler,
                          const Compiler::GpuTargetConfig* target_config,
                          bool fp8_lt_fallback = false)
-      : GpuCodegenBackend("Cublas", debug_options, compiler, target_config,
+      : GpuCodegenBackend("Cublas", debug_options, compiler,
+                          target_config
+                              ? GetSingleDeviceGpuTopology("", *target_config)
+                              : GpuTopology("", -1, -1, -1),
                           stream_executor),
         fp8_lt_fallback_(fp8_lt_fallback) {}
 

@@ -126,7 +126,8 @@ absl::StatusOr<std::unique_ptr<HloModule>> FissionBackend::RunHloPasses(
   priority_fusion_options.count_multiple_input_accesses = true;
   // TODO: b/407494653 - Get rid of PriorityFusion.
   PriorityFusion priority_fusion(
-      /*thread_pool=*/nullptr, target_config().device_description,
+      /*thread_pool=*/nullptr,
+      gpu_topology().gpu_target_config().device_description,
       priority_fusion_options, mlir_context_);
   TF_RETURN_IF_ERROR(priority_fusion.Run(module.get()).status());
   return module;

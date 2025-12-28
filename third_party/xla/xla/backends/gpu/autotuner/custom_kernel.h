@@ -24,6 +24,7 @@ limitations under the License.
 #include "xla/backends/gpu/autotuner/gpu_codegen_backend.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/service/compiler.h"
+#include "xla/service/gpu_topology.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/xla.pb.h"
 
@@ -37,8 +38,14 @@ class CustomKernelBackend : public GpuCodegenBackend {
                                const DebugOptions* debug_options,
                                Compiler* compiler,
                                const Compiler::GpuTargetConfig* target_config)
-      : GpuCodegenBackend("CustomKernel", debug_options, compiler,
-                          target_config, stream_executor) {}
+      : GpuCodegenBackend(
+            "CustomKernel", debug_options, compiler,
+            GetSingleDeviceGpuTopology(
+                stream_executor
+                    ? stream_executor->GetDeviceDescription().platform_version()
+                    : "",
+                *target_config),
+            stream_executor) {}
 
   absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>>
   GetSupportedConfigs(const HloInstruction& instr) override;

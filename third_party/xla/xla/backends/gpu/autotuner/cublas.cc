@@ -71,9 +71,10 @@ CublasBackend::GetSupportedConfigs(const HloInstruction& instr) {
       instr.backend_config<GpuBackendConfig>()->gemm_backend_config();
   TF_ASSIGN_OR_RETURN(
       GemmConfig gemm_config,
-      GemmConfig::For(
-          &instr, backend_config,
-          target_config().device_description.gpu_compute_capability()));
+      GemmConfig::For(&instr, backend_config,
+                      gpu_topology()
+                          .gpu_target_config()
+                          .device_description.gpu_compute_capability()));
 
   auto create_matrix_desc = [](const se::gpu::MatrixLayout& layout)
       -> absl::StatusOr<se::gpu::MatrixDescriptor> {
@@ -105,7 +106,9 @@ CublasBackend::GetSupportedConfigs(const HloInstruction& instr) {
       se::gpu::GetBlasComputationType(
           gemm_config.precision_algorithm, gemm_config.lhs_layout.dtype,
           gemm_config.output_layout.dtype, gemm_config.compute_precision,
-          target_config().device_description.gpu_compute_capability()));
+          gpu_topology()
+              .gpu_target_config()
+              .device_description.gpu_compute_capability()));
 
   se::blas::BlasSupport* blas = stream_executor()->AsBlas();
   if (blas == nullptr) {

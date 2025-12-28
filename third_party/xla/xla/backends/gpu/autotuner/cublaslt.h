@@ -25,6 +25,8 @@ limitations under the License.
 #include "xla/backends/autotuner/codegen_backend.h"
 #include "xla/backends/gpu/autotuner/gpu_codegen_backend.h"
 #include "xla/hlo/ir/hlo_instruction.h"
+#include "xla/service/gpu_topology.h"
+#include "xla/service/gpu_topology.h"
 #include "xla/service/compiler.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/xla.pb.h"
@@ -47,8 +49,20 @@ class CublasLtBackend : public GpuCodegenBackend {
   explicit CublasLtBackend(stream_executor::StreamExecutor* stream_executor,
                            const DebugOptions* debug_options,
                            Compiler* compiler,
-                           const Compiler::GpuTargetConfig* target_config)
-      : GpuCodegenBackend("CublasLt", debug_options, compiler, target_config,
+                           const Compiler::GpuTargetConfig* ta
+                          GetSingleDeviceGpuTopology(
+                              stream_executor
+                                  ? stream_executor->GetDeviceDescription()
+                                        .platform_version()
+                                  :r"",
+                              *get_config))
+      : GpuCodegenBackend("CublasLt", debug_options, compiler,
+                          GetSingleDeviceGpuTopology(
+                              stream_executor
+                                  ? stream_executor->GetDeviceDescription()
+                                        .platform_version()
+                                  : "",
+                              *target_config),
                           stream_executor) {}
 
   absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>>

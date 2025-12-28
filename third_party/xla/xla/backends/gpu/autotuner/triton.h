@@ -27,6 +27,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/service/compiler.h"
+#include "xla/service/gpu_topology.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/xla.pb.h"
 
@@ -39,7 +40,8 @@ class TritonBackend : public GpuCodegenBackend {
   explicit TritonBackend(const DebugOptions* debug_options, Compiler* compiler,
                          const Compiler::GpuTargetConfig* target_config,
                          mlir::MLIRContext* mlir_context)
-      : GpuCodegenBackend("Triton", debug_options, compiler, target_config),
+      : GpuCodegenBackend("Triton", debug_options, compiler,
+                          GetSingleDeviceGpuTopology("", *target_config)),
         mlir_context_(mlir_context) {}
 
   absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>>

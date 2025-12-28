@@ -292,7 +292,7 @@ BlockLevelEmitterBackend::GetSupportedConfigs(const HloInstruction& instr) {
 
   // Allow TMA tuning for Hopper+ devices.
   if (stream_executor::gpu::IsTmaAvailableForDevice(
-          target_config().device_description)) {
+          gpu_topology().gpu_target_config().device_description)) {
     ExtendConfigsWithTma(configs);
   }
 
@@ -302,7 +302,7 @@ BlockLevelEmitterBackend::GetSupportedConfigs(const HloInstruction& instr) {
 absl::StatusOr<BlockLevelFusionConfig>
 BlockLevelEmitterBackend::GetCostModelConfig(
     const HloInstruction& instr) const {
-  auto device_info = target_config().device_description;
+  auto device_info = gpu_topology().gpu_target_config().device_description;
   HloFusionAnalysisCache fusion_analysis_cache(device_info);
   mlir::MLIRContext mlir_context;
   GpuPerformanceModelWithIndexingAnalysis indexing_performance_model(
@@ -399,7 +399,9 @@ bool BlockLevelEmitterBackend::IsSupported(const HloInstruction& instr) {
       Cast<HloFusionInstruction>(&instr)->fused_instructions_computation();
   return IsTritonSupportedComputation(
              *fusion_computation,
-             target_config().device_description.gpu_compute_capability())
+             gpu_topology()
+                 .gpu_target_config()
+                 .device_description.gpu_compute_capability())
       .CanFuse();
 }
 

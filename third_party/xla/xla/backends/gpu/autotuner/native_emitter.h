@@ -26,6 +26,7 @@ limitations under the License.
 #include "xla/backends/gpu/autotuner/gpu_codegen_backend.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/service/compiler.h"
+#include "xla/service/gpu_topology.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/xla.pb.h"
 
@@ -42,7 +43,7 @@ class NativeEmitterBackend : public GpuCodegenBackend {
                                 Compiler* absl_nonnull compiler,
                                 const Compiler::GpuTargetConfig* target_config)
       : GpuCodegenBackend("NativeEmitter", debug_options, compiler,
-                          target_config) {}
+                          GetSingleDeviceGpuTopology("", *target_config)) {}
 
   // Returns all supported configurations for the given instruction.
   absl::StatusOr<std::vector<std::unique_ptr<BackendConfig>>>

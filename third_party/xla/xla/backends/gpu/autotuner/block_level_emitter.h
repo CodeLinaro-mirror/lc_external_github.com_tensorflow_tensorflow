@@ -46,10 +46,9 @@ class BlockLevelEmitterBackend : public GpuCodegenBackend {
       const DebugOptions* absl_nonnull debug_options,
       Compiler* absl_nonnull compiler,
       HloCostAnalysis::ShapeSizeFunction shape_size_fn,
-      const Compiler::GpuTargetConfig* target_config,
-      bool use_default_config = false)
+      const GpuTopology& gpu_topology, bool use_default_config = false)
       : GpuCodegenBackend("BlockLevelEmitter", debug_options, compiler,
-                          target_config),
+                          gpu_topology),
         use_default_config_(use_default_config),
         shape_size_fn_(std::move(shape_size_fn)) {}
 

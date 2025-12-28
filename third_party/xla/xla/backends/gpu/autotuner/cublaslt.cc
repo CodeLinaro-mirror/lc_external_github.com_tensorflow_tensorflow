@@ -93,7 +93,11 @@ CublasLtBackend::GetSupportedConfigs(const HloInstruction& instr) {
   TF_ASSIGN_OR_RETURN(
       GemmConfig gemm_config,
       GemmConfig::For(
-          &instr, target_config().device_description.gpu_compute_capability()));
+          &instr, gpu_topology()
+                      .gpu_gpu_topology()
+                      
+                      .gpu_target_config()
+                      .device_description.gpu_compute_capability()));
 
   TF_ASSIGN_OR_RETURN(BlasLt::Epilogue epilogue,
                       AsBlasLtEpilogue(backend_config.epilogue()));
