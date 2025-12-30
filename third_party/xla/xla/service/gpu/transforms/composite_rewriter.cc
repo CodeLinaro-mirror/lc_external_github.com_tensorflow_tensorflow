@@ -112,14 +112,14 @@ absl::StatusOr<bool> CompositeRewriter::RewriteComputation(
       continue;
     }
     if (!call->has_frontend_attributes()) {
-      VLOG(3) << "No frontend attributes";
+      LOG(ERROR) << "No frontend attributes";
       continue;
     }
     auto frontend_attrs = call->frontend_attributes().map();
     auto key = "composite.name";
     if (!frontend_attrs.contains(key) ||
         frontend_attrs.at(key) != "xla.scaled_dot") {
-      VLOG(3) << key << " is not xla.scaled_dot: " << frontend_attrs.at(key);
+      LOG(ERROR) << key << " is not xla.scaled_dot: " << frontend_attrs.at(key);
       continue;
     }
     if (!frontend_attrs.contains("composite.attributes")) {
@@ -154,7 +154,7 @@ absl::StatusOr<bool> CompositeRewriter::RewriteComputation(
                             int64_t contracting_dim) {
       auto op_type = operand->shape().element_type();
       auto scale_type = scale->shape().element_type();
-      if ((op_type == F8E4M3FN || op_type == F8E5M2) &&
+      if ((op_type == F8E4M3FN || op_type == F8E5M2 || op_type == F4E2M1FN) &&
           scale_type == F8E8M0FNU) {
         if (contracting_dim >= scale->shape().dimensions_size()) {
           return false;
