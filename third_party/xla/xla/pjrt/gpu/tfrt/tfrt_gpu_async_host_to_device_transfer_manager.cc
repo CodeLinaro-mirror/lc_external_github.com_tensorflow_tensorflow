@@ -263,7 +263,7 @@ TfrtGpuAsyncHostToDeviceTransferManager::TransferRawDataToSubBuffer(
   DCHECK(client);
 
   HostMemoryAllocator::OwnedPtr staging_buffer;
-  if (client->should_stage_host_to_device_transfers() &&
+  if (client->should_stage_host_to_device_transfers(transfer_size) &&
       !client->IsDmaMapped(data, transfer_size)) {
     HostMemoryAllocator* host_memory_allocator =
         client->host_memory_allocator();

@@ -549,7 +549,7 @@ TEST(TfrtGpuClientTest, ShouldStageHostToDeviceTransfersSetToTrue) {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<PjRtClient> client,
                           GetTfrtGpuClient(options_staging));
   auto* staging_client = tensorflow::down_cast<TfrtGpuClient*>(client.get());
-  EXPECT_TRUE(staging_client->should_stage_host_to_device_transfers());
+  EXPECT_TRUE(staging_client->should_stage_host_to_device_transfers(8));
   std::vector<int32_t> data(256);
   absl::c_iota(data, 10);
   Shape shape = ShapeUtil::MakeShape(S32, {256});
@@ -574,7 +574,7 @@ TEST(TfrtGpuClientTest, ShouldStageHostToDeviceTransfersSetToFalse) {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<PjRtClient> client,
                           GetTfrtGpuClient(options_staging));
   auto* staging_client = tensorflow::down_cast<TfrtGpuClient*>(client.get());
-  EXPECT_FALSE(staging_client->should_stage_host_to_device_transfers());
+  EXPECT_FALSE(staging_client->should_stage_host_to_device_transfers(8));
   std::vector<int32_t> data(256);
   absl::c_iota(data, 10);
   Shape shape = ShapeUtil::MakeShape(S32, {256});
