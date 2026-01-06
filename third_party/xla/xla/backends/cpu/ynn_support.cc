@@ -354,6 +354,11 @@ bool IsConvolutionOpSupportedByYnn(const HloInstruction* instr) {
     return false;
   }
 
+  if ((window.dimensions(0).window_reversal() != 0) ||
+      (window.dimensions(1).window_reversal() != 0)) {
+    return false;
+  }
+
   return true;
 }
 
