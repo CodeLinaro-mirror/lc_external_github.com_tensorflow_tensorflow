@@ -88,9 +88,7 @@ void CreateTFExecutorToTFPreInvariantOptimizationPipelineHelper(
 
   AddTfDeviceAssignmentPasses(pm, options);
 
-  if (options.allow_xla_cpu) {
-    pm.addPass(tfrt_compiler::CreateTfrtXlaRewritePass());
-  }
+  pm.addPass(tfrt_compiler::CreateTfrtXlaRewritePass());
 
   // Here we perform TFRT specific optimization before standard TF optimization,
   // as TFRT-specific optimization may create more opportunities.

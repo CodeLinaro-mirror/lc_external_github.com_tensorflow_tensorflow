@@ -78,7 +78,8 @@ struct TF_Graph {
   tensorflow::ShapeRefiner refiner TF_GUARDED_BY(mu);
 
   // Maps from name of an operation to the Node* in 'graph'.
-  std::unordered_map<std::string, tensorflow::Node*> name_map TF_GUARDED_BY(mu);
+  std::unordered_map<tensorflow::string, tensorflow::Node*> name_map
+      TF_GUARDED_BY(mu);
 
   // The keys of this map are all the active sessions using this graph. Each
   // value records whether the graph has been mutated since the corresponding
@@ -93,7 +94,8 @@ struct TF_Graph {
   //
   // TODO(b/74949947): mutations currently trigger a warning instead of a bad
   // status, this should be reverted when possible.
-  tensorflow::gtl::FlatMap<TF_Session*, std::string> sessions TF_GUARDED_BY(mu);
+  tensorflow::gtl::FlatMap<TF_Session*, tensorflow::string> sessions
+      TF_GUARDED_BY(mu);
   bool delete_requested TF_GUARDED_BY(mu);  // set true by TF_DeleteGraph
 
   // Used to link graphs contained in TF_WhileParams to the parent graph that
@@ -109,7 +111,7 @@ struct TF_OperationDescription {
 
   tensorflow::NodeBuilder node_builder;
   TF_Graph* graph;
-  std::set<std::string> colocation_constraints;
+  std::set<tensorflow::string> colocation_constraints;
 };
 
 struct TF_Operation {
@@ -140,7 +142,7 @@ struct TF_ImportGraphDefOptions {
 
   // Backing memory for TensorId fields in opts.
   // TODO(skyewm): it'd be better if ImportGraphDefOptions owned this.
-  std::vector<std::string> tensor_id_data;
+  std::vector<tensorflow::string> tensor_id_data;
 };
 
 struct TF_ImportGraphDefResults {
@@ -150,7 +152,7 @@ struct TF_ImportGraphDefResults {
   std::vector<int> missing_unused_key_indexes;
 
   // Backing memory for missing_unused_key_names values.
-  std::vector<std::string> missing_unused_key_names_data;
+  std::vector<tensorflow::string> missing_unused_key_names_data;
 };
 
 struct TF_DeviceList {
@@ -181,7 +183,7 @@ struct TF_ApiDefMap {
 struct TF_Server {
   TF_Server(std::unique_ptr<tensorflow::ServerInterface> server);
 
-  const std::string target;
+  const tensorflow::string target;
   std::unique_ptr<tensorflow::ServerInterface> server;
 };
 #endif  // !defined(IS_MOBILE_PLATFORM) && !defined(IS_SLIM_BUILD)

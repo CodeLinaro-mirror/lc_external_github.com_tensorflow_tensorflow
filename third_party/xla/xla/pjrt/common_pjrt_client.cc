@@ -1621,7 +1621,7 @@ Future<> CommonPjRtBufferImpl::ToLiteralImpl(
       src_definition_events_avs_copy = src_definition_events_avs;
   common_client->async_work_runner()->ScheduleWhenReady(
       src_definition_events_avs_copy,
-      [shape = *std::move(device_shape),
+      [common_client, shape = *std::move(device_shape),
        src_definition_events_avs = std::move(src_definition_events_avs),
        raw_buffer = std::move(raw_buffer),
        device_promise = std::move(device_promise), literal,
@@ -1677,6 +1677,7 @@ Future<> CommonPjRtBufferImpl::ToLiteralImpl(
         } else {
           Future<MutableLiteralBase*> generated = std::move(generator)();
           generated.OnReady(
+              common_client->async_work_runner()->AsExecutor(),
               [copy_literal_async = std::move(copy_literal_async)](
                   const absl::StatusOr<MutableLiteralBase*>& value) mutable {
                 copy_literal_async(value);
