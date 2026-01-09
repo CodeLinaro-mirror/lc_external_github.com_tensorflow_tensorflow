@@ -643,10 +643,7 @@ xla_cc_test(
 tf_proto_library(
     name = "convolution_filter_thunk_proto",
     srcs = ["convolution_filter_thunk.proto"],
-    deps = [
-        ":shaped_slice_proto",
-        "//xla/service:buffer_assignment_proto",
-    ],
+    deps = [":shaped_slice_proto"],
 )
 
 tf_proto_library(
@@ -2481,6 +2478,7 @@ cc_library(
     name = "shaped_slice",
     srcs = ["shaped_slice.cc"],
     hdrs = ["shaped_slice.h"],
+    # copybara:uncomment compatible_with = ["//buildenv/target:non_prod"],
     deps = [
         ":shaped_slice_proto_cc",
         "//xla:shape_util",
