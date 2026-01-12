@@ -2652,8 +2652,13 @@ HloSharding MergeShardingDimension(const HloSharding& sharding,
 std::shared_ptr<const HloSharding> CreateTupleSharding(
     const Shape& shape, absl::Span<const HloInstruction* const> elements) {
   bool any_sharding = false;
+  bool any_named_sharding = false;
   for (const HloInstruction* element : elements) {
-    any_sharding |= element->has_sharding();
+    bool has_sharding = element->has_sharding();
+    any_sharding |= has_sharding;
+    if (has_sharding) {
+      any_named_sharding |= element->sharding().UseNamedShardingLeaf();
+    }
   }
   if (!any_sharding) {
     return nullptr;
@@ -2665,7 +2670,7 @@ std::shared_ptr<const HloSharding> CreateTupleSharding(
     if (element->has_sharding()) {
       sub_shardings.push_back(element->sharding());
     } else {
-      sub_shardings.push_back(HloSharding::Replicate());
+      sub_shardings.push_back(HloSharding::Replicate({}, any_named_sharding));
     }
   }
   return std::make_shared<const HloSharding>(
