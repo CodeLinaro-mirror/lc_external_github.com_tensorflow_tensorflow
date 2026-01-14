@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/tests/collective_ops_e2e_test_base.h"
+#include "xla/service/gpu/tests/collective_ops_e2e_test_base.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +41,7 @@ limitations under the License.
 #include "xla/stream_executor/integrations/device_mem_allocator.h"
 #include "xla/stream_executor/integrations/stream_executor_allocator.h"
 #include "xla/stream_executor/integrations/tf_allocator_adapter.h"
+#include "xla/stream_executor/memory_space.h"
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/tsl/framework/allocator.h"

@@ -1098,6 +1098,50 @@ xla_test(
     ],
 )
 
+cc_library(
+    name = "collective_ops_e2e_test_base",
+    testonly = True,
+    srcs = ["collective_ops_e2e_test_base.cc"],
+    hdrs = ["collective_ops_e2e_test_base.h"],
+    deps = [
+        "//xla:array",
+        "//xla:literal",
+        "//xla:xla_data_proto_cc",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:hlo_hardware_independent_test_base",
+        "//xla/service:backend",
+        "//xla/service:computation_placer_hdr",
+        "//xla/service:hlo_module_config",
+        "//xla/service:hlo_runner",
+        "//xla/service:hlo_runner_interface",
+        "//xla/service:platform_util",
+        "//xla/service/gpu:backend_configs_cc",
+        "//xla/service/gpu:gpu_memory_space_assignment",
+        "//xla/stream_executor:device_description",
+        "//xla/stream_executor:memory_space",
+        "//xla/stream_executor:platform",
+        "//xla/stream_executor:stream_executor_h",
+        "//xla/stream_executor/cuda:cuda_compute_capability",
+        "//xla/stream_executor/integrations:device_mem_allocator",
+        "//xla/stream_executor/integrations:stream_executor_allocator",
+        "//xla/stream_executor/integrations:tf_allocator_adapter",
+        "//xla/tsl/framework:bfc_allocator",
+        "//xla/tsl/framework:device_id_impl",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ] + if_google([
+        # In OSS this dependency is added automatically for xla_test targets. See
+        # third_party/tensorflow/compiler/xla/xla.default.bzl.
+        "//xla/tsl/framework:allocator",
+    ]),
+)
+
 xla_test(
     name = "collective_ops_command_buffer_test",
     srcs = ["collective_ops_command_buffer_test.cc"],
