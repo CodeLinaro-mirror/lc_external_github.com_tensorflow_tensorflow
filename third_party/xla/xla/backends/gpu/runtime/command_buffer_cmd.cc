@@ -61,7 +61,6 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/p2p_thunk_common.h"
 #include "xla/backends/gpu/runtime/recv_thunk.h"
 #include "xla/backends/gpu/runtime/send_thunk.h"
-#include "xla/backends/gpu/runtime/shaped_slice.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/backends/gpu/runtime/while_thunk.h"
 #include "xla/core/collectives/communicator.h"
@@ -86,6 +85,7 @@ limitations under the License.
 #include "xla/service/gpu/launch_dimensions.h"
 #include "xla/service/gpu/matmul_utils.h"
 #include "xla/service/gpu/stream_executor_util.h"
+#include "xla/service/shaped_slice.h"
 #include "xla/shape_util.h"
 #include "xla/status_macros.h"
 #include "xla/stream_executor/command_buffer.h"
@@ -1479,7 +1479,7 @@ absl::Status WhileCmd::Initialize(const Thunk::InitializeParams& params,
   TF_RETURN_IF_ERROR(cond_commands_.Initialize(params, state));
   TF_RETURN_IF_ERROR(body_commands_.Initialize(params, state));
   if (enable_loop_unroll_ && body_commands_.support_loop_unroll() &&
-      cond_commands_.support_loop_unroll() && trip_count_ != std::nullopt) {
+      cond_commands_.support_loop_unroll() && trip_count_.has_value()) {
     is_unrolled_loop_ = true;
   }
   VLOG(3) << "WhileCmd::Initialize: enable_loop_unroll_=" << enable_loop_unroll_
@@ -2793,7 +2793,7 @@ absl::Status DynamicSliceFusionCmd::Prepare(
     }
   }
   TF_RETURN_IF_ERROR(embedded_commands_.Prepare(params));
-  if (offset_as_function_of_indvar_metadata_ != std::nullopt) {
+  if (offset_as_function_of_indvar_metadata_.has_value()) {
     Indvar(this) =
         HloEvaluator()
             .Evaluate(
@@ -2973,7 +2973,7 @@ absl::StatusOr<const se::CommandBuffer::Command*> DynamicSliceFusionCmd::Record(
 
   // For command buffer instantiation ran by CommandBufferThunk::Initialize, we
   // must not step the Indvar, because it is not a real run.
-  if (offset_as_function_of_indvar_metadata_ != std::nullopt &&
+  if (offset_as_function_of_indvar_metadata_.has_value() &&
       command_buffer->state() == se::CommandBuffer::State::kUpdate) {
     Indvar(this) =
         HloEvaluator()
