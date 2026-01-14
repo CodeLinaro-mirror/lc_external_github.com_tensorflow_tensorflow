@@ -1,263 +1,258 @@
 Auto generated patch. Do not edit or delete it, even if empty.
-diff -ruN --strip-trailing-cr a/llvm/lib/CodeGen/Analysis.cpp b/llvm/lib/CodeGen/Analysis.cpp
---- a/llvm/lib/CodeGen/Analysis.cpp
-+++ b/llvm/lib/CodeGen/Analysis.cpp
-@@ -814,5 +814,13 @@
-        CatchRetSuccessors)
-     collectEHScopeMembers(EHScopeMembership, CatchRetPair.second,
-                           CatchRetPair.first);
-+
-+  // Add any remaining blocks in the function to the unreachable set, which
-+  // might not otherwise have been identified as unreachable (such as infinite
-+  // loops).
-+  for (const MachineBasicBlock &MBB : MF)
-+    if (!EHScopeMembership.count(&MBB))
-+      collectEHScopeMembers(EHScopeMembership, EntryBBNumber, &MBB);
-+
-   return EHScopeMembership;
- }
-diff -ruN --strip-trailing-cr a/llvm/lib/CodeGen/MachineBasicBlock.cpp b/llvm/lib/CodeGen/MachineBasicBlock.cpp
---- a/llvm/lib/CodeGen/MachineBasicBlock.cpp
-+++ b/llvm/lib/CodeGen/MachineBasicBlock.cpp
-@@ -551,6 +551,11 @@
-       os << "ehfunclet-entry";
-       hasAttributes = true;
+diff -ruN --strip-trailing-cr a/libcxx/include/__algorithm/find_if.h b/libcxx/include/__algorithm/find_if.h
+--- a/libcxx/include/__algorithm/find_if.h
++++ b/libcxx/include/__algorithm/find_if.h
+@@ -11,7 +11,6 @@
+ #define _LIBCPP___ALGORITHM_FIND_IF_H
+ 
+ #include <__config>
+-#include <__memory/valid_range.h>
+ 
+ #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
+ #  pragma GCC system_header
+@@ -22,8 +21,6 @@
+ template <class _InputIterator, class _Predicate>
+ [[__nodiscard__]] inline _LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX20 _InputIterator
+ find_if(_InputIterator __first, _InputIterator __last, _Predicate __pred) {
+-  std::__assume_valid_range(__first, __last);
+-
+   for (; __first != __last; ++__first)
+     if (__pred(*__first))
+       break;
+diff -ruN --strip-trailing-cr a/libcxx/include/CMakeLists.txt b/libcxx/include/CMakeLists.txt
+--- a/libcxx/include/CMakeLists.txt
++++ b/libcxx/include/CMakeLists.txt
+@@ -607,7 +607,6 @@
+   __memory/unique_temporary_buffer.h
+   __memory/uses_allocator.h
+   __memory/uses_allocator_construction.h
+-  __memory/valid_range.h
+   __memory_resource/memory_resource.h
+   __memory_resource/monotonic_buffer_resource.h
+   __memory_resource/polymorphic_allocator.h
+@@ -932,6 +931,7 @@
+   __utility/in_place.h
+   __utility/integer_sequence.h
+   __utility/is_pointer_in_range.h
++  __utility/is_valid_range.h
+   __utility/lazy_synth_three_way_comparator.h
+   __utility/move.h
+   __utility/no_destroy.h
+diff -ruN --strip-trailing-cr a/libcxx/include/__memory/valid_range.h b/libcxx/include/__memory/valid_range.h
+--- a/libcxx/include/__memory/valid_range.h
++++ b/libcxx/include/__memory/valid_range.h
+@@ -1,74 +0,0 @@
+-//===----------------------------------------------------------------------===//
+-//
+-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+-// See https://llvm.org/LICENSE.txt for license information.
+-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-//
+-//===----------------------------------------------------------------------===//
+-
+-#ifndef _LIBCPP___MEMORY_VALID_RANGE_H
+-#define _LIBCPP___MEMORY_VALID_RANGE_H
+-
+-#include <__algorithm/comp.h>
+-#include <__assert>
+-#include <__config>
+-#include <__iterator/iterator_traits.h>
+-#include <__memory/assume_aligned.h>
+-#include <__memory/pointer_traits.h>
+-#include <__type_traits/is_constant_evaluated.h>
+-#include <__type_traits/is_same.h>
+-#include <__type_traits/remove_cvref.h>
+-
+-#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
+-#  pragma GCC system_header
+-#endif
+-
+-_LIBCPP_BEGIN_NAMESPACE_STD
+-
+-// A valid range as defined by the C++ Standard has the following constraints:
+-// - [__first, __last) is dereferenceable
+-// - __last is reachable from __first
+-// - if __first and __last are contiguous iterators, the pointers they "decay to" are correctly aligned according to the
+-// language rules for pointers
+-
+-// This function attempts to detect invalid ranges as defined above. Specifically, it checks bullet (2). This also means
+-// that it doesn't return whether a range is actually valid, but only whether a range is definitely not valid.
+-// The checks may be extended in the future.
+-template <class _Tp>
+-_LIBCPP_CONSTEXPR_SINCE_CXX14 _LIBCPP_HIDE_FROM_ABI _LIBCPP_NO_SANITIZE("address") bool
+-__is_valid_range(const _Tp* __first, const _Tp* __last) {
+-  if (__libcpp_is_constant_evaluated()) {
+-    // If this is not a constant during constant evaluation, that is because __first and __last are not
+-    // part of the same allocation. If they are part of the same allocation, we must still make sure they
+-    // are ordered properly.
+-    return __builtin_constant_p(__first <= __last) && __first <= __last;
+-  }
+-
+-  return !__less<>()(__last, __first);
+-}
+-
+-// This function allows the compiler to assume that [__first, __last) is a valid range as defined above.
+-//
+-// In practice, we only add explicit assumptions for bullets (1) and (3). These assumptions allow (currently only
+-// clang-based compilers) to auto-vectorize algorithms that contain early returns.
+-template <class _Iter, class _Sent>
+-_LIBCPP_HIDE_FROM_ABI _LIBCPP_CONSTEXPR_SINCE_CXX14 void
+-__assume_valid_range([[__maybe_unused__]] _Iter&& __first, [[__maybe_unused__]] _Sent&& __last) {
+-#if defined(_LIBCPP_CLANG_VER) && _LIBCPP_CLANG_VER >= 2200 && !defined(_LIBCPP_CXX03_LANG)
+-  if constexpr (__libcpp_is_contiguous_iterator<__remove_cvref_t<_Iter>>::value &&
+-                is_same<__remove_cvref_t<_Iter>, __remove_cvref_t<_Sent>>::value) {
+-    _LIBCPP_ASSERT_INTERNAL(std::__is_valid_range(std::__to_address(__first), std::__to_address(__last)),
+-                            "Valid range assumption does not hold");
+-    if (!__libcpp_is_constant_evaluated()) {
+-      using __value_type = typename iterator_traits<__remove_cvref_t<_Iter>>::value_type;
+-      __builtin_assume_dereferenceable(std::__to_address(__first), (__last - __first) * sizeof(__value_type));
+-      (void)std::__assume_aligned<_LIBCPP_ALIGNOF(__value_type)>(std::__to_address(__first));
+-      (void)std::__assume_aligned<_LIBCPP_ALIGNOF(__value_type)>(std::__to_address(__last));
+-    }
+-  }
+-#endif
+-}
+-
+-_LIBCPP_END_NAMESPACE_STD
+-
+-#endif // _LIBCPP___MEMORY_VALID_RANGE_H
+diff -ruN --strip-trailing-cr a/libcxx/include/module.modulemap.in b/libcxx/include/module.modulemap.in
+--- a/libcxx/include/module.modulemap.in
++++ b/libcxx/include/module.modulemap.in
+@@ -1690,7 +1690,6 @@
      }
-+    if (isEHScopeEntry()) {
-+      os << (hasAttributes ? ", " : " (");
-+      os << "ehscope-entry";
-+      hasAttributes = true;
-+    }
-     if (getAlignment() != Align(1)) {
-       os << (hasAttributes ? ", " : " (");
-       os << "align " << getAlignment().value();
-diff -ruN --strip-trailing-cr a/llvm/lib/CodeGen/MIRParser/MILexer.cpp b/llvm/lib/CodeGen/MIRParser/MILexer.cpp
---- a/llvm/lib/CodeGen/MIRParser/MILexer.cpp
-+++ b/llvm/lib/CodeGen/MIRParser/MILexer.cpp
-@@ -271,6 +271,7 @@
-       .Case("landing-pad", MIToken::kw_landing_pad)
-       .Case("inlineasm-br-indirect-target",
-             MIToken::kw_inlineasm_br_indirect_target)
-+      .Case("ehscope-entry", MIToken::kw_ehscope_entry)
-       .Case("ehfunclet-entry", MIToken::kw_ehfunclet_entry)
-       .Case("liveins", MIToken::kw_liveins)
-       .Case("successors", MIToken::kw_successors)
-diff -ruN --strip-trailing-cr a/llvm/lib/CodeGen/MIRParser/MILexer.h b/llvm/lib/CodeGen/MIRParser/MILexer.h
---- a/llvm/lib/CodeGen/MIRParser/MILexer.h
-+++ b/llvm/lib/CodeGen/MIRParser/MILexer.h
-@@ -126,6 +126,7 @@
-     kw_liveout,
-     kw_landing_pad,
-     kw_inlineasm_br_indirect_target,
-+    kw_ehscope_entry,
-     kw_ehfunclet_entry,
-     kw_liveins,
-     kw_successors,
-diff -ruN --strip-trailing-cr a/llvm/lib/CodeGen/MIRParser/MIParser.cpp b/llvm/lib/CodeGen/MIRParser/MIParser.cpp
---- a/llvm/lib/CodeGen/MIRParser/MIParser.cpp
-+++ b/llvm/lib/CodeGen/MIRParser/MIParser.cpp
-@@ -719,6 +719,7 @@
-   bool IsLandingPad = false;
-   bool IsInlineAsmBrIndirectTarget = false;
-   bool IsEHFuncletEntry = false;
-+  bool IsEHScopeEntry = false;
-   std::optional<MBBSectionID> SectionID;
-   uint64_t Alignment = 0;
-   std::optional<UniqueBBID> BBID;
-@@ -748,6 +749,10 @@
-         IsEHFuncletEntry = true;
-         lex();
-         break;
-+      case MIToken::kw_ehscope_entry:
-+        IsEHScopeEntry = true;
-+        lex();
-+        break;
-       case MIToken::kw_align:
-         if (parseAlignment(Alignment))
-           return true;
-@@ -804,6 +809,7 @@
-   MBB->setIsEHPad(IsLandingPad);
-   MBB->setIsInlineAsmBrIndirectTarget(IsInlineAsmBrIndirectTarget);
-   MBB->setIsEHFuncletEntry(IsEHFuncletEntry);
-+  MBB->setIsEHScopeEntry(IsEHScopeEntry);
-   if (SectionID) {
-     MBB->setSectionID(*SectionID);
-     MF.setBBSectionsType(BasicBlockSection::List);
-diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/AArch64/seh-unreachable-loop.mir b/llvm/test/CodeGen/AArch64/seh-unreachable-loop.mir
---- a/llvm/test/CodeGen/AArch64/seh-unreachable-loop.mir
-+++ b/llvm/test/CodeGen/AArch64/seh-unreachable-loop.mir
-@@ -0,0 +1,154 @@
-+# NOTE: Assertions have been autogenerated by utils/update_mir_test_checks.py UTC_ARGS: --version 6
-+# RUN: llc -o - %s -mtriple=aarch64-pc-windows-msvc19.33.0 -run-pass=branch-folder | FileCheck %s
+     module uses_allocator                     { header "__memory/uses_allocator.h" }
+     module uses_allocator_construction        { header "__memory/uses_allocator_construction.h" }
+-    module valid_range                        { header "__memory/valid_range.h" }
+ 
+     header "memory"
+     export *
+@@ -2173,6 +2172,7 @@
+     }
+     module integer_sequence                { header "__utility/integer_sequence.h" }
+     module is_pointer_in_range             { header "__utility/is_pointer_in_range.h" }
++    module is_valid_range                  { header "__utility/is_valid_range.h" }
+     module lazy_synth_three_way_comparator { header "__utility/lazy_synth_three_way_comparator.h" }
+     module move                            { header "__utility/move.h" }
+     module no_destroy                      { header "__utility/no_destroy.h" }
+diff -ruN --strip-trailing-cr a/libcxx/include/streambuf b/libcxx/include/streambuf
+--- a/libcxx/include/streambuf
++++ b/libcxx/include/streambuf
+@@ -117,8 +117,8 @@
+ #    include <__assert>
+ #    include <__fwd/streambuf.h>
+ #    include <__locale>
+-#    include <__memory/valid_range.h>
+ #    include <__type_traits/is_same.h>
++#    include <__utility/is_valid_range.h>
+ #    include <__utility/scope_guard.h>
+ #    include <climits>
+ #    include <ios>
+diff -ruN --strip-trailing-cr a/libcxx/include/__utility/is_pointer_in_range.h b/libcxx/include/__utility/is_pointer_in_range.h
+--- a/libcxx/include/__utility/is_pointer_in_range.h
++++ b/libcxx/include/__utility/is_pointer_in_range.h
+@@ -12,12 +12,12 @@
+ #include <__algorithm/comp.h>
+ #include <__assert>
+ #include <__config>
+-#include <__memory/valid_range.h>
+ #include <__type_traits/enable_if.h>
+ #include <__type_traits/integral_constant.h>
+ #include <__type_traits/is_constant_evaluated.h>
+ #include <__type_traits/void_t.h>
+ #include <__utility/declval.h>
++#include <__utility/is_valid_range.h>
+ 
+ #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
+ #  pragma GCC system_header
+diff -ruN --strip-trailing-cr a/libcxx/include/__utility/is_valid_range.h b/libcxx/include/__utility/is_valid_range.h
+--- a/libcxx/include/__utility/is_valid_range.h
++++ b/libcxx/include/__utility/is_valid_range.h
+@@ -0,0 +1,37 @@
++//===----------------------------------------------------------------------===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
 +
-+# Check that the dead blocks in bb.2 and bb.3 are correctly handled by BranchFolders EHScopeMembership.
++#ifndef _LIBCPP___UTILITY_IS_VALID_RANGE_H
++#define _LIBCPP___UTILITY_IS_VALID_RANGE_H
 +
-+--- |
-+  declare i32 @__CxxFrameHandler3(...)
++#include <__algorithm/comp.h>
++#include <__config>
++#include <__type_traits/is_constant_evaluated.h>
 +
-+  declare ptr @"??2@YAPEAX_K@Z"(i64)
++#if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
++#  pragma GCC system_header
++#endif
 +
-+  define ptr @test(ptr writeonly captures(none) %0, ptr captures(none) %1) personality ptr @__CxxFrameHandler3 {
-+    unreachable
++_LIBCPP_BEGIN_NAMESPACE_STD
++
++template <class _Tp>
++_LIBCPP_CONSTEXPR_SINCE_CXX14 _LIBCPP_HIDE_FROM_ABI _LIBCPP_NO_SANITIZE("address") bool
++__is_valid_range(const _Tp* __first, const _Tp* __last) {
++  if (__libcpp_is_constant_evaluated()) {
++    // If this is not a constant during constant evaluation, that is because __first and __last are not
++    // part of the same allocation. If they are part of the same allocation, we must still make sure they
++    // are ordered properly.
++    return __builtin_constant_p(__first <= __last) && __first <= __last;
 +  }
-+...
-+---
-+name:            test
-+tracksRegLiveness: true
-+hasEHContTarget: false
-+hasEHScopes:     true
-+hasEHFunclets:   true
-+body:             |
-+  ; CHECK-LABEL: name: test
-+  ; CHECK: bb.0:
-+  ; CHECK-NEXT:   successors: %bb.1(0x7ffff800), %bb.2(0x00000800)
-+  ; CHECK-NEXT:   liveins: $x0, $x1, $x20, $x19, $lr
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT:   early-clobber $sp = frame-setup STPXpre killed $x19, killed $x20, $sp, -6 :: (store (s64)), (store (s64))
-+  ; CHECK-NEXT:   frame-setup SEH_SaveRegP_X 19, 20, -48
-+  ; CHECK-NEXT:   frame-setup STPXi killed $fp, killed $lr, $sp, 2 :: (store (s64)), (store (s64))
-+  ; CHECK-NEXT:   frame-setup SEH_SaveFPLR 16
-+  ; CHECK-NEXT:   $fp = frame-setup ADDXri $sp, 16, 0
-+  ; CHECK-NEXT:   frame-setup SEH_AddFP 16
-+  ; CHECK-NEXT:   frame-setup SEH_PrologEnd
-+  ; CHECK-NEXT:   $x2 = MOVi64imm -2
-+  ; CHECK-NEXT:   STURXi killed $x2, $fp, 16
-+  ; CHECK-NEXT:   renamable $x20 = COPY $x1
-+  ; CHECK-NEXT:   renamable $x19 = COPY $x0
-+  ; CHECK-NEXT:   EH_LABEL <mcsymbol .Ltmp0>
-+  ; CHECK-NEXT:   $x0 = COPY $xzr
-+  ; CHECK-NEXT:   BL @"??2@YAPEAX_K@Z", csr_aarch64_aapcs, implicit-def dead $lr, implicit $sp, implicit $x0, implicit-def $sp, implicit-def $x0
-+  ; CHECK-NEXT:   EH_LABEL <mcsymbol .Ltmp0>
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT: bb.1:
-+  ; CHECK-NEXT:   liveins: $x0, $x19, $x20
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT:   STRXui $xzr, renamable $x20, 1 :: (store (s64), align 1)
-+  ; CHECK-NEXT:   STRXui $xzr, renamable $x20, 0 :: (store (s64), align 1)
-+  ; CHECK-NEXT:   STRXui $xzr, killed renamable $x20, 2 :: (store (s64), align 1)
-+  ; CHECK-NEXT:   STRXui killed renamable $x0, renamable $x19, 0 :: (store (s64))
-+  ; CHECK-NEXT:   $x0 = COPY $xzr
-+  ; CHECK-NEXT:   frame-destroy SEH_EpilogStart
-+  ; CHECK-NEXT:   $fp, $lr = frame-destroy LDPXi $sp, 2 :: (load (s64)), (load (s64))
-+  ; CHECK-NEXT:   frame-destroy SEH_SaveFPLR 16
-+  ; CHECK-NEXT:   early-clobber $sp, $x19, $x20 = frame-destroy LDPXpost $sp, 6 :: (load (s64)), (load (s64))
-+  ; CHECK-NEXT:   frame-destroy SEH_SaveRegP_X 19, 20, -48
-+  ; CHECK-NEXT:   frame-destroy SEH_EpilogEnd
-+  ; CHECK-NEXT:   RET_ReallyLR implicit $x0
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT: bb.2 (landing-pad, ehfunclet-entry, ehscope-entry):
-+  ; CHECK-NEXT:   liveins: $x20, $x19, $lr
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT:   early-clobber $sp = frame-setup STPXpre killed $x19, killed $x20, $sp, -4 :: (store (s64)), (store (s64))
-+  ; CHECK-NEXT:   frame-setup SEH_SaveRegP_X 19, 20, -32
-+  ; CHECK-NEXT:   frame-setup STPXi killed $fp, killed $lr, $sp, 2 :: (store (s64)), (store (s64))
-+  ; CHECK-NEXT:   frame-setup SEH_SaveFPLR 16
-+  ; CHECK-NEXT:   frame-setup SEH_PrologEnd
-+  ; CHECK-NEXT:   renamable $x8 = COPY $xzr
-+  ; CHECK-NEXT:   STRWui $wzr, killed renamable $x8, 0 :: (volatile store (s32) into `ptr null`, align 4294967296)
-+  ; CHECK-NEXT:   frame-destroy SEH_EpilogStart
-+  ; CHECK-NEXT:   $fp, $lr = frame-destroy LDPXi $sp, 2 :: (load (s64)), (load (s64))
-+  ; CHECK-NEXT:   frame-destroy SEH_SaveFPLR 16
-+  ; CHECK-NEXT:   early-clobber $sp, $x19, $x20 = frame-destroy LDPXpost $sp, 4 :: (load (s64)), (load (s64))
-+  ; CHECK-NEXT:   frame-destroy SEH_SaveRegP_X 19, 20, -32
-+  ; CHECK-NEXT:   frame-destroy SEH_EpilogEnd
-+  ; CHECK-NEXT:   CLEANUPRET
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT: bb.3:
-+  ; CHECK-NEXT:   successors: %bb.3(0x80000000)
-+  ; CHECK-NEXT:   liveins: $x8
-+  ; CHECK-NEXT: {{  $}}
-+  ; CHECK-NEXT:   early-clobber renamable $x8 = STRXpost $xzr, killed renamable $x8, -8 :: (store (s64))
-+  ; CHECK-NEXT:   B %bb.3
-+  bb.0:
-+    successors: %bb.1(0x7ffff800), %bb.5(0x00000800)
-+    liveins: $x0, $x1, $x20, $x19, $lr
 +
-+    early-clobber $sp = frame-setup STPXpre killed $x19, killed $x20, $sp, -6 :: (store (s64)), (store (s64))
-+    frame-setup SEH_SaveRegP_X 19, 20, -48
-+    frame-setup STPXi killed $fp, killed $lr, $sp, 2 :: (store (s64)), (store (s64))
-+    frame-setup SEH_SaveFPLR 16
-+    $fp = frame-setup ADDXri $sp, 16, 0
-+    frame-setup SEH_AddFP 16
-+    frame-setup SEH_PrologEnd
-+    $x2 = MOVi64imm -2
-+    STURXi killed $x2, $fp, 16
-+    renamable $x20 = COPY $x1
-+    renamable $x19 = COPY $x0
-+    EH_LABEL <mcsymbol .Ltmp0>
-+    $x0 = COPY $xzr
-+    BL @"??2@YAPEAX_K@Z", csr_aarch64_aapcs, implicit-def dead $lr, implicit $sp, implicit $x0, implicit-def $sp, implicit-def $x0
-+    EH_LABEL <mcsymbol .Ltmp0>
-+    B %bb.1
++  return !__less<>()(__last, __first);
++}
 +
-+  bb.1:
-+    successors: %bb.4(0x30000000)
-+    liveins: $x0, $x19, $x20
++_LIBCPP_END_NAMESPACE_STD
 +
-+    STRXui $xzr, renamable $x20, 1 :: (store (s64), align 1)
-+    STRXui $xzr, renamable $x20, 0 :: (store (s64), align 1)
-+    STRXui $xzr, killed renamable $x20, 2 :: (store (s64), align 1)
-+    STRXui killed renamable $x0, renamable $x19, 0 :: (store (s64))
-+    B %bb.4
-+
-+  bb.2:
-+    successors: %bb.3(0x80000000)
-+    liveins: $x19
-+
-+    renamable $x8 = SUBXri killed renamable $x19, 8, 0
-+
-+  bb.3:
-+    successors: %bb.3(0x80000000)
-+    liveins: $x8
-+
-+    early-clobber renamable $x8 = STRXpost $xzr, killed renamable $x8, -8 :: (store (s64))
-+    B %bb.3
-+
-+  bb.4:
-+    $x0 = COPY $xzr
-+    frame-destroy SEH_EpilogStart
-+    $fp, $lr = frame-destroy LDPXi $sp, 2 :: (load (s64)), (load (s64))
-+    frame-destroy SEH_SaveFPLR 16
-+    early-clobber $sp, $x19, $x20 = frame-destroy LDPXpost $sp, 6 :: (load (s64)), (load (s64))
-+    frame-destroy SEH_SaveRegP_X 19, 20, -48
-+    frame-destroy SEH_EpilogEnd
-+    RET_ReallyLR implicit $x0
-+
-+  bb.5 (landing-pad, ehfunclet-entry, ehscope-entry):
-+    liveins: $x20, $x19, $lr
-+
-+    early-clobber $sp = frame-setup STPXpre killed $x19, killed $x20, $sp, -4 :: (store (s64)), (store (s64))
-+    frame-setup SEH_SaveRegP_X 19, 20, -32
-+    frame-setup STPXi killed $fp, killed $lr, $sp, 2 :: (store (s64)), (store (s64))
-+    frame-setup SEH_SaveFPLR 16
-+    frame-setup SEH_PrologEnd
-+    renamable $x8 = COPY $xzr
-+    STRWui $wzr, killed renamable $x8, 0 :: (volatile store (s32) into `ptr null`, align 4294967296)
-+    frame-destroy SEH_EpilogStart
-+    $fp, $lr = frame-destroy LDPXi $sp, 2 :: (load (s64)), (load (s64))
-+    frame-destroy SEH_SaveFPLR 16
-+    early-clobber $sp, $x19, $x20 = frame-destroy LDPXpost $sp, 4 :: (load (s64)), (load (s64))
-+    frame-destroy SEH_SaveRegP_X 19, 20, -32
-+    frame-destroy SEH_EpilogEnd
-+    CLEANUPRET
-+...
-diff -ruN --strip-trailing-cr a/llvm/test/CodeGen/MIR/Generic/machine-basic-block-ehscope-entry.mir b/llvm/test/CodeGen/MIR/Generic/machine-basic-block-ehscope-entry.mir
---- a/llvm/test/CodeGen/MIR/Generic/machine-basic-block-ehscope-entry.mir
-+++ b/llvm/test/CodeGen/MIR/Generic/machine-basic-block-ehscope-entry.mir
-@@ -0,0 +1,16 @@
-+# RUN: llc -run-pass none -o - %s 2>&1 | FileCheck %s
-+
-+# Test ehscope-entry machine basic block parameters
-+
-+---
-+name:            test
-+body: |
-+  ; CHECK: bb.0 (ehscope-entry):
-+  bb.0 (ehscope-entry):
-+...
-+---
-+name:            withalign
-+body: |
-+  ; CHECK: bb.0 (ehscope-entry, align 8):
-+  bb.0 (align 8, ehscope-entry):
-+...
++#endif // _LIBCPP___UTILITY_IS_VALID_RANGE_H
+diff -ruN --strip-trailing-cr a/libcxx/test/benchmarks/algorithms/nonmodifying/find.bench.cpp b/libcxx/test/benchmarks/algorithms/nonmodifying/find.bench.cpp
+--- a/libcxx/test/benchmarks/algorithms/nonmodifying/find.bench.cpp
++++ b/libcxx/test/benchmarks/algorithms/nonmodifying/find.bench.cpp
+@@ -22,18 +22,30 @@
+ int main(int argc, char** argv) {
+   auto std_find    = [](auto first, auto last, auto const& value) { return std::find(first, last, value); };
+   auto std_find_if = [](auto first, auto last, auto const& value) {
+-    return std::find_if(first, last, [&](auto element) { return element == value; });
++    return std::find_if(first, last, [&](auto element) {
++      benchmark::DoNotOptimize(element);
++      return element == value;
++    });
+   };
+   auto std_find_if_not = [](auto first, auto last, auto const& value) {
+-    return std::find_if_not(first, last, [&](auto element) { return element != value; });
++    return std::find_if_not(first, last, [&](auto element) {
++      benchmark::DoNotOptimize(element);
++      return element != value;
++    });
+   };
+ 
+   auto ranges_find    = [](auto first, auto last, auto const& value) { return std::ranges::find(first, last, value); };
+   auto ranges_find_if = [](auto first, auto last, auto const& value) {
+-    return std::ranges::find_if(first, last, [&](auto element) { return element == value; });
++    return std::ranges::find_if(first, last, [&](auto element) {
++      benchmark::DoNotOptimize(element);
++      return element == value;
++    });
+   };
+   auto ranges_find_if_not = [](auto first, auto last, auto const& value) {
+-    return std::ranges::find_if_not(first, last, [&](auto element) { return element != value; });
++    return std::ranges::find_if_not(first, last, [&](auto element) {
++      benchmark::DoNotOptimize(element);
++      return element != value;
++    });
+   };
+ 
+   auto register_benchmarks = [&](auto bm, std::string comment) {
+diff -ruN --strip-trailing-cr a/libcxx/test/libcxx/utilities/is_valid_range.pass.cpp b/libcxx/test/libcxx/utilities/is_valid_range.pass.cpp
+--- a/libcxx/test/libcxx/utilities/is_valid_range.pass.cpp
++++ b/libcxx/test/libcxx/utilities/is_valid_range.pass.cpp
+@@ -6,7 +6,7 @@
+ //
+ //===----------------------------------------------------------------------===//
+ 
+-#include <__memory/valid_range.h>
++#include <__utility/is_valid_range.h>
+ #include <cassert>
+ 
+ #include "test_macros.h"
