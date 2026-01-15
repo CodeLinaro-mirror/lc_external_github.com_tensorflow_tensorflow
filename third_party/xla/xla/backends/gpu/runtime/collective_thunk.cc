@@ -248,8 +248,9 @@ absl::StatusOr<std::vector<DeviceBufferPair>> ConvertToDeviceBuffers(
   for (int i = 0; i < buffers.size(); ++i) {
     device_buffers.emplace_back(DeviceBufferPair{
         element_types[i], buffers[i].element_count,
-        buffer_allocations->GetDeviceAddress(buffers[i].source_buffer),
-        buffer_allocations->GetDeviceAddress(buffers[i].destination_buffer),
+        buffer_allocations->GetDeviceAddress(buffers[i].source_buffer.slice),
+        buffer_allocations->GetDeviceAddress(
+            buffers[i].destination_buffer.slice),
         buffers[i].source_memory_space, buffers[i].destination_memory_space});
   }
   return device_buffers;
@@ -304,12 +305,12 @@ absl::StatusOr<CollectiveThunk::Buffer> CollectiveThunk::Buffer::FromProto(
     absl::Span<const BufferAllocation> buffer_allocations) {
   CollectiveThunk::Buffer res;
   res.element_count = buffer_proto.element_count();
-  ASSIGN_OR_RETURN(res.source_buffer,
-                   BufferAllocation::Slice::FromProto(
-                       buffer_proto.source_buffer(), buffer_allocations));
+  ASSIGN_OR_RETURN(
+      res.source_buffer,
+      ShapedSlice::FromProto(buffer_proto.source_buffer(), buffer_allocations));
   ASSIGN_OR_RETURN(res.destination_buffer,
-                   BufferAllocation::Slice::FromProto(
-                       buffer_proto.destination_buffer(), buffer_allocations));
+                   ShapedSlice::FromProto(buffer_proto.destination_buffer(),
+                                          buffer_allocations));
   res.source_memory_space = buffer_proto.source_memory_space();
   res.destination_memory_space = buffer_proto.destination_memory_space();
   return res;

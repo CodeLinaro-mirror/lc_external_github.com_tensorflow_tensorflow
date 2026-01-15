@@ -1309,8 +1309,8 @@ absl::StatusOr<FusionEmissionResult> EmitCollective(
           << "Expected destination to be present for non-degenerate collective";
       buffers.push_back(CollectiveThunk::Buffer{
           /*element_count=*/ShapeUtil::ElementsIn(src_shape),
-          /*source_buffer=*/src.value(),
-          /*destination_buffer=*/dst.value(),
+          /*source_buffer=*/{src.value(), src_shape},
+          /*destination_buffer=*/{dst.value(), dst_shape},
           /*source_memory_space=*/src_shape.layout().memory_space(),
           /*destination_memory_space=*/dst_shape.layout().memory_space()});
     }

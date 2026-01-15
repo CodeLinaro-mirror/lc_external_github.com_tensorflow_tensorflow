@@ -124,8 +124,8 @@ std::unique_ptr<AllGatherStartThunk> CreateAllGatherStartThunk(
   BufferAllocation::Slice slice1(&alloc1, 0, 16 * 4);
 
   CollectiveThunk::Buffer buffer;
-  buffer.source_buffer = slice0;
-  buffer.destination_buffer = slice1;
+  buffer.source_buffer = {slice0, param_shape};
+  buffer.destination_buffer = {slice1, param_shape};
 
   return std::make_unique<AllGatherStartThunk>(
       Thunk::ThunkInfo(),

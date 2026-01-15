@@ -98,6 +98,7 @@ ENTRY test_computation {
 
   const int64_t kElementSize = sizeof(DataT);
   const int64_t kTotalDataBytes = kNumElements * kElementSize;
+  Shape shape = ShapeUtil::MakeShape(S32, {kNumElements});
 
   // Use RoundUpTo to calculate the actual size needed for one buffer.
   const int64_t kAlignedSliceBytes =
@@ -116,8 +117,8 @@ ENTRY test_computation {
   // Use designated initializers if possible, or format for clarity.
   std::vector<CollectiveThunk::Buffer> buffers = {
       {/*element_count=*/kNumElements,
-       /*source_buffer=*/input_slice,
-       /*destination_buffer=*/output_slice,
+       /*source_buffer=*/{input_slice, shape},
+       /*destination_buffer=*/{output_slice, shape},
        /*source_memory_space=*/0,
        /*destination_memory_space=*/0},
   };

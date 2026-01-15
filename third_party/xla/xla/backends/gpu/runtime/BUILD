@@ -1951,6 +1951,7 @@ cc_library(
         "//xla/service:buffer_assignment",
         "//xla/service:computation_placer",
         "//xla/service:rendezvous",
+        "//xla/service:shaped_slice",
         "//xla/service/gpu:buffer_allocations",
         "//xla/service/llvm_ir:llvm_util",
         "//xla/stream_executor:device_address",

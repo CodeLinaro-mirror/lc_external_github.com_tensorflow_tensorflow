@@ -62,6 +62,16 @@ class RecvThunk : public CollectiveThunk {
 
   const P2PConfig& p2p_config() const { return config_; }
 
+  BufferUses buffer_uses() const override {
+    BufferUses uses{
+        BufferUse::Read(buffer_.source_buffer.slice,
+                        buffer_.source_buffer.shape),
+        BufferUse::Write(buffer_.destination_buffer.slice,
+                         buffer_.destination_buffer.shape),
+    };
+    return uses;
+  }
+
  protected:
   absl::StatusOr<bool> RunCollective(const ExecuteParams& params,
                                      const GpuCliqueKey& clique_key,

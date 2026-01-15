@@ -98,6 +98,7 @@ ENTRY computation {
 
   const int64_t kElementSize = sizeof(DataT);
   const int64_t kTotalDataBytes = kNumElements * kElementSize;
+  Shape shape = ShapeUtil::MakeShape(S32, {kNumElements});
 
   // Use RoundUpTo to calculate the actual size needed for one buffer.
   const int64_t kAlignedSliceBytes =
@@ -114,8 +115,8 @@ ENTRY computation {
                                       kAlignedSliceBytes);
 
   CollectiveThunk::Buffer buffer = {/*element_count=*/kNumElements,
-                                    /*source_buffer=*/input_slice,
-                                    /*destination_buffer=*/input_slice,
+                                    /*source_buffer=*/{input_slice, shape},
+                                    /*destination_buffer=*/{input_slice, shape},
                                     /*source_memory_space=*/0,
                                     /*destination_memory_space=*/0};
 
@@ -186,6 +187,7 @@ ENTRY computation {
   using DataT = int32_t;
   constexpr int64_t kNumElements = 8;
   constexpr int64_t kAlignmentBytes = kXlaAllocatedBufferAlignBytes;
+  Shape shape = ShapeUtil::MakeShape(S32, {kNumElements});
 
   const int64_t kElementSize = sizeof(DataT);
   const int64_t kTotalDataBytes = kNumElements * kElementSize;
@@ -206,8 +208,8 @@ ENTRY computation {
 
   // Use designated initializers if possible, or format for clarity.
   CollectiveThunk::Buffer buffer = {/*element_count=*/kNumElements,
-                                    /*source_buffer=*/input_slice,
-                                    /*destination_buffer=*/input_slice,
+                                    /*source_buffer=*/{input_slice, shape},
+                                    /*destination_buffer=*/{input_slice, shape},
                                     /*source_memory_space=*/0,
                                     /*destination_memory_space=*/0};
 
