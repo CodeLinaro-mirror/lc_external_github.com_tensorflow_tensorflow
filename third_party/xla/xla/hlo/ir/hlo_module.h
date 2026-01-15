@@ -30,6 +30,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/base/attributes.h"
+#include "absl/base/macros.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
@@ -519,7 +520,13 @@ class HloModule {
           computation_id_to_id_remap_map);
 
   // Convert an HloModule to a proto.
-  HloModuleProto ToProto() const;
+  void ToProto(HloModuleProto* proto) const;
+
+  ABSL_DEPRECATE_AND_INLINE() HloModuleProto ToProto() const {
+    HloModuleProto proto;
+    ToProto(&proto);
+    return proto;
+  }
 
   // Converts an HloModuleProto to an HloModule. If preserve_instruction_ids is
   // true, the instruction ids in the proto will be preserved. Otherwise, the
@@ -541,7 +548,14 @@ class HloModule {
       bool preserve_instruction_ids = true);
 
   // Convert an HloModule to or from a proto that includes module configuration
-  HloModuleProtoWithConfig ToProtoWithConfig() const;
+  void ToProtoWithConfig(HloModuleProtoWithConfig* proto) const;
+
+  ABSL_DEPRECATE_AND_INLINE()
+  HloModuleProtoWithConfig ToProtoWithConfig() const {
+    HloModuleProtoWithConfig proto;
+    ToProtoWithConfig(&proto);
+    return proto;
+  }
   static absl::StatusOr<std::unique_ptr<HloModule>> CreateFromProtoWithConfig(
       const HloModuleProtoWithConfig& proto, bool prohibit_empty_literal = true,
       std::unique_ptr<CompilationEnvironments> comp_envs = nullptr,
