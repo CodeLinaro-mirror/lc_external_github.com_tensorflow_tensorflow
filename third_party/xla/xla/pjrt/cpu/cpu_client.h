@@ -88,6 +88,8 @@ absl::string_view PlatformVersion();
 
 }  // namespace cpu
 
+class PjRtCpuExecutable;
+
 class PjRtCpuClient final : public CommonPjRtClient {
  public:
   ~PjRtCpuClient() override;
@@ -132,6 +134,21 @@ class PjRtCpuClient final : public CommonPjRtClient {
 
   absl::StatusOr<std::unique_ptr<HloCostAnalysis>> GetHloCostAnalysis()
       const override;
+
+  // TODO(parkers): These should be moved to be fully client independent in
+  // cpu_pjrt_compiler.cc.
+  absl::StatusOr<std::pair<std::unique_ptr<PjRtCpuExecutable>,
+                           std::shared_ptr<DeviceAssignment>>>
+  CompileAndAssignDevices(const XlaComputation& computation,
+                          CompileOptions options);
+  absl::StatusOr<std::pair<std::unique_ptr<PjRtCpuExecutable>,
+                           std::shared_ptr<DeviceAssignment>>>
+  CompileAndAssignDevices(mlir::ModuleOp module, CompileOptions options);
+
+  absl::StatusOr<std::unique_ptr<PjRtExecutable>> Compile(
+      const XlaComputation& computation, CompileOptions options) override;
+  absl::StatusOr<std::unique_ptr<PjRtExecutable>> Compile(
+      mlir::ModuleOp module, CompileOptions options) override;
 
   absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileAndLoad(
       const XlaComputation& computation, CompileOptions options) override;
@@ -278,12 +295,18 @@ class PjRtCpuClient final : public CommonPjRtClient {
       int max_transpose_threads,
       std::unique_ptr<CpuTopologyDescription> topology);
 
-  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> CompileInternal(
+  absl::StatusOr<std::pair<std::unique_ptr<PjRtCpuExecutable>,
+                           std::shared_ptr<DeviceAssignment>>>
+  CompileInternal(
       const XlaComputation& computation,
       const std::vector<const Shape*>& argument_layout_pointers,
       LayoutCanonicalizationCallback layout_canonicalization_callback,
       CompileOptions options,
       const AotCompilationOptions* absl_nullable aot_options = nullptr);
+
+  absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>> LoadInternal(
+      std::shared_ptr<PjRtCpuExecutable> cpu_executable,
+      std::shared_ptr<DeviceAssignment> device_assignment);
 
   CpuDeviceMemory::Allocator* allocator() const { return allocator_.get(); }
 
@@ -491,9 +514,7 @@ class PjRtCpuLoadedExecutable final : public PjRtLoadedExecutable {
 
   ~PjRtCpuLoadedExecutable() override = default;
 
-  PjRtCpuExecutable* GetExecutable() const override {
-    return executable_.get();
-  }
+  PjRtCpuExecutable* GetExecutable() const { return executable_.get(); }
 
   PjRtCpuClient* client() const override { return client_; }
 
