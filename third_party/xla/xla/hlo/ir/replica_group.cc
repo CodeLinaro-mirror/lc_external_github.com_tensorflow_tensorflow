@@ -43,6 +43,25 @@ limitations under the License.
 
 namespace xla {
 
+std::optional<IotaReplicaGroupList>
+CollectiveDeviceListBase::MaybeConvertToIotaReplicaGroupList() const {
+  if (version() == CollectiveDeviceListVersion::kListOfLists) {
+    return std::nullopt;
+  }
+  if (typeid(*this) == typeid(IotaReplicaGroupList)) {
+    return static_cast<const IotaReplicaGroupList&>(*this);
+  }
+  if (typeid(*this) == typeid(CollectiveDeviceList)) {
+    return static_cast<const CollectiveDeviceList&>(*this)
+        .iota_replica_group_list();
+  }
+  if (typeid(*this) == typeid(MeshAxesReplicaGroupList)) {
+    return static_cast<const MeshAxesReplicaGroupList&>(*this)
+        .ToIotaReplicaGroupList();
+  }
+  return std::nullopt;
+}
+
 std::string ReplicaGroupsToString(
     absl::Span<const ReplicaGroup> replica_groups) {
   std::vector<std::string> replica_group_str;
@@ -294,7 +313,6 @@ IotaReplicaGroupList MeshAxesReplicaGroupList::ToIotaReplicaGroupList() const {
   CHECK(mesh_.device_assignment().iota().has_value());
   std::vector<int64_t> reshape_dims, reindexed_grouped_axes;
   std::tie(reshape_dims, reindexed_grouped_axes) = ComputeReindexedAxes();
-
   std::vector<int> transpose_perm;
   for (int64_t reshape_dim = 0; reshape_dim < reshape_dims.size();
        ++reshape_dim) {
