@@ -139,6 +139,12 @@ class NamedSharding {
  private:
   friend class HloSharding;
 
+  bool AllDimShardingsEmpty() const {
+    return absl::c_all_of(dim_shardings_, [](const DimensionSharding& s) {
+      return s.axes().empty();
+    });
+  }
+
   void InitShardedSizes() {
     sharded_sizes_.reserve(dim_shardings_.size());
     for (const DimensionSharding& dim_sharding : dim_shardings_) {
@@ -148,11 +154,7 @@ class NamedSharding {
 
   std::vector<DimensionSharding> CanonicalizedDimShardings(
       absl::Span<const DimensionSharding> dim_shardings) const {
-    bool all_dims_empty = absl::c_all_of(
-        dim_shardings,
-        [](const DimensionSharding& ds) { return ds.axes().empty(); });
-
-    if (all_dims_empty) {
+    if (AllDimShardingsEmpty()) {
       return {};
     }
     return std::vector<DimensionSharding>(dim_shardings.begin(),
@@ -177,11 +179,20 @@ class NamedSharding {
   }
 
   bool IsReplicated() const {
-    return !IsMaximal() &&
-           absl::c_all_of(
-               dim_shardings_,
-               [](const DimensionSharding& s) { return s.axes().empty(); }) &&
-           unreduced_axes_.empty();
+    return !IsMaximal() && AllDimShardingsEmpty() && unreduced_axes_.empty() &&
+           manual_axes_.empty();
+  }
+
+  bool IsManual() const {
+    return AllDimShardingsEmpty() && replicated_axes_.empty() &&
+           unreduced_axes_.empty() &&
+           mesh_.ContainsAllMeshAxesInOrder(manual_axes_);
+  }
+
+  bool IsUnreduced() const {
+    return AllDimShardingsEmpty() && replicated_axes_.empty() &&
+           manual_axes_.empty() &&
+           mesh_.ContainsAllMeshAxesInOrder(unreduced_axes_);
   }
 
   bool IsMaximal() const { return mesh_.IsMaximal(); }
