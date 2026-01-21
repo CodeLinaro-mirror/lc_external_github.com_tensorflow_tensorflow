@@ -694,7 +694,7 @@ tf_proto_library(
     srcs = ["copy_thunk.proto"],
     protodeps = [
         # keep sorted
-        "//xla/service:buffer_assignment_proto",
+        "//xla/service:shaped_slice_proto",
     ],
 )
 
@@ -712,6 +712,7 @@ cc_library(
         "//xla/hlo/ir:hlo",
         "//xla/runtime:buffer_use",
         "//xla/service:buffer_assignment",
+        "//xla/service:shaped_slice",
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:event",
         "//xla/stream_executor:stream",
