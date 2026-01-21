@@ -18,13 +18,15 @@ limitations under the License.
 #include <string>
 #include <utility>
 
+#include "absl/strings/str_replace.h"
 #include "xla/hlo/ir/hlo_computation.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/literal.h"
 #include "xla/literal_util.h"
 #include "xla/service/hlo_module_util.h"
-#include "xla/tests/hlo_test_base.h"
+#include "xla/tests/hlo_pjrt_interpreter_reference_mixin.h"
+#include "xla/tests/hlo_pjrt_test_base.h"
 #include "xla/tests/literal_test_util.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test.h"
@@ -32,7 +34,8 @@ limitations under the License.
 namespace xla {
 namespace {
 
-class TokenHloTest : public HloTestBase {};
+class TokenHloTest : public HloPjRtInterpreterReferenceMixin<HloPjRtTestBase> {
+};
 
 TEST_F(TokenHloTest, SingleTokenInstruction) {
   std::unique_ptr<HloModule> module = CreateNewVerifiedModule();
@@ -112,7 +115,7 @@ ENTRY %TokenInWhileLoop () -> s32[] {
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
                           CreateModuleFromString(module_string, debug_options));
 
-  EXPECT_TRUE(RunAndCompare(std::move(module), error_spec_));
+  EXPECT_TRUE(RunAndCompare(std::move(module), kDefaultErrorSpec));
 }
 
 TEST_F(TokenHloTest, TokenInConditional) {
@@ -146,9 +149,12 @@ ENTRY %TokenInConditional (param.3: pred[]) -> s32[] {
 
   {
     // True case.
+    std::string true_module_string = absl::StrReplaceAll(
+        module_string, {{"HloModule TokenInConditional",
+                         "HloModule TokenInConditional_True"}});
     TF_ASSERT_OK_AND_ASSIGN(
         std::unique_ptr<HloModule> module,
-        CreateModuleFromString(module_string, debug_options));
+        CreateModuleFromString(true_module_string, debug_options));
     auto arg = LiteralUtil::CreateR0<bool>(true);
     TF_ASSERT_OK_AND_ASSIGN(Literal result, Execute(std::move(module), {&arg}));
     EXPECT_EQ(42, result.Get<int32_t>({}));
@@ -156,9 +162,12 @@ ENTRY %TokenInConditional (param.3: pred[]) -> s32[] {
 
   {
     // False case.
+    std::string false_module_string = absl::StrReplaceAll(
+        module_string, {{"HloModule TokenInConditional",
+                         "HloModule TokenInConditional_False"}});
     TF_ASSERT_OK_AND_ASSIGN(
         std::unique_ptr<HloModule> module,
-        CreateModuleFromString(module_string, debug_options));
+        CreateModuleFromString(false_module_string, debug_options));
     auto arg = LiteralUtil::CreateR0<bool>(false);
     TF_ASSERT_OK_AND_ASSIGN(Literal result, Execute(std::move(module), {&arg}));
     EXPECT_EQ(7, result.Get<int32_t>({}));
