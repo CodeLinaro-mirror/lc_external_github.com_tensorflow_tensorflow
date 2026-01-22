@@ -34,8 +34,14 @@ namespace gpu {
 absl::StatusOr<std::unique_ptr<EmitterData>> GetEmitter(
     const HloModule& module, mlir::MLIRContext& mlir_context) {
   auto data = std::make_unique<EmitterData>();
-  data->fusion = DynCast<HloFusionInstruction>(
-      module.entry_computation()->root_instruction());
+  {
+    auto* inst = module.entry_computation()->root_instruction();
+    while (inst && (inst->opcode() == HloOpcode::kTuple ||
+                    inst->opcode() == HloOpcode::kGetTupleElement)) {
+      inst = inst->mutable_operand(0);
+    }
+    data->fusion = DynCast<HloFusionInstruction>(inst);
+  }
   TF_RET_CHECK(data->fusion != nullptr) << "Root instruction must be a fusion";
   data->device.emplace(TestGpuDeviceInfo::RTXA6000DeviceInfo());
   data->analysis.emplace(
