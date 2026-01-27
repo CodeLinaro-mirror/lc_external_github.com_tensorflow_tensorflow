@@ -399,6 +399,13 @@ message AllReduceStartThunkProto {
   bool is_async = 9;
 }
 
+message ReduceScatterStartThunkProto {
+  optional uint64 async_events_unique_id = 1;
+  CollectiveConfigProto collective_config = 2;
+  repeated CollectiveBufferProto buffers = 3;
+  ReductionKindProto reduction_kind = 4;
+}
+
 message AllToAllStartThunkProto {
   optional uint64 async_events_unique_id = 1;
   CollectiveConfigProto collective_config = 2;
@@ -515,6 +522,7 @@ message ThunkProto {
     CollectiveBroadcastStartThunkProto collective_broadcast_start_thunk = 45;
     CollectiveGroupThunkProto collective_group_thunk = 46;
     DynamicMemcpyThunkProto dynamic_memcpy_thunk = 47;
+    ReduceScatterStartThunkProto reduce_scatter_start_thunk = 48;
   }
 }
 
