@@ -119,7 +119,7 @@ enum CustomCallApiVersion {
 }
 
 // Serialization of HloInstruction.
-// Next ID: 97
+// Next ID: 98
 message HloInstructionProto {
   reserved 10;
   reserved "parameter_name";
@@ -414,6 +414,9 @@ message HloInstructionProto {
 
   // Whether the scan instruction is associative.
   TriState is_associative = 96;
+
+  // Conv type (fprop, dgrad, wgrad)
+  string conv_kind = 97;
 }
 
 // Serialization of HloComputation.

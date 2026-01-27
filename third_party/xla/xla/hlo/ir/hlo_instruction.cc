@@ -980,6 +980,20 @@ absl::StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
           std::max<int64_t>(proto.feature_group_count(), 1),
           std::max<int64_t>(proto.batch_group_count(), 1), proto.window(),
           proto.convolution_dimension_numbers(), precision_config);
+      if (!proto.conv_kind().empty()) {
+        HloConvolutionInstruction::ConvKind conv_kind;
+        if (proto.conv_kind() == "fprop") {
+          conv_kind = HloConvolutionInstruction::ConvKind::FPROP;
+        } else if (proto.conv_kind() == "wgrad") {
+          conv_kind = HloConvolutionInstruction::ConvKind::WGRAD;
+        } else if (proto.conv_kind() == "dgrad") {
+          conv_kind = HloConvolutionInstruction::ConvKind::DGRAD;
+        } else {
+          conv_kind = HloConvolutionInstruction::ConvKind::UNSET;
+        }
+        Cast<HloConvolutionInstruction>(instruction.get())
+            ->set_conv_kind(conv_kind);
+      }
       break;
     }
     case HloOpcode::kReduceWindow:

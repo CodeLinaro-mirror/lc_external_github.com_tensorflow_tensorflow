@@ -109,6 +109,21 @@ void PrintPrecisionConfig(HloInstruction::AttributePrinter& printer,
   }
 }
 
+std::string ConvKindToString(HloConvolutionInstruction::ConvKind kind) {
+  switch (kind) {
+    case HloConvolutionInstruction::ConvKind::FPROP:
+      return "fprop";
+    case HloConvolutionInstruction::ConvKind::WGRAD:
+      return "wgrad";
+    case HloConvolutionInstruction::ConvKind::DGRAD:
+      return "dgrad";
+    case HloConvolutionInstruction::ConvKind::UNSET:
+      return "unset";
+    default:
+      return absl::StrCat("unknown(", static_cast<int>(kind), ")");
+  }
+}
+
 void SetThreadName(HloComputation* called_computation,
                    absl::string_view execution_thread) {
   called_computation->SetExecutionThread(execution_thread);
