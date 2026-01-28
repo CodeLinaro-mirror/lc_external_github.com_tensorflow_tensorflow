@@ -22,6 +22,7 @@ limitations under the License.
 #include "mlir/IR/Builders.h"  // from @llvm-project
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
 #include "mlir/IR/BuiltinTypeInterfaces.h"  // from @llvm-project
+#include "mlir/IR/Matchers.h"  // from @llvm-project
 #include "mlir/IR/PatternMatch.h"  // from @llvm-project
 #include "mlir/IR/Value.h"  // from @llvm-project
 #include "mlir/IR/ValueRange.h"  // from @llvm-project
@@ -70,20 +71,154 @@ class LegalizeSliceOp : public OpConversionPattern<mhlo::SliceOp> {
   LogicalResult matchAndRewrite(
       mhlo::SliceOp slice_op, OpAdaptor adaptor,
       ConversionPatternRewriter& rewriter) const final {
-    auto begin = arith::ConstantOp::create(rewriter, slice_op.getLoc(),
-                                           slice_op.getStartIndices());
-    auto end = arith::ConstantOp::create(rewriter, slice_op.getLoc(),
-                                         slice_op.getLimitIndices());
-    auto strides = arith::ConstantOp::create(rewriter, slice_op.getLoc(),
-                                             slice_op.getStrides());
+    auto input = adaptor.getOperand();
+    auto input_type = mlir::cast<ShapedType>(input.getType());
+    if (!input_type.hasStaticShape()) {
+      return rewriter.notifyMatchFailure(slice_op,
+                                         "Input must have static shape.");
+    }
+
+    auto start_indices_attr = UnrollI64Splat(slice_op.getStartIndices());
+    auto limit_indices_attr = UnrollI64Splat(slice_op.getLimitIndices());
+    auto strides_attr = UnrollI64Splat(slice_op.getStrides());
+
+    SmallVector<int64_t> start_indices(start_indices_attr.begin(),
+                                       start_indices_attr.end());
+    SmallVector<int64_t> limit_indices(limit_indices_attr.begin(),
+                                       limit_indices_attr.end());
+    SmallVector<int64_t> strides(strides_attr.begin(), strides_attr.end());
+
+    auto begin_const = arith::ConstantOp::create(
+        rewriter, slice_op.getLoc(), rewriter.getI64TensorAttr(start_indices));
+    auto limit_const = arith::ConstantOp::create(
+        rewriter, slice_op.getLoc(), rewriter.getI64TensorAttr(limit_indices));
+    auto strides_const = arith::ConstantOp::create(
+        rewriter, slice_op.getLoc(), rewriter.getI64TensorAttr(strides));
+
     auto zero = rewriter.getIntegerAttr(rewriter.getI32Type(), 0);
     auto no_offset = rewriter.getBoolAttr(false);
 
     rewriter.replaceOpWithNewOp<TFL::StridedSliceOp>(
-        slice_op, slice_op.getType(), slice_op.getOperand(),
-        BuildTFLCastOp(rewriter, begin), BuildTFLCastOp(rewriter, end),
-        BuildTFLCastOp(rewriter, strides), zero, zero, zero, zero, zero,
+        slice_op, slice_op.getType(), input,
+        BuildTFLCastOp(rewriter, begin_const),
+        BuildTFLCastOp(rewriter, limit_const),
+        BuildTFLCastOp(rewriter, strides_const), zero, zero, zero, zero, zero,
         no_offset);
+
+    return success();
+  }
+};
+
+class CollapseStridedSliceRank : public OpRewritePattern<TFL::StridedSliceOp> {
+ public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TFL::StridedSliceOp op,
+                                PatternRewriter& rewriter) const final {
+    auto input = op.getInput();
+    auto input_type = mlir::cast<ShapedType>(input.getType());
+    if (!input_type.hasStaticShape() || input_type.getRank() <= 5) {
+      return rewriter.notifyMatchFailure(op, "Rank <= 5 or dynamic shape.");
+    }
+
+    // Only handle simple strided slices (no masks).
+    if (op.getBeginMask() != 0 || op.getEndMask() != 0 ||
+        op.getEllipsisMask() != 0 || op.getNewAxisMask() != 0 ||
+        op.getShrinkAxisMask() != 0) {
+      return rewriter.notifyMatchFailure(op, "Has masks.");
+    }
+
+    DenseIntElementsAttr start_indices_attr, limit_indices_attr, strides_attr;
+    if (!matchPattern(op.getBegin(), m_Constant(&start_indices_attr)) ||
+        !matchPattern(op.getEnd(), m_Constant(&limit_indices_attr)) ||
+        !matchPattern(op.getStrides(), m_Constant(&strides_attr))) {
+      return rewriter.notifyMatchFailure(op, "Indices are not constant.");
+    }
+
+    SmallVector<int64_t> start_indices(
+        llvm::map_range(start_indices_attr.getValues<APInt>(),
+                        [](const APInt& val) { return val.getSExtValue(); }));
+    SmallVector<int64_t> limit_indices(
+        llvm::map_range(limit_indices_attr.getValues<APInt>(),
+                        [](const APInt& val) { return val.getSExtValue(); }));
+    SmallVector<int64_t> strides(
+        llvm::map_range(strides_attr.getValues<APInt>(),
+                        [](const APInt& val) { return val.getSExtValue(); }));
+    SmallVector<int64_t> input_shape(input_type.getShape().begin(),
+                                     input_type.getShape().end());
+
+    // Collapse dimensions if rank > 5.
+    while (input_shape.size() > 5) {
+      bool merged = false;
+      for (int i = 0; i < static_cast<int>(input_shape.size()) - 1; ++i) {
+        if (strides[i] == 1 && strides[i + 1] == 1 &&
+            start_indices[i + 1] == 0 &&
+            limit_indices[i + 1] == input_shape[i + 1]) {
+          // Merge i and i+1
+          start_indices[i] = start_indices[i] * input_shape[i + 1];
+          limit_indices[i] = limit_indices[i] * input_shape[i + 1];
+          input_shape[i] = input_shape[i] * input_shape[i + 1];
+
+          start_indices.erase(start_indices.begin() + i + 1);
+          limit_indices.erase(limit_indices.begin() + i + 1);
+          input_shape.erase(input_shape.begin() + i + 1);
+          strides.erase(strides.begin() + i + 1);
+          merged = true;
+          break;
+        }
+      }
+      if (!merged) break;
+    }
+
+    if (input_shape.size() > 5) {
+      return rewriter.notifyMatchFailure(
+          op, "Input rank > 5 and could not be collapsed.");
+    }
+
+    auto collapsed_type =
+        RankedTensorType::get(input_shape, input_type.getElementType());
+    Value collapsed_input = TFL::ReshapeOp::create(
+        rewriter, op.getLoc(), collapsed_type, input,
+        arith::ConstantOp::create(
+            rewriter, op.getLoc(),
+            rewriter.getI32TensorAttr(
+                SmallVector<int32_t>(input_shape.begin(), input_shape.end()))));
+
+    auto begin_const = arith::ConstantOp::create(
+        rewriter, op.getLoc(), rewriter.getI64TensorAttr(start_indices));
+    auto limit_const = arith::ConstantOp::create(
+        rewriter, op.getLoc(), rewriter.getI64TensorAttr(limit_indices));
+    auto strides_const = arith::ConstantOp::create(
+        rewriter, op.getLoc(), rewriter.getI64TensorAttr(strides));
+
+    auto zero = rewriter.getIntegerAttr(rewriter.getI32Type(), 0);
+    auto no_offset = rewriter.getBoolAttr(false);
+
+    SmallVector<int64_t> intermediate_result_shape;
+    for (int i = 0; i < static_cast<int>(input_shape.size()); ++i) {
+      intermediate_result_shape.push_back(
+          (limit_indices[i] - start_indices[i] + strides[i] - 1) / strides[i]);
+    }
+    auto intermediate_type = RankedTensorType::get(intermediate_result_shape,
+                                                   input_type.getElementType());
+
+    Value slice_res = TFL::StridedSliceOp::create(
+        rewriter, op.getLoc(), intermediate_type, collapsed_input,
+        BuildTFLCastOp(rewriter, begin_const),
+        BuildTFLCastOp(rewriter, limit_const),
+        BuildTFLCastOp(rewriter, strides_const), zero, zero, zero, zero, zero,
+        no_offset);
+
+    auto result_type = mlir::cast<ShapedType>(op.getType());
+    auto reshape_op = TFL::ReshapeOp::create(
+        rewriter, op.getLoc(), op.getType(), slice_res,
+        arith::ConstantOp::create(
+            rewriter, op.getLoc(),
+            rewriter.getI32TensorAttr(
+                SmallVector<int32_t>(result_type.getShape().begin(),
+                                     result_type.getShape().end()))));
+    rewriter.replaceOp(op, reshape_op);
+
     return success();
   }
 };
@@ -121,8 +256,10 @@ LogicalResult CastSliceIndicesToSignless::matchAndRewrite(
     casted_start_inds.push_back(casted_start_ind_opr.getResult());
   }
 
-  rewriter.replaceOpWithNewOp<mhlo::DynamicSliceOp>(
-      op, op.getOperand(), casted_start_inds, op.getSliceSizes());
+  auto new_op = mhlo::DynamicSliceOp::create(
+      rewriter, op.getLoc(), op.getType(), op.getOperand(), casted_start_inds,
+      op.getSliceSizes());
+  rewriter.replaceOp(op, new_op);
 
   return success();
 }
@@ -192,8 +329,10 @@ LogicalResult LegalizeDynamicSliceOp::matchAndRewrite(
   auto slice_sizes_cst =
       arith::ConstantOp::create(rewriter, op->getLoc(), op.getSliceSizes());
 
-  rewriter.replaceOpWithNewOp<TFL::SliceOp>(op, op.getType(), op.getOperand(),
-                                            packed_indices, slice_sizes_cst);
+  auto slice_op =
+      TFL::SliceOp::create(rewriter, op.getLoc(), op.getType(), op.getOperand(),
+                           packed_indices, slice_sizes_cst);
+  rewriter.replaceOp(op, slice_op);
 
   return success();
 }
@@ -230,12 +369,13 @@ LogicalResult LegalizeRealDynamicSliceOp::matchAndRewrite(
   auto zero = rewriter.getIntegerAttr(rewriter.getI32Type(), 0);
   auto no_offset = rewriter.getBoolAttr(false);
 
-  rewriter.replaceOpWithNewOp<TFL::StridedSliceOp>(
-      op, op.getType(), op.getOperand(),
+  auto ss_op = TFL::StridedSliceOp::create(
+      rewriter, op.getLoc(), op.getType(), op.getOperand(),
       BuildTFLCastOp(rewriter, op.getStartIndices()),
       BuildTFLCastOp(rewriter, op.getLimitIndices()),
       BuildTFLCastOp(rewriter, op.getStrides()), zero, zero, zero, zero, zero,
       no_offset);
+  rewriter.replaceOp(op, ss_op);
   return success();
 };
 
@@ -257,8 +397,10 @@ LogicalResult LegalizeDynamicUpdateSliceOp::matchAndRewrite(
     mhlo::DynamicUpdateSliceOp op, OpAdaptor adaptor,
     ConversionPatternRewriter& rewriter) const {
   auto packed_indices = PackScalarIndices(op.getStartIndices(), rewriter);
-  rewriter.replaceOpWithNewOp<TFL::DynamicUpdateSliceOp>(
-      op, op.getType(), op.getOperand(), op.getUpdate(), packed_indices);
+  auto dus_op = TFL::DynamicUpdateSliceOp::create(
+      rewriter, op.getLoc(), op.getType(), op.getOperand(), op.getUpdate(),
+      packed_indices);
+  rewriter.replaceOp(op, dus_op);
   return success();
 };
 
@@ -268,11 +410,16 @@ void PopulateLegalizeSlicePatterns(MLIRContext* ctx,
                                    RewritePatternSet& patterns,
                                    ConversionTarget& target) {
   patterns.add<LegalizeSliceOp, LegalizeDynamicSliceOp,
-               LegalizeDynamicUpdateSliceOp, LegalizeRealDynamicSliceOp>(ctx);
+               LegalizeDynamicUpdateSliceOp, LegalizeRealDynamicSliceOp,
+               CollapseStridedSliceRank>(ctx);
 
   target.addIllegalOp<mhlo::SliceOp, mhlo::DynamicUpdateSliceOp,
                       mhlo::RealDynamicSliceOp>();
   target.addDynamicallyLegalOp<mhlo::DynamicSliceOp>(IsDynamicSliceLegal);
+  target.addDynamicallyLegalOp<TFL::StridedSliceOp>([](TFL::StridedSliceOp op) {
+    auto input_type = mlir::cast<ShapedType>(op.getInput().getType());
+    return input_type.getRank() <= 5;
+  });
 }
 
 void PopulatePrepareSlicePatterns(MLIRContext* ctx,

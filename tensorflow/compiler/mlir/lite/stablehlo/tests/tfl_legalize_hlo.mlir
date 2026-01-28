@@ -2307,6 +2307,39 @@ func.func @slice(%arg0: tensor<1x4672xf32>) -> tensor<1x519xf32> {
 
 // -----
 
+// CHECK-LABEL: rank5_slice
+func.func @rank5_slice(%arg0: tensor<16x192x48x1x2xf32>) -> tensor<16x192x48x1x1xf32> {
+  // CHECK: %[[CST:.*]] = arith.constant dense<0> : tensor<5xi64>
+  // CHECK: %[[CST_0:.*]] = arith.constant dense<[16, 192, 48, 1, 1]> : tensor<5xi64>
+  // CHECK: %[[CST_1:.*]] = arith.constant dense<1> : tensor<5xi64>
+  // CHECK: %[[BEGIN:.*]] = "tfl.cast"(%[[CST]]) : (tensor<5xi64>) -> tensor<5xi32>
+  // CHECK: %[[END:.*]] = "tfl.cast"(%[[CST_0]]) : (tensor<5xi64>) -> tensor<5xi32>
+  // CHECK: %[[STRIDES:.*]] = "tfl.cast"(%[[CST_1]]) : (tensor<5xi64>) -> tensor<5xi32>
+  // CHECK: "tfl.strided_slice"(%arg0, %[[BEGIN]], %[[END]], %[[STRIDES]])
+  %0 = "mhlo.slice"(%arg0) {
+    start_indices = dense<0> : tensor<5xi64>,
+    limit_indices = dense<[16, 192, 48, 1, 1]> : tensor<5xi64>,
+    strides = dense<1> : tensor<5xi64>
+  } : (tensor<16x192x48x1x2xf32>) -> tensor<16x192x48x1x1xf32>
+  return %0 : tensor<16x192x48x1x1xf32>
+}
+
+// -----
+
+// CHECK-LABEL: rank6_slice_collapse
+func.func @rank6_slice_collapse(%arg0: tensor<1x16x192x48x1x2xf32>) -> tensor<1x16x192x48x1x1xf32> {
+  // CHECK: %[[RESHAPE_IN:.*]] = "tfl.reshape"(%arg0, %{{.*}}) : (tensor<1x16x192x48x1x2xf32>, tensor<5xi32>) -> tensor<16x192x48x1x2xf32>
+  // CHECK: %[[SLICE:.*]] = "tfl.strided_slice"(%[[RESHAPE_IN]], %{{.*}}, %{{.*}}, %{{.*}}) {{.*}} (tensor<16x192x48x1x2xf32>, tensor<5xi32>, tensor<5xi32>, tensor<5xi32>) -> tensor<16x192x48x1x1xf32>
+  // CHECK: %[[RESHAPE_OUT:.*]] = "tfl.reshape"(%[[SLICE]], %{{.*}}) : (tensor<16x192x48x1x1xf32>, tensor<6xi32>) -> tensor<1x16x192x48x1x1xf32>
+  %cst = arith.constant dense<0> : tensor<6xi32>
+  %cst_0 = arith.constant dense<[1, 16, 192, 48, 1, 1]> : tensor<6xi32>
+  %cst_1 = arith.constant dense<1> : tensor<6xi32>
+  %0 = "tfl.strided_slice"(%arg0, %cst, %cst_0, %cst_1) <{begin_mask = 0 : i32, ellipsis_mask = 0 : i32, end_mask = 0 : i32, new_axis_mask = 0 : i32, offset = false, shrink_axis_mask = 0 : i32}> : (tensor<1x16x192x48x1x2xf32>, tensor<6xi32>, tensor<6xi32>, tensor<6xi32>) -> tensor<1x16x192x48x1x1xf32>
+  return %0 : tensor<1x16x192x48x1x1xf32>
+}
+
+// -----
+
 //===----------------------------------------------------------------------===//
 // mhlo.real_dynamic_slice
 //===----------------------------------------------------------------------===//
