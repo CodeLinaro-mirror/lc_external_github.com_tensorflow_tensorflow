@@ -903,7 +903,10 @@ cc_library(
 xla_test(
     name = "fission_backend_test",
     srcs = ["fission_backend_test.cc"],
-    backends = ["h100"],
+    backends = [
+        "a100",
+        "h100",
+    ],
     tags = ["cuda-only"],
     use_legacy_runtime = True,
     deps = [
@@ -916,6 +919,7 @@ xla_test(
         "//xla/backends/autotuner:codegen_backend",
         "//xla/hlo/ir:hlo",
         "//xla/hlo/pass:hlo_pass_pipeline",
+        "//xla/hlo/testlib:filecheck",
         "//xla/hlo/testlib:hlo_hardware_independent_test_base",
         "//xla/service:compiler",
         "//xla/service:executable",
@@ -928,6 +932,7 @@ xla_test(
         "//xla/service/gpu/transforms:scaled_dot_rewriter",
         "//xla/stream_executor:device_description",
         "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/lib/core:status_test_util",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
