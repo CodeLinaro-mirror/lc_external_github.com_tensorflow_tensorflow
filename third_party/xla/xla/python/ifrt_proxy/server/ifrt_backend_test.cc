@@ -1190,8 +1190,6 @@ TEST_P(IfrtBackendHandlerTest, CompileSuccess) {
   EXPECT_CALL(*executable, addressable_devices())
       .WillOnce(Return(absl::MakeSpan(addressable_devices)));
   EXPECT_CALL(*executable, Fingerprint()).WillOnce(Return("fingerprint"));
-  EXPECT_CALL(*executable, GetReadyFuture())
-      .WillOnce(Return(tsl::Future<>(absl::OkStatus())));
 
   TF_ASSERT_OK_AND_ASSIGN(CompileResponse response,
                           CompileTestLoadedExecutable(std::move(executable)));
@@ -1862,8 +1860,6 @@ TEST_P(IfrtBackendHandlerTest, LoadedExecutableMetadataWithMpmd) {
         .WillByDefault(Return(absl::Span<xla::ifrt::Device* const>({})));
     ON_CALL(*executable, Fingerprint())
         .WillByDefault(Return("mpmd_fingerprint"));
-    ON_CALL(*executable, GetReadyFuture())
-        .WillByDefault(Return(tsl::Future<>(absl::OkStatus())));
 
     ON_CALL(*executable, GetParameterShardings())
         .WillByDefault(Return(std::nullopt));
@@ -1927,8 +1923,6 @@ TEST_P(IfrtBackendHandlerTest, LoadedExecutableMpmdCostAnalysis) {
         .WillByDefault(Return(absl::Span<xla::ifrt::Device* const>()));
     ON_CALL(*executable, Fingerprint())
         .WillByDefault(Return("mpmd_fingerprint"));
-    ON_CALL(*executable, GetReadyFuture())
-        .WillByDefault(Return(tsl::Future<>(absl::OkStatus())));
 
     absl::flat_hash_map<std::string, xla::ifrt::AttributeMap> cost_analysis;
     xla::ifrt::AttributeMap mesh1_attrs(xla::ifrt::AttributeMap::Map{
@@ -1977,8 +1971,6 @@ TEST_P(IfrtBackendHandlerTest, CompileSuccessWithMpmdAddressableDevices) {
   ON_CALL(*executable, addressable_devices())
       .WillByDefault(Return(absl::Span<xla::ifrt::Device* const>()));
   ON_CALL(*executable, Fingerprint()).WillByDefault(Return("mpmd_fingerprint"));
-  ON_CALL(*executable, GetReadyFuture())
-      .WillByDefault(Return(tsl::Future<>(absl::OkStatus())));
 
   std::vector<xla::ifrt::Device*> mesh1_devices = {mock_devices_[0].get()};
   std::vector<xla::ifrt::Device*> mesh2_devices = {mock_devices_[1].get()};

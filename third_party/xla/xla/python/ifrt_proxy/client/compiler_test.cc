@@ -188,8 +188,7 @@ TEST_F(CompilerTest, Compile) {
   ASSERT_TRUE(TextFormat::ParseFromString(R"pb(
                                             response_metadata {
                                               status {
-                                                code: 2  # UNKNOWN
-                                                message: "injected error"
+                                                code: 0  # OK
                                               }
                                             }
                                           )pb",
@@ -214,9 +213,6 @@ TEST_F(CompilerTest, Compile) {
               ElementsAre(&devices[0], &devices[1]));
   EXPECT_THAT(executable->Fingerprint(),
               absl_testing::IsOkAndHolds(Optional(std::string("fingerprint"))));
-  EXPECT_THAT(
-      executable->GetReadyFuture().Await(),
-      absl_testing::StatusIs(absl::StatusCode::kUnknown, "injected error"));
 
   EXPECT_EQ(requests_queue.Pop().check_future_request().future_handle(), 5678);
 }
