@@ -38,6 +38,7 @@
 #include "xla/python/ifrt/program.h"
 #include "xla/python/ifrt/serdes.h"
 #include "xla/python/ifrt/topology.h"
+#include "xla/python/ifrt/user_context.h"
 #include "xla/python/ifrt/user_context_status_util.h"
 #include "xla/python/ifrt_proxy/client/executable.h"
 #include "xla/python/ifrt_proxy/client/mpmd_executable.h"
@@ -131,102 +132,117 @@ tsl::Future<xla::ifrt::LoadedExecutableRef> Compiler::CompileAndLoad(
   TF_ASSIGN_OR_RETURN(*request->mutable_compile_options(),
                       Serialize(*options, std::move(serialize_options)));
 
-  // TODO(b/266635130): Avoid blocking the caller.
-  TF_ASSIGN_OR_RETURN(std::shared_ptr<CompileResponse> response,
-                      rpc_helper_->Compile(std::move(request)).Await());
+  return rpc_helper_->Compile(std::move(request))
+      .Map([client = client_, rpc_helper = rpc_helper_,
+            loaded_host_callbacks = std::move(loaded_host_callbacks),
+            user_context = xla::ifrt::UserContextScope::current()](
+               std::shared_ptr<CompileResponse> response) mutable
+               -> absl::StatusOr<xla::ifrt::LoadedExecutableRef> {
+        xla::ifrt::UserContextScope user_context_scope(user_context);
 
-  std::vector<xla::ifrt::Device*> addressable_devices;
-  addressable_devices.reserve(response->addressable_device_ids_size());
-  for (const int32_t device_id : response->addressable_device_ids()) {
-    TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
-                        client_->LookupDevice(DeviceId(device_id)));
-    addressable_devices.push_back(device);
-  }
-  absl::StatusOr<
-      absl::flat_hash_map<std::string, std::vector<xla::ifrt::Device*>>>
-      mpmd_addressable_devices;
-  bool is_mpmd_executable = false;
+        std::vector<xla::ifrt::Device*> addressable_devices;
+        addressable_devices.reserve(response->addressable_device_ids_size());
+        for (const int32_t device_id : response->addressable_device_ids()) {
+          TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
+                              client->LookupDevice(DeviceId(device_id)));
+          addressable_devices.push_back(device);
+        }
+        absl::StatusOr<
+            absl::flat_hash_map<std::string, std::vector<xla::ifrt::Device*>>>
+            mpmd_addressable_devices;
+        bool is_mpmd_executable = false;
 
-  if (response->has_mpmd_addressable_devices()) {
-    is_mpmd_executable = true;
-    mpmd_addressable_devices =
-        absl::flat_hash_map<std::string, std::vector<xla::ifrt::Device*>>();
-    for (const auto& [name, devices_proto] :
-         response->mpmd_addressable_devices().mpmd_addressable_devices()) {
-      std::vector<xla::ifrt::Device*> current_devices;
-      current_devices.reserve(devices_proto.mpmd_addressable_device_ids_size());
+        if (response->has_mpmd_addressable_devices()) {
+          is_mpmd_executable = true;
+          mpmd_addressable_devices =
+              absl::flat_hash_map<std::string,
+                                  std::vector<xla::ifrt::Device*>>();
+          for (const auto& [name, devices_proto] :
+               response->mpmd_addressable_devices()
+                   .mpmd_addressable_devices()) {
+            std::vector<xla::ifrt::Device*> current_devices;
+            current_devices.reserve(
+                devices_proto.mpmd_addressable_device_ids_size());
 
-      for (const auto& device_id :
-           devices_proto.mpmd_addressable_device_ids()) {
-        TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
-                            client_->LookupDevice(DeviceId(device_id)));
-        current_devices.push_back(device);
-      }
-      mpmd_addressable_devices->insert({name, std::move(current_devices)});
-    }
-  } else if (response->has_mpmd_addressable_devices_error()) {
-    is_mpmd_executable = true;
-    mpmd_addressable_devices = xla::ifrt::ReattachUserContextRefs(
-        tsl::StatusFromProto(response->mpmd_addressable_devices_error()));
-  }
+            for (const auto& device_id :
+                 devices_proto.mpmd_addressable_device_ids()) {
+              TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
+                                  client->LookupDevice(DeviceId(device_id)));
+              current_devices.push_back(device);
+            }
+            mpmd_addressable_devices->insert(
+                {name, std::move(current_devices)});
+          }
+        } else if (response->has_mpmd_addressable_devices_error()) {
+          is_mpmd_executable = true;
+          mpmd_addressable_devices = xla::ifrt::ReattachUserContextRefs(
+              tsl::StatusFromProto(response->mpmd_addressable_devices_error()));
+        }
 
-  absl::StatusOr<std::optional<std::string>> fingerprint;
-  switch (response->fingerprint_case()) {
-    case CompileResponse::kFingerprintValue:
-      fingerprint = response->fingerprint_value();
-      break;
-    case CompileResponse::kFingerprintError:
-      fingerprint = xla::ifrt::ReattachUserContextRefs(
-          tsl::StatusFromProto(response->fingerprint_error()));
-      break;
-    default:
-      fingerprint = std::nullopt;
-      break;
-  }
+        absl::StatusOr<std::optional<std::string>> fingerprint;
+        switch (response->fingerprint_case()) {
+          case CompileResponse::kFingerprintValue:
+            fingerprint = response->fingerprint_value();
+            break;
+          case CompileResponse::kFingerprintError:
+            fingerprint = xla::ifrt::ReattachUserContextRefs(
+                tsl::StatusFromProto(response->fingerprint_error()));
+            break;
+          default:
+            fingerprint = std::nullopt;
+            break;
+        }
 
-  tsl::Future<> ready_future =
-      rpc_helper_->CheckFuture(response->ready_future_handle());
+        tsl::Future<> ready_future;
+        if (response->has_ready_future_handle()) {
+          // Query the ready future even if we need one in order to avoid
+          // leaking the ready future.
+          ready_future =
+              rpc_helper->CheckFuture(response->ready_future_handle());
+        }
 
-  std::vector<uint64_t> loaded_host_callback_handles(
-      response->loaded_host_callback_handles().begin(),
-      response->loaded_host_callback_handles().end());
+        std::vector<uint64_t> loaded_host_callback_handles(
+            response->loaded_host_callback_handles().begin(),
+            response->loaded_host_callback_handles().end());
 
-  std::vector<xla::ifrt::Device*> devices;
-  if (rpc_helper_->protocol_version() < protocol_version::kExecutableDevices) {
-    devices.reserve(response->addressable_device_ids_size());
-    for (const int32_t device_id : response->addressable_device_ids()) {
-      TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
-                          client_->LookupDevice(DeviceId(device_id)));
-      devices.push_back(device);
-    }
-  } else {
-    devices.reserve(response->device_ids_size());
-    for (const int32_t device_id : response->device_ids()) {
-      TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
-                          client_->LookupDevice(DeviceId(device_id)));
-      devices.push_back(device);
-    }
-  }
-  std::optional<DeviceListRef> device_list;
-  if (!devices.empty()) {
-    TF_ASSIGN_OR_RETURN(device_list, client_->MakeDeviceList(devices));
-  }
+        std::vector<xla::ifrt::Device*> devices;
+        if (rpc_helper->protocol_version() <
+            protocol_version::kExecutableDevices) {
+          devices.reserve(response->addressable_device_ids_size());
+          for (const int32_t device_id : response->addressable_device_ids()) {
+            TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
+                                client->LookupDevice(DeviceId(device_id)));
+            devices.push_back(device);
+          }
+        } else {
+          devices.reserve(response->device_ids_size());
+          for (const int32_t device_id : response->device_ids()) {
+            TF_ASSIGN_OR_RETURN(xla::ifrt::Device* const device,
+                                client->LookupDevice(DeviceId(device_id)));
+            devices.push_back(device);
+          }
+        }
+        std::optional<DeviceListRef> device_list;
+        if (!devices.empty()) {
+          TF_ASSIGN_OR_RETURN(device_list, client->MakeDeviceList(devices));
+        }
 
-  if (is_mpmd_executable) {
-    return std::make_unique<MpmdLoadedExecutable>(
-        client_, rpc_helper_, response->loaded_executable_handle(),
-        response->name(), response->num_devices(), device_list,
-        std::move(addressable_devices), std::move(mpmd_addressable_devices),
-        std::move(fingerprint), std::move(ready_future),
-        std::move(loaded_host_callbacks),
-        std::move(loaded_host_callback_handles));
-  }
-  return std::make_unique<LoadedExecutable>(
-      client_, rpc_helper_, response->loaded_executable_handle(),
-      response->name(), response->num_devices(), device_list,
-      std::move(addressable_devices), std::move(fingerprint),
-      std::move(ready_future), std::move(loaded_host_callbacks),
-      std::move(loaded_host_callback_handles));
+        if (is_mpmd_executable) {
+          return std::make_unique<MpmdLoadedExecutable>(
+              client, rpc_helper, response->loaded_executable_handle(),
+              response->name(), response->num_devices(), device_list,
+              std::move(addressable_devices),
+              std::move(mpmd_addressable_devices), std::move(fingerprint),
+              std::move(loaded_host_callbacks),
+              std::move(loaded_host_callback_handles));
+        }
+        return std::make_unique<LoadedExecutable>(
+            client, rpc_helper, response->loaded_executable_handle(),
+            response->name(), response->num_devices(), device_list,
+            std::move(addressable_devices), std::move(fingerprint),
+            std::move(loaded_host_callbacks),
+            std::move(loaded_host_callback_handles));
+      });
 }
 
 tsl::Future<xla::ifrt::ExecutableRef> Compiler::Compile(

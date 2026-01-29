@@ -369,6 +369,7 @@ cc_library(
         "//xla/pjrt:host_callback",
         "//xla/python/ifrt",
         "//xla/python/ifrt:serdes",
+        "//xla/python/ifrt:user_context",
         "//xla/python/ifrt:user_context_status_util",
         "//xla/python/ifrt_proxy/common:ifrt_service_proto_cc",
         "//xla/python/ifrt_proxy/common:versions",
