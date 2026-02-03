@@ -472,6 +472,7 @@ class MsaAlgorithm : public GlobalDecreasingSizeBestFitHeap<HloValue> {
     MemorySpace memory_space;
     int64_t time;
     AliasedOffset* offset = nullptr;
+    std::string message = "";
 
     bool equals_ignoring_time(const RequiredMemoryAssignment& other) const {
       return memory_space == other.memory_space && offset == other.offset;
@@ -940,7 +941,8 @@ class MsaAlgorithm : public GlobalDecreasingSizeBestFitHeap<HloValue> {
   // Propagates aliased required assignment for a given position.
   void AddAliasedRequiredAssignment(const HloInstruction* instruction,
                                     ShapeIndex index,
-                                    const Allocation* aliased_allocation);
+                                    const Allocation* aliased_allocation,
+                                    std::string message = "");
 
   // This sets a required assignment. CHECK fails if there is a conflicting
   // required assignment at the same time.
@@ -948,18 +950,22 @@ class MsaAlgorithm : public GlobalDecreasingSizeBestFitHeap<HloValue> {
                              const HloInstruction* instruction,
                              MemorySpace memory_space, int64_t time,
                              AliasedOffset* offset = nullptr,
-                             bool add_to_pending = true);
+                             bool add_to_pending = true,
+                             std::string message = "");
   void AddRequiredAssignment(const HloInstruction* instruction,
                              ShapeIndex index, MemorySpace memory_space,
                              AliasedOffset* offset = nullptr,
-                             bool add_to_pending = true);
+                             bool add_to_pending = true,
+                             std::string message = "");
   void AddRequiredAssignment(const HloPosition& position,
                              MemorySpace memory_space,
                              AliasedOffset* offset = nullptr,
-                             bool add_to_pending = true);
+                             bool add_to_pending = true,
+                             std::string message = "");
   void AddRequiredAssignment(const HloUse& use, MemorySpace memory_space,
                              AliasedOffset* offset = nullptr,
-                             bool add_to_pending = true);
+                             bool add_to_pending = true,
+                             std::string message = "");
 
   // Adds input and outputs as required assignments.
   void AddInputAndOutputRequiredAssignments();
