@@ -1383,7 +1383,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitAsyncComputation(
   thunks.push_back(std::make_unique<WaitForStreamsThunk>(
       Thunk::ThunkInfo::WithProfileAnnotation(
           instr, ir_emitter_context_->GetNextThunkId()),
-      async_streams.destination_stream_id, async_streams.source_stream_id));
+      async_streams.async_stream_id, async_streams.parent_stream_id));
   thunks.push_back(std::move(sequential_thunk));
   return thunks;
 }
@@ -1449,7 +1449,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitAsyncCustomCallStart(
   ThunkSequence thunks = GetThunkSequence(std::make_unique<WaitForStreamsThunk>(
       Thunk::ThunkInfo::WithProfileAnnotation(
           instr, ir_emitter_context_->GetNextThunkId()),
-      streams.destination_stream_id, streams.source_stream_id));
+      streams.async_stream_id, streams.parent_stream_id));
   TF_ASSIGN_OR_RETURN(ExecutionStreamId execution_stream_id,
                       stream_assignment.GetSyncExecutionStreamId(wrapped));
 
@@ -2206,11 +2206,11 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitCopyStartThunk(
   // source and destination stream IDs differ. If the IDs are the
   // same, the memcpy operation is synchronous within that stream.
   ThunkSequence thunks;
-  if (streams.destination_stream_id != streams.source_stream_id) {
+  if (streams.async_stream_id != streams.parent_stream_id) {
     thunks.push_back(std::make_unique<WaitForStreamsThunk>(
         Thunk::ThunkInfo::WithProfileAnnotation(
             copy_start_instr, ir_emitter_context_->GetNextThunkId()),
-        streams.destination_stream_id, streams.source_stream_id));
+        streams.async_stream_id, streams.parent_stream_id));
   }
   if (is_dst_host_memory) {
     auto thunk = std::make_unique<DeviceToHostCopyThunk>(
@@ -2221,7 +2221,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitCopyStartThunk(
         /*mem_size=*/ShapeUtil::ByteSizeOf(input_shape),
         /*copy_events=*/copy_events_,
         /*copy_start_instr=*/copy_start_instr);
-    thunk->set_execution_stream_id(streams.destination_stream_id);
+    thunk->set_execution_stream_id(streams.async_stream_id);
     thunks.push_back(std::move(thunk));
   } else {
     auto thunk = std::make_unique<HostToDeviceCopyThunk>(
@@ -2232,7 +2232,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitCopyStartThunk(
         /*mem_size=*/ShapeUtil::ByteSizeOf(input_shape),
         /*copy_events=*/copy_events_,
         /*copy_start_instr=*/copy_start_instr);
-    thunk->set_execution_stream_id(streams.destination_stream_id);
+    thunk->set_execution_stream_id(streams.async_stream_id);
     thunks.push_back(std::move(thunk));
   }
   return thunks;
@@ -2517,7 +2517,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitAsyncDone(
       thunks.push_back(std::make_unique<WaitForStreamsThunk>(
           Thunk::ThunkInfo::WithProfileAnnotation(
               instr, ir_emitter_context_->GetNextThunkId()),
-          streams.source_stream_id, streams.destination_stream_id));
+          streams.parent_stream_id, streams.async_stream_id));
       return thunks;
     }
     default:
@@ -2576,7 +2576,7 @@ absl::StatusOr<ThunkSequence> ThunkEmitter::EmitAsyncStart(
           GetThunkSequence(std::make_unique<WaitForStreamsThunk>(
               Thunk::ThunkInfo::WithProfileAnnotation(
                   instr, ir_emitter_context_->GetNextThunkId()),
-              streams.destination_stream_id, streams.source_stream_id));
+              streams.async_stream_id, streams.parent_stream_id));
 
       TF_ASSIGN_OR_RETURN(ThunkSequence fusion_thunks,
                           EmitFusion(Cast<HloFusionInstruction>(wrapped)));
