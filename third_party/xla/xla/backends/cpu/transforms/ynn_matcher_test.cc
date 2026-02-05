@@ -50,5 +50,62 @@ TEST_F(YnnE2eTest, DoNotDegroupConvolutionFeatures) {
                     "CHECK: f32[1,4,8,9]{3,2,1,0} convolution");
 }
 
+class YnnReduceWindowTest : public HloTestBase {
+ protected:
+  DebugOptions GetDebugOptionsForTest() const override {
+    DebugOptions debug_options = HloTestBase::GetDebugOptionsForTest();
+    debug_options.add_xla_cpu_experimental_ynn_fusion_type(
+        DebugOptions::LIBRARY_FUSION_TYPE_REDUCE);
+    return debug_options;
+  }
+};
+
+TEST_F(YnnReduceWindowTest, ReduceWindowFollowedByReduce) {
+  const char* hlo_text = R"(
+  HloModule reduce_window_reduce
+
+  add {
+    lhs = f32[] parameter(0)
+    rhs = f32[] parameter(1)
+    ROOT add = f32[] add(lhs, rhs)
+  }
+
+  ENTRY main {
+    input = f32[512,512] parameter(0)
+    init = f32[] constant(0)
+    rw = f32[256,256] reduce-window(input, init), window={size=2x2 stride=2x2}, to_apply=add
+    ROOT result = f32[] reduce(rw, init), dimensions={0,1}, to_apply=add
+  }
+  )";
+
+  MatchOptimizedHlo(hlo_text, R"(
+    CHECK: kind=kCustom
+    CHECK: "kind":"__ynn_fusion"
+  )");
+}
+
+TEST_F(YnnReduceWindowTest, ReduceWindowWithPadding) {
+  const char* hlo_text = R"(
+  HloModule reduce_window_padding
+
+  add {
+    lhs = f32[] parameter(0)
+    rhs = f32[] parameter(1)
+    ROOT add = f32[] add(lhs, rhs)
+  }
+
+  ENTRY main {
+    input = f32[3,3] parameter(0)
+    init = f32[] constant(0)
+    ROOT rw = f32[2,2] reduce-window(input, init), window={size=2x2 stride=2x2 pad=0_1x0_1}, to_apply=add
+  }
+  )";
+
+  MatchOptimizedHlo(hlo_text, R"(
+    CHECK: kind=kCustom
+    CHECK: "kind":"__ynn_fusion"
+  )");
+}
+
 }  // namespace
 }  // namespace xla::cpu

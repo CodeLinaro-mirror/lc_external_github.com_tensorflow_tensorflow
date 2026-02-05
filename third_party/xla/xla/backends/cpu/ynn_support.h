@@ -73,6 +73,9 @@ bool IsReduceOpSupportedByYnn(const HloInstruction* hlo);
 // Returns true if the reduce op will be offloaded to YNNPACK.
 bool IsReduceOpOffloadedToYnn(const HloInstruction* hlo);
 
+// Returns true if the reduce window op is supported by YNNPACK.
+bool IsReduceWindowOpSupportedByYnn(const HloInstruction* hlo);
+
 // Returns true if the convolution op is supported by YNNPACK.
 bool IsConvolutionOpSupportedByYnn(const HloInstruction* instr);
 

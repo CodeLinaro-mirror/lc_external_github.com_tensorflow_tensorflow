@@ -498,10 +498,7 @@ std::unique_ptr<HloPassFix<HloPassPipeline>> CreateSimplificationPipeline(
                            .debug_options()
                            .xla_cpu_experimental_ynn_fusion_type(),
                        DebugOptions::LIBRARY_FUSION_TYPE_REDUCE)) {
-    pipeline->AddPass<TreeReductionRewriter>(
-        /*reduce_window_size=*/32, [](const HloInstruction* hlo) {
-          return !IsReduceOpOffloadedToYnn(hlo);
-        });
+    pipeline->AddPass<TreeReductionRewriter>(/*reduce_window_size=*/16 * 1024);
   }
 
   // BatchNormExpander can create zero-sized ops, so zero-sized HLO

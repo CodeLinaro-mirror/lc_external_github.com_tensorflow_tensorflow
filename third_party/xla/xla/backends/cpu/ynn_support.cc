@@ -297,6 +297,50 @@ bool IsReduceOpOffloadedToYnn(const HloInstruction* hlo) {
   }
 }
 
+bool IsReduceWindowOpSupportedByYnn(const HloInstruction* hlo) {
+  CHECK_EQ(hlo->opcode(), HloOpcode::kReduceWindow);
+  if (!YnnType(hlo->shape().element_type()).ok()) {
+    return false;
+  }
+  if (!IsLayoutSupportedByYnn(hlo->shape()) ||
+      !IsLayoutSupportedByYnn(hlo->operand(0)->shape())) {
+    return false;
+  }
+
+  const HloComputation* to_apply = hlo->to_apply();
+  CHECK_NE(to_apply, nullptr);
+  if (!Match(to_apply->root_instruction(),
+             match::AnyOf<HloInstruction>(match::Add(), match::Maximum(),
+                                          match::Minimum())
+                 .WithBinaryOperandsAnyOrder(match::Parameter(0),
+                                             match::Parameter(1)))) {
+    return false;
+  }
+
+  const Window& window = hlo->window();
+  int new_rank_count = 0;
+  for (const WindowDimension& dim : window.dimensions()) {
+    if (dim.size() > 1) {
+      if (dim.base_dilation() != 1) {
+        return false;
+      }
+      if (dim.window_reversal()) {
+        return false;
+      }
+      new_rank_count++;
+    }
+  }
+
+  // The ReduceWindow operation is implemented by expanding the input tensor
+  // with window dimensions. We need to make sure that the resulting tensor
+  // rank does not exceed YNNPACK limit.
+  if (hlo->shape().dimensions_size() + new_rank_count > YNN_MAX_TENSOR_RANK) {
+    return false;
+  }
+
+  return true;
+}
+
 bool IsConvolutionOpSupportedByYnn(const HloInstruction* instr) {
   CHECK_EQ(instr->opcode(), HloOpcode::kConvolution);
   const HloConvolutionInstruction* conv =

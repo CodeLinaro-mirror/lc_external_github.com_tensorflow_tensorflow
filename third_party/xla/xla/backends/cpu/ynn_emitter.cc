@@ -327,6 +327,84 @@ static absl::StatusOr<uint32_t> DefineDotOp(ynn_subgraph_t subgraph,
   return output_id;
 }
 
+static absl::StatusOr<uint32_t> DefineReduceWindowOp(
+    ynn_subgraph_t subgraph, TensorIdMap& tensor_ids,
+    const HloInstruction* instr) {
+  VLOG(3) << absl::StreamFormat("Define tensor value for reduce window op: %s",
+                                instr->ToString());
+  CHECK_EQ(instr->opcode(), HloOpcode::kReduceWindow);
+
+  const HloInstruction* input = instr->operand(0);
+  const HloInstruction* init = instr->operand(1);
+
+  TF_ASSIGN_OR_RETURN(auto input_id, FindTensorValue(tensor_ids, input));
+  TF_ASSIGN_OR_RETURN(auto init_id, FindTensorValue(tensor_ids, init));
+  TF_ASSIGN_OR_RETURN(auto output_id, DefineTensorValue(subgraph, instr));
+
+  ynn_reduce_operator ynn_reduce_op = ynn_reduce_invalid;
+  switch (instr->to_apply()->root_instruction()->opcode()) {
+    case HloOpcode::kAdd:
+      ynn_reduce_op = ynn_reduce_sum;
+      break;
+    case HloOpcode::kMaximum:
+      ynn_reduce_op = ynn_reduce_max;
+      break;
+    case HloOpcode::kMinimum:
+      ynn_reduce_op = ynn_reduce_min;
+      break;
+    default:
+      return Internal("Unsupported reduce window computation");
+  }
+
+  const Window& window = instr->window();
+  int rank = window.dimensions_size();
+
+  std::vector<int32_t> pad_axes(rank);
+  std::vector<int64_t> pad_pre(rank);
+  std::vector<int64_t> pad_post(rank);
+
+  std::vector<int32_t> stencil_axes(rank);
+  std::vector<int32_t> new_axes(rank);
+  std::vector<size_t> stencil_dims(rank);
+  std::vector<size_t> stencil_strides(rank);
+  std::vector<size_t> stencil_dilations(rank);
+  std::vector<int32_t> reduce_axes(rank);
+
+  for (int i = 0; i < rank; ++i) {
+    const auto& dim = window.dimensions(i);
+    pad_axes[i] = i;
+    pad_pre[i] = dim.padding_low();
+    pad_post[i] = dim.padding_high();
+
+    stencil_axes[i] = i;
+    new_axes[i] = 2 * i + 1;
+    stencil_dims[i] = dim.size();
+    stencil_strides[i] = dim.stride();
+    stencil_dilations[i] = dim.window_dilation();
+
+    reduce_axes[i] = 2 * i + 1;
+  }
+
+  uint32_t current_input_id = input_id;
+  uint32_t padded_id = YNN_INVALID_VALUE_ID;
+  YNN_RETURN_IF_ERROR(ynn_define_static_pad(
+      subgraph, pad_axes.size(), pad_axes.data(), pad_pre.data(),
+      pad_post.data(), current_input_id, init_id, &padded_id, /*flags=*/0));
+  current_input_id = padded_id;
+
+  uint32_t stencil_id = YNN_INVALID_VALUE_ID;
+  YNN_RETURN_IF_ERROR(ynn_define_stencil_copy(
+      subgraph, stencil_axes.size(), stencil_axes.data(), new_axes.data(),
+      stencil_dims.data(), stencil_strides.data(), stencil_dilations.data(),
+      current_input_id, YNN_INVALID_VALUE_ID, &stencil_id, /*flags=*/0));
+
+  YNN_RETURN_IF_ERROR(ynn_define_reduce(
+      subgraph, ynn_reduce_op, reduce_axes.size(), reduce_axes.data(),
+      stencil_id, init_id, &output_id, /*flags=*/0));
+
+  return output_id;
+}
+
 //===----------------------------------------------------------------------===//
 // Emit YNNPACK subgraph for the given HLO computation.
 //===----------------------------------------------------------------------===//
@@ -413,6 +491,17 @@ static absl::StatusOr<YnnSubgraph> EmitYnnSubgraph(
       case HloOpcode::kReduce: {
         TF_ASSIGN_OR_RETURN(tensor_ids[instr],
                             DefineReduceOp(subgraph.get(), tensor_ids, instr));
+      } break;
+
+      case HloOpcode::kReduceWindow: {
+        if (!IsReduceWindowOpSupportedByYnn(instr)) {
+          return InvalidArgument(
+              "Unsupported reduce window instruction in YNN fusion: %s",
+              instr->ToString());
+        }
+        TF_ASSIGN_OR_RETURN(
+            tensor_ids[instr],
+            DefineReduceWindowOp(subgraph.get(), tensor_ids, instr));
       } break;
 
       default: {
