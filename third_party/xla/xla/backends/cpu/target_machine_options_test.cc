@@ -141,6 +141,11 @@ TEST(TargetMachineOptionsTest, GetTargetMachineFeaturesVector) {
               testing::ElementsAre("+avx2", "-avx512"));
 }
 
+TEST(TargetMachineOptionsTest, TestTargeteMachineOptionsFeaturesAreSorted) {
+  TargetMachineOptions options("test_triple", "test_cpu", "-d,+c,-b,+a");
+  EXPECT_EQ(options.GetTargetMachineFeatures(), "+a,+c,-b,-d");
+}
+
 }  // namespace
 }  // namespace cpu
 }  // namespace xla

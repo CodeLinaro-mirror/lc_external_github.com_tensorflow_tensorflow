@@ -21,6 +21,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/strings/match.h"
@@ -93,6 +94,8 @@ GetEnabledAndDisabledFeatures(const std::vector<std::string>& features) {
       disabled_features.push_back(feature.substr(1));
     }
   }
+  absl::c_sort(enabled_features);
+  absl::c_sort(disabled_features);
   return std::make_pair(enabled_features, disabled_features);
 }
 
