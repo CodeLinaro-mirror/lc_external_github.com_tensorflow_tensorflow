@@ -14,14 +14,14 @@ limitations under the License.
 ==============================================================================*/
 
 #include <gtest/gtest.h>
-#include "xla/service/gpu/tests/gpu_codegen_test.h"
+#include "xla/service/gpu/tests/gpu_pjrt_codegen_test.h"
 #include "xla/stream_executor/cuda/cuda_compute_capability.h"
 
 namespace xla {
 namespace gpu {
 namespace {
 
-class GpuAtomicTest : public GpuCodegenTest {};
+using GpuAtomicTest = GpuPjRtCodegenTest;
 
 TEST_F(GpuAtomicTest, TestStore) {
   const char* hlo_string = R"(
@@ -110,12 +110,8 @@ CHECK: atomicrmw fadd ptr %[[ADDR:.*]], float %[[VALUE:.*]] monotonic
 
 TEST_F(GpuAtomicTest, TestAddAtomicF64) {
   // Atomic add required sm_60 or above.
-  if (!backend()
-           .default_stream_executor()
-           ->GetDeviceDescription()
-           .cuda_compute_capability()
-           .SupportsAllFeaturesOf(
-               stream_executor::CudaComputeCapability::Pascal())) {
+  if (device_description().cuda_compute_capability().SupportsAllFeaturesOf(
+          stream_executor::CudaComputeCapability::Pascal())) {
     return;
   }
 
