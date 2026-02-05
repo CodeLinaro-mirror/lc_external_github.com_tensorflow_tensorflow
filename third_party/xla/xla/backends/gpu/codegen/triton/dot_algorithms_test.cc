@@ -280,7 +280,7 @@ TEST_F(BlasAlgorithmTest, Algorithm_BF16_BF16_F32_X3) {
   )";
   // Single dot was replaced with 3 dots.
   constexpr absl::string_view kPattern = R"(
-    CHECK-COUNT-3: custom_call_target="__cublas$gemm"
+    CHECK-COUNT-3: custom_call_target="__cublas${{gemm|lt\$matmul}}"
   )";
 
   TF_ASSERT_OK_AND_ASSIGN(auto module, GetOptimizedModule(kHloText));
@@ -347,7 +347,7 @@ TEST_F(BlasAlgorithmTest, Algorithm_BF16_BF16_F32_X6) {
   )";
   // Single dot was replaced with 3 dots.
   constexpr absl::string_view kPattern = R"(
-    CHECK-COUNT-6: custom_call_target="__cublas$gemm"
+    CHECK-COUNT-6: custom_call_target="__cublas${{gemm|lt\$matmul}}"
   )";
 
   TF_ASSERT_OK_AND_ASSIGN(auto module, GetOptimizedModule(kHloText));
@@ -421,9 +421,9 @@ TEST_F(BlasAlgorithmTest, Algorithm_TF32_TF32_F32_X3) {
     }
   )";
   constexpr absl::string_view kPattern = R"(
-      CHECK: custom_call_target="__cublas$gemm"{{.*}}"algorithm":"ALG_DOT_TF32_TF32_F32"
-      CHECK: custom_call_target="__cublas$gemm"{{.*}}"algorithm":"ALG_DOT_TF32_TF32_F32"
-      CHECK: custom_call_target="__cublas$gemm"{{.*}}"algorithm":"ALG_DOT_TF32_TF32_F32"
+      CHECK: custom_call_target="__cublas${{gemm|lt\$matmul}}"{{.*}}"algorithm":"ALG_DOT_TF32_TF32_F32"
+      CHECK: custom_call_target="__cublas${{gemm|lt\$matmul}}"{{.*}}"algorithm":"ALG_DOT_TF32_TF32_F32"
+      CHECK: custom_call_target="__cublas${{gemm|lt\$matmul}}"{{.*}}"algorithm":"ALG_DOT_TF32_TF32_F32"
   )";
   TF_ASSERT_OK_AND_ASSIGN(auto module, GetOptimizedModule(kHloText));
   TF_ASSERT_OK_AND_ASSIGN(auto ok, RunFileCheck(module->ToString(), kPattern));
@@ -461,15 +461,22 @@ TEST_F(BlasAlgorithmTest, Algorithm_TF32_TF32_F32_X3) {
                                     ::testing::HasSubstr("cutlass_80"),
                                     ::testing::HasSubstr("cutlass_80")));
       break;
-    case CudaComputeCapabilities::kHopper:
+    case CudaComputeCapabilities::kHopper: {
+      DebugOptions debug_options = GetDebugOptionsForTest();
+      std::string dot_kernel_name = "tf32f32";
+      if (debug_options.xla_gpu_enable_cublaslt()) {
+        // CublasLt uses cutlass for TF32.
+        dot_kernel_name = "cutlass_80";
+      }
       EXPECT_THAT(kernel_names, ::testing::UnorderedElementsAre(
                                     ::testing::HasSubstr("loop_and_subtract"),
                                     ::testing::HasSubstr("loop_and_subtract"),
                                     ::testing::HasSubstr("loop_select_fusion"),
-                                    ::testing::HasSubstr("tf32f32"),
-                                    ::testing::HasSubstr("tf32f32"),
-                                    ::testing::HasSubstr("tf32f32")));
+                                    ::testing::HasSubstr(dot_kernel_name),
+                                    ::testing::HasSubstr(dot_kernel_name),
+                                    ::testing::HasSubstr(dot_kernel_name)));
       break;
+    }
     default:
       GTEST_SKIP() << "Unsupported compute capability: " << cc.major
                    << " has the kernel name: " << kernel_names[0];
@@ -1063,7 +1070,7 @@ class NumericTestsForBlas : public BlasAlgorithmTest,
   }
 
   static constexpr absl::string_view kCheckTritionNestedGemm =
-      R"(CHECK: __cublas$gemm)";
+      R"(CHECK: __cublas${{gemm|lt\$matmul}})";
 
   static constexpr absl::string_view kReferenceHloText = R"(
     HloModule %s
@@ -1442,7 +1449,8 @@ class TritonAndBlasSupportForDifferentTensorSizes
 
   std::string algorithm_;
 
-  static constexpr absl::string_view kBlasPattern = "__cublas$gemm";
+  static constexpr absl::string_view kBlasPattern =
+      "__cublas${{gemm|lt\\$matmul}}";
   static constexpr absl::string_view kTritonGemmPattern = "__triton_gemm";
   static constexpr int kMaxSize = 8192;
   static constexpr int kStepSize = 8;
@@ -1894,7 +1902,8 @@ class PrecisionTests
       TF_RETURN_IF_ERROR(CheckGemmPattern(
           *module, "CHECK: {{__triton_gemm|__triton_nested_gemm_fusion}}"));
     } else if (backend == Backend::kBlas) {
-      TF_RETURN_IF_ERROR(CheckGemmPattern(*module, "CHECK: __cublas$gemm"));
+      TF_RETURN_IF_ERROR(
+          CheckGemmPattern(*module, "CHECK: __cublas${{gemm|lt\\$matmul}}"));
     } else {
       return absl::InvalidArgumentError("Invalid backend");
     }
