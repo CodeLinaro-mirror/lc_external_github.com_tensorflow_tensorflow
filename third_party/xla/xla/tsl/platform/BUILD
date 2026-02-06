@@ -354,6 +354,7 @@ tsl_cc_test(
         "//xla/tsl/platform/testdata:test_echo",
         "//xla/tsl/platform/testdata:test_echo_argv_1",
         "//xla/tsl/platform/testdata:test_noop",
+        "//xla/tsl/platform/testdata:test_pwd",
         "//xla/tsl/platform/testdata:test_stderr",
     ],
     tags = ["no_oss"],  # TODO(b/327036247): revisit after this moves to XLA
