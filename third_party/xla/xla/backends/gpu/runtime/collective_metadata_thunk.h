@@ -80,8 +80,17 @@ class CollectiveMetadataThunk : public Thunk {
       const GpuCliqueKey& clique_key, RankId rank, se::Stream* stream,
       std::shared_ptr<CollectiveMultimem> multimem);
 
+  // Copy the collective metadata, the param to peers pointers and multimem
+  // addresses to the destination device memory.
+  static absl::Status CopyCollectiveMetadataToDevice(
+      se::Stream* stream, CollectiveKernelMetadata metadata,
+      const std::vector<void*>& param_to_peers_ptrs,
+      const std::vector<void*>& multimem_addresses,
+      se::DeviceAddressBase destination);
+
   // Copy the collective metadata and the param to peers pointers to the
   // destination device memory.
+  // Legacy version, remove after Mosaic uses the new version.
   static absl::Status CopyCollectiveMetadataToDevice(
       se::Stream* stream, CollectiveKernelMetadata metadata,
       const std::vector<void*>& param_to_peers_ptrs,
