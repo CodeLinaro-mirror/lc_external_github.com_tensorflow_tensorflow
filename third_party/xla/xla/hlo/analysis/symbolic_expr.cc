@@ -408,6 +408,47 @@ SymbolicExpr CanonicalizeMod(SymbolicExpr lhs, SymbolicExpr rhs) {
   return (lhs - product).Canonicalize();
 }
 
+int64_t GetLargestKnownDivisor(SymbolicExpr expr) {
+  int64_t lhs_largest = 1;
+  int64_t rhs_largest = 1;
+  if (expr.IsBinaryOp()) {
+    lhs_largest = GetLargestKnownDivisor(expr.GetLHS());
+    rhs_largest = GetLargestKnownDivisor(expr.GetRHS());
+  }
+  switch (expr.GetType()) {
+    case SymbolicExprType::kVariable:
+      return 1;
+    case SymbolicExprType::kConstant:
+      return std::abs(expr.GetValue());
+    case SymbolicExprType::kAdd:
+    case SymbolicExprType::kMod:
+    case SymbolicExprType::kMin:
+    case SymbolicExprType::kMax:
+      // This is not necessarily correct. For example, (x + 2*x) is clearly
+      // multiple of 3. But this can be solved by canonicalizing the expression
+      // first.
+      return std::gcd(lhs_largest, rhs_largest);
+    case SymbolicExprType::kMul:
+      return lhs_largest * rhs_largest;
+    case SymbolicExprType::kFloorDiv:
+    case SymbolicExprType::kCeilDiv: {
+      SymbolicExpr rhs = expr.GetRHS();
+      if (rhs.GetType() == SymbolicExprType::kConstant) {
+        int64_t divisor = rhs.GetValue();
+        if (divisor != 0) {
+          if (lhs_largest % divisor == 0) {
+            return std::abs(lhs_largest / divisor);
+          }
+        }
+      }
+      return 1;
+    }
+    default:
+      LOG(FATAL) << "Unsupported op_type in GetLargestKnownDivisor: "
+                 << GetBinaryOpString(expr.GetType());
+  }
+}
+
 }  // namespace
 
 class SymbolicExprStorage : public mlir::StorageUniquer::BaseStorage {
@@ -511,11 +552,29 @@ bool SymbolicExpr::operator<(const SymbolicExpr& other) const {
   }
 }
 
-std::string SymbolicExpr::ToString(int64_t num_dims) const {
+std::string SymbolicExpr::ToString(std::optional<int64_t> num_dims) const {
   std::string s;
   llvm::raw_string_ostream os(s);
   xla::Print(*this, os, num_dims);
   return os.str();
+}
+
+std::string SymbolicExpr::ToString(
+    absl::Span<const std::string> var_names) const {
+  std::string s;
+  llvm::raw_string_ostream os(s);
+  xla::Print(*this, os, var_names);
+  return os.str();
+}
+
+std::string SymbolicExpr::ToString(
+    absl::Span<const std::string> dim_names,
+    absl::Span<const std::string> sym_names) const {
+  llvm::SmallVector<std::string> var_names;
+  var_names.reserve(dim_names.size() + sym_names.size());
+  var_names.append(dim_names.begin(), dim_names.end());
+  var_names.append(sym_names.begin(), sym_names.end());
+  return ToString(var_names);
 }
 
 int64_t SymbolicExpr::Evaluate(
@@ -585,6 +644,11 @@ SymbolicExpr SymbolicExpr::ReplaceVariables(
     default:
       LOG(FATAL) << "Substitute not implemented for this type.";
   }
+}
+
+SymbolicExpr SymbolicExpr::ReplaceDims(
+    absl::Span<const SymbolicExpr> dim_replacements) const {
+  return ReplaceVariables(dim_replacements);
 }
 
 SymbolicExpr SymbolicExpr::ReplaceSymbols(
@@ -732,6 +796,10 @@ SymbolicExpr SymbolicExpr::operator+(SymbolicExpr other) const {
   return BasicAddSimplify(*this, other);
 }
 
+SymbolicExpr operator+(int64_t lhs, SymbolicExpr rhs) {
+  return CreateSymbolicConstant(lhs, rhs.GetContext()) + rhs;
+}
+
 SymbolicExpr SymbolicExpr::operator-() const {
   return (*this * CreateSymbolicConstant(-1, GetContext())).Canonicalize();
 }
@@ -747,6 +815,10 @@ SymbolicExpr SymbolicExpr::operator*(SymbolicExpr other) const {
   // TODO(b/433693782): We should use our own canonicalization here instead of
   // relying on a similar one to AffineMap so tests do not fail.
   return BasicMulSimplify(*this, other);
+}
+
+SymbolicExpr operator*(int64_t lhs, SymbolicExpr rhs) {
+  return CreateSymbolicConstant(lhs, rhs.GetContext()) * rhs;
 }
 
 SymbolicExpr SymbolicExpr::operator%(int64_t v) const {
@@ -852,6 +924,11 @@ llvm::SmallVector<SymbolicExpr> CreateSymbolicConstantExprs(
     exprs.push_back(CreateSymbolicConstant(constant, context));
   }
   return exprs;
+}
+
+bool SymbolicExpr::IsMultipleOf(int64_t factor) const {
+  CHECK_NE(factor, 0);
+  return GetLargestKnownDivisor(*this) % factor == 0;
 }
 
 void SymbolicExpr::Walk(
