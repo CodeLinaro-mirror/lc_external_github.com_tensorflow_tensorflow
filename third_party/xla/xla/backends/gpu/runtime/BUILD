@@ -4268,7 +4268,10 @@ cc_library(
     deps = [
         ":buffer_debug_log_proto_cc",
         "//xla/tsl/lib/gtl:int_type",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
+        "@eigen_archive//:eigen3",
     ],
 )
 
