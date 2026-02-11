@@ -490,7 +490,6 @@ cc_library(
         "//xla/backends/gpu/runtime:collective_broadcast_thunk",
         "//xla/backends/gpu/runtime:collective_group_thunk",
         "//xla/backends/gpu/runtime:collective_kernel_thunk",
-        "//xla/backends/gpu/runtime:collective_metadata_thunk",
         "//xla/backends/gpu/runtime:collective_multimem",
         "//xla/backends/gpu/runtime:collective_permute_thunk",
         "//xla/backends/gpu/runtime:collective_thunk",
@@ -1941,6 +1940,11 @@ cc_library(
 xla_test(
     name = "gpu_compiler_test",
     srcs = ["gpu_compiler_test.cc"],
+    backend_tags = {
+        "h100": [
+            "full",
+        ],
+    },
     backends = ["gpu"],
     data = ["gpu_compiler_test_autotune_db.textproto"],
     shard_count = 2,
