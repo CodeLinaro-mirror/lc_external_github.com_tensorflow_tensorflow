@@ -773,6 +773,7 @@ cc_library(
         ":ifrt_ir_loaded_executable",
         ":ifrt_ir_program",
         ":program_memory_tracer",
+        if_google("//xla/python/ifrt/ir/google:tpu_transfer_size_util_impl"),
         "//xla:status_macros",
         "//xla/pjrt:pjrt_executable",
         "//xla/python/ifrt",
