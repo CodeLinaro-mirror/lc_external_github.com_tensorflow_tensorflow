@@ -156,6 +156,8 @@ absl::StatusOr<bool> AutotunerPass::RunImpl(
   } else {
     TF_RETURN_IF_ERROR(autotuner_->Autotune(module, should_autotune_));
   }
+  LOG(INFO) << "Autotuner Cache stats: " << autotuner_->GetCacheStats().hits
+            << " hits, " << autotuner_->GetCacheStats().misses << " misses.";
   return true;
 }
 
