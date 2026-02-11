@@ -1,5 +1,6 @@
 # Description: SPMD partitioning pass.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//xla:xla.default.bzl", "xla_cc_test")
 load("//xla/tsl/platform:rules_cc.bzl", "cc_library")
 
@@ -33,8 +34,10 @@ cc_library(
         "dot_handler.h",
         "spmd_partitioner.h",
         "spmd_partitioner_util.h",
+        "spmd_partitioner_util_internal.h",
     ],
     deps = [
+        ":spmd_partitioner_util_internal",
         "//xla:array",
         "//xla:comparison_util",
         "//xla:literal",
@@ -398,6 +401,16 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "spmd_partitioner_util_internal",
+    hdrs = ["spmd_partitioner_util_internal.h"],
+    deps = [
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/ir:hlo_sharding",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
