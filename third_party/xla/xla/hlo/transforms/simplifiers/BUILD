@@ -460,6 +460,39 @@ xla_cc_test(
 )
 
 cc_library(
+    name = "conv_operand_swapper",
+    srcs = ["conv_operand_swapper.cc"],
+    hdrs = ["conv_operand_swapper.h"],
+    copts = tsl_copts(),
+    deps = [
+        "//xla:util",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/pass:hlo_pass",
+        "//xla/service:hlo_creation_utils",
+        "//xla/tsl/platform:errors",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+xla_cc_test(
+    name = "conv_operand_swapper_test",
+    srcs = ["conv_operand_swapper_test.cc"],
+    deps = [
+        ":conv_operand_swapper",
+        "//xla:util",
+        "//xla:window_util",
+        "//xla/hlo/ir:hlo",
+        "//xla/hlo/testlib:hlo_hardware_independent_test_base",
+        "//xla/hlo/utils:hlo_matchers",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "simplify_fp_conversions",
     srcs = ["simplify_fp_conversions.cc"],
     hdrs = ["simplify_fp_conversions.h"],
