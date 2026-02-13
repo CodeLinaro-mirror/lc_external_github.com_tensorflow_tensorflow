@@ -348,6 +348,9 @@ class PjRtStreamExecutorClient : public CommonPjRtClient {
   }
   LocalClient* client() const { return client_; }
   se::DeviceAddressAllocator* allocator() const { return allocator_; }
+  absl::StatusOr<HostMemoryAllocator*> GetHostMemoryAllocator() const override {
+    return host_memory_allocator_.get();
+  }
   HostMemoryAllocator* host_memory_allocator() const {
     return host_memory_allocator_.get();
   }
