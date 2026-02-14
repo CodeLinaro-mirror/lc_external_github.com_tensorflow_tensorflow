@@ -63,6 +63,10 @@ absl::Status CollectiveCliqueRequests::RequestClique(
     if (requirements.dev_comm) {
       req.dev_comms.insert(*requirements.dev_comm);
     }
+
+    if (requirements.barrier_reqs) {
+      req.barrier_reqs.insert(*requirements.barrier_reqs);
+    }
   }
 
   // XLA compiler guarantees that all collective operations have the same
@@ -72,6 +76,10 @@ absl::Status CollectiveCliqueRequests::RequestClique(
                     std::move(device_groups)};
   if (requirements.dev_comm) {
     req.dev_comms.insert(*requirements.dev_comm);
+  }
+
+  if (requirements.barrier_reqs) {
+    req.barrier_reqs.insert(*requirements.barrier_reqs);
   }
 
   cliques_.try_emplace(clique_key, std::move(req));
@@ -110,6 +118,19 @@ CollectiveCliqueRequests::OrderedRequestedCliques() const {
   });
 
   return cliques;
+}
+
+bool CollectiveCliqueRequests::IsBarrierAfterModuleExecutionRequested() const {
+  for (const auto& [_, request] : cliques_) {
+    for (const auto& barrier_req : request.barrier_reqs) {
+      // If any clique requested a barrier after module execution, we need to
+      // add a barrier after module execution.
+      if (barrier_req.module_execution_barrier) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace xla::gpu
