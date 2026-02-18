@@ -598,6 +598,7 @@ cc_library(
     deps = [
         ":dump",
         ":dump_options",
+        ":riegeli_file_writer_factory",
         "//xla:util",
         "//xla/hlo/ir:hlo",
         "//xla/tsl/platform:env",
@@ -606,7 +607,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "@riegeli//riegeli/bytes:fd_writer",
         "@riegeli//riegeli/bytes:writer",
         "@tsl//tsl/platform:path",
     ],
@@ -629,6 +629,45 @@ xla_cc_test(
         "//xla/tsl/testing:temporary_directory",
         "@com_google_googletest//:gtest",
         "@tsl//tsl/platform:path",
+    ],
+)
+
+cc_library(
+    name = "riegeli_file_writer_factory",
+    hdrs = ["riegeli_file_writer_factory.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@riegeli//riegeli/bytes:writer",
+    ] + if_google(
+        [":google_file_writer_factory"],
+        [":oss_file_writer_factory"],
+    ),
+)
+
+cc_library(
+    name = "google_file_writer_factory",
+    srcs = ["google_file_writer_factory.cc"],
+    hdrs = ["riegeli_file_writer_factory.h"],
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+        "@riegeli//riegeli/bytes:file_writer",
+        "@riegeli//riegeli/bytes:writer",
+    ],
+)
+
+cc_library(
+    name = "oss_file_writer_factory",
+    srcs = ["oss_file_writer_factory.cc"],
+    hdrs = ["riegeli_file_writer_factory.h"],
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+        "@riegeli//riegeli/bytes:fd_writer",
+        "@riegeli//riegeli/bytes:writer",
     ],
 )
 
