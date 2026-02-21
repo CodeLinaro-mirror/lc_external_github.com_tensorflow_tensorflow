@@ -747,6 +747,13 @@ def tflite_custom_c_library(
         **kwargs
     )
 
+def _get_canonical_repo_name(apparent_repo_name):
+    """Returns the canonical repo name for the given apparent repo name seen by the module this bzl file belongs to."""
+    if not apparent_repo_name.startswith("@"):
+        apparent_repo_name = "@" + apparent_repo_name
+
+    return Label(apparent_repo_name).workspace_name
+
 # TODO(b/254126721): Move tflite_combine_cc_tests macro to lite/testing/build_def.bzl.
 def tflite_combine_cc_tests(
         name,
@@ -806,7 +813,7 @@ def tflite_combine_cc_tests(
 
     if combined_test_srcs:
         # Using native.existing_rule to combine cc_test's deps duplicates link_extra_lib. Remove it.
-        combined_test_deps.pop("@@rules_cc" + "//:link_extra_lib", None)
+        combined_test_deps.pop("@@" + _get_canonical_repo_name("@rules_cc") + "//:link_extra_lib", None)
         cc_test(
             name = name,
             size = "large",
