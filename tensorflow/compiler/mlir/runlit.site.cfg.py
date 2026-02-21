@@ -30,9 +30,20 @@ else:
 # file, instead config is injected by lit.py. The structure is common for lit
 # tests and intended to only persist temporarily (b/136126535).
 # pylint: disable=undefined-variable
-config.llvm_tools_dir = os.path.join(external_srcdir, 'llvm-project', 'llvm')
+if os.environ['TEST_WORKSPACE'] == '_main':
+  config.llvm_tools_dir = os.path.join(
+      external_srcdir, 'xla~~llvm_extension~llvm-project', 'llvm'
+  )
+  config.mlir_tools_dir = os.path.join(
+      external_srcdir, 'xla~~llvm_extension~llvm-project', 'mlir'
+  )
+  mlir_hlo_tool_dir = os.path.join(external_srcdir, 'xla~/xla/mlir_hlo')
+else:
+  config.llvm_tools_dir = os.path.join(external_srcdir, 'llvm-project', 'llvm')
+  config.mlir_tools_dir = os.path.join(external_srcdir, 'llvm-project', 'mlir')
+  mlir_hlo_tool_dir = os.path.join(external_srcdir, 'xla/xla/mlir_hlo')
 config.mlir_obj_root = os.path.join(real_test_srcdir)
-config.mlir_tools_dir = os.path.join(external_srcdir, 'llvm-project', 'mlir')
+
 # TODO(jpienaar): Replace with suffices in build rule.
 config.suffixes = ['.td', '.mlir', '.pbtxt']
 
@@ -47,12 +58,13 @@ mlir_tf_tools_dirs = [
     'tensorflow/compiler/mlir/tensorflow',
     'tensorflow/compiler/mlir/tfrt',
     'tensorflow/compiler/mlir/tools/kernel_gen',
-    os.path.join(external_srcdir, 'xla/xla/mlir_hlo'),
+    mlir_hlo_tool_dir,
     'tensorflow/core/ir/importexport/',
     'tensorflow/core/ir/tests/',
     'tensorflow/core/transforms/',
     'tensorflow/dtensor/mlir/tests',
 ]
+
 config.mlir_tf_tools_dirs = [
     os.path.join(real_test_srcdir, os.environ['TEST_WORKSPACE'], s)
     for s in mlir_tf_tools_dirs
