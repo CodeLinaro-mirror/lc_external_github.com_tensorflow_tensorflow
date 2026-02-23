@@ -14,4 +14,1449 @@ diff --ruN a/stablehlo/stablehlo/reference/Ops.cpp b/stablehlo/stablehlo/referen
  
      // use FFT to compute the IFFT steps
      auto d_irfft = fftDims.pop_back_val();
+diff --ruN a/stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder.mlir b/stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder.mlir
+--- stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder.mlir
++++ stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder.mlir
+@@ -1,4 +1,62 @@
+ // RUN: stablehlo-opt --stablehlo-aggressive-folder=fold-op-element-limit=100 --split-input-file --verify-diagnostics %s | FileCheck %s
++
++////////
++// ReverseOp
++
++// CHECK-LABEL: @reverse_fold_empty_dim_cst
++func.func @reverse_fold_empty_dim_cst() -> tensor<2xi32> {
++  // CHECK: stablehlo.constant dense<[1, 2]>
++  // CHECK-NEXT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[1, 2]> : tensor<2xi32>
++  %result = stablehlo.reverse %operand, dims = [] : tensor<2xi32>
++  return %result : tensor<2xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_fold_single_dim_cst
++func.func @reverse_fold_single_dim_cst() -> tensor<2xi32> {
++  // CHECK: stablehlo.constant dense<[2, 1]>
++  // CHECK-NOT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[1, 2]> : tensor<2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<2xi32>
++  return %result : tensor<2xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_fold_multiple_dim_cst
++func.func @reverse_fold_multiple_dim_cst() -> tensor<3x2xf32> {
++  // CHECK: stablehlo.constant dense<{{\[\[6\.0.*, 5\.0.*\], \[4\.0.*, 3\.0.*\], \[2\.0.*, 1\.0.*\]\]}}> : tensor<3x2xf32>
++  // CHECK-NOT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[[1.0, 2.0],[3.0, 4.0],[5.0, 6.0]]> : tensor<3x2xf32>
++  %result = stablehlo.reverse %operand, dims = [0, 1] : (tensor<3x2xf32>) -> tensor<3x2xf32>
++  return %result : tensor<3x2xf32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_fold_one_dim_cst
++func.func @reverse_fold_one_dim_cst() -> tensor<1x2xi32> {
++  // CHECK: stablehlo.constant dense<{{\[\[1, 2\]\]}}>
++  // CHECK-NEXT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[[1,2]]> : tensor<1x2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<1x2xi32>
++  return %result : tensor<1x2xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_fold_splat_cst
++func.func @reverse_fold_splat_cst() -> tensor<3x2xi32> {
++  // CHECK: stablehlo.constant dense<1> : tensor<3x2xi32>
++  // CHECK-NEXT: stablehlo.reverse
++  %operand = stablehlo.constant dense<1> : tensor<3x2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<3x2xi32>
++  return %result : tensor<3x2xi32>
++}
++
++// -----
+ 
+ ////////
+ // AddOp
+diff --ruN a/stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder_reverseop.mlir b/stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder_reverseop.mlir
+--- stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder_reverseop.mlir
++++ stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_folder_reverseop.mlir
+@@ -0,0 +1,46 @@
++// RUN: stablehlo-opt --stablehlo-aggressive-folder=fold-op-element-limit=100 --split-input-file --verify-diagnostics %s | FileCheck %s
++
++func.func @reverse_fold_empty_dim_cst() -> tensor<2xi32> {
++  // CHECK: stablehlo.constant dense<[1, 2]>
++  // CHECK-NEXT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[1, 2]> : tensor<2xi32>
++  %result = stablehlo.reverse %operand, dims = [] : tensor<2xi32>
++  return %result : tensor<2xi32>
++}
++
++// CHECK-LABEL: @reverse_fold_single_dim_cst
++func.func @reverse_fold_single_dim_cst() -> tensor<2xi32> {
++  // CHECK: stablehlo.constant dense<[2, 1]>
++  // CHECK-NOT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[1, 2]> : tensor<2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<2xi32>
++  return %result : tensor<2xi32>
++}
++
++// CHECK-LABEL: @reverse_fold_multiple_dim_cst
++func.func @reverse_fold_multiple_dim_cst() -> tensor<3x2xi32> {
++  // CHECK: stablehlo.constant dense<{{\[\[6, 5\], \[4, 3\], \[2, 1\]\]}}> : tensor<3x2xi32>
++  // CHECK-NOT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[[1, 2],[3, 4],[5, 6]]> : tensor<3x2xi32>
++  %result = stablehlo.reverse %operand, dims = [0, 1] : (tensor<3x2xi32>) -> tensor<3x2xi32>
++  return %result : tensor<3x2xi32>
++}
++
++// CHECK-LABEL: @reverse_fold_one_dim_cst
++func.func @reverse_fold_one_dim_cst() -> tensor<1x2xi32> {
++  // CHECK: stablehlo.constant dense<{{\[\[1, 2\]\]}}>
++  // CHECK-NEXT: stablehlo.reverse
++  %operand = stablehlo.constant dense<[[1, 2]]> : tensor<1x2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<1x2xi32>
++  return %result : tensor<1x2xi32>
++}
++
++// CHECK-LABEL: @reverse_fold_splat_cst
++func.func @reverse_fold_splat_cst() -> tensor<3x2xi32> {
++  // CHECK: stablehlo.constant dense<1> : tensor<3x2xi32>
++  // CHECK-NEXT: stablehlo.reverse
++  %operand = stablehlo.constant dense<1> : tensor<3x2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<3x2xi32>
++  return %result : tensor<3x2xi32>
++}
++
+diff --ruN a/stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_simplification_reverseop.mlir b/stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_simplification_reverseop.mlir
+--- stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_simplification_reverseop.mlir
++++ stablehlo/stablehlo/tests/transforms/stablehlo_aggressive_simplification_reverseop.mlir
+@@ -0,0 +1,65 @@
++// RUN: stablehlo-opt --stablehlo-aggressive-simplification=fold-op-element-limit=100 --allow-unregistered-dialect --split-input-file %s | FileCheck %s
++
++// CHECK-LABEL: @reverse_empty_dim
++// CHECK-SAME: [[ARG:%.+]]: tensor<1x2x3xi32>
++func.func @reverse_empty_dim(%arg0: tensor<1x2x3xi32>) -> tensor<1x2x3xi32> {
++  // CHECK-NOT: stablehlo.reverse
++  %0 = stablehlo.reverse %arg0, dims = [] : (tensor<1x2x3xi32>) -> tensor<1x2x3xi32>
++  // CHECK: return [[ARG]] : tensor<1x2x3xi32>
++  return %0 : tensor<1x2x3xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_dyn_shape_with_zero_dim
++// CHECK-SAME: [[ARG:%.+]]: tensor<1x?x1xi32>
++func.func @reverse_dyn_shape_with_zero_dim(%arg0: tensor<1x?x1xi32>) -> tensor<1x?x1xi32> {
++  // CHECK: %[[RES:.*]] = stablehlo.reverse
++  %0 = stablehlo.reverse %arg0, dims = [0, 1] : (tensor<1x?x1xi32>) -> tensor<1x?x1xi32>
++  // CHECK: return %[[RES]] : tensor<1x?x1xi32>
++  return %0 : tensor<1x?x1xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_zero_element_any_dim
++// CHECK-SAME: [[ARG:%.+]]: tensor<1x0x1xi32>
++func.func @reverse_zero_element_any_dim(%arg0: tensor<1x0x1xi32>) -> tensor<1x0x1xi32> {
++  // CHECK-NOT: stablehlo.reverse
++  %0 = stablehlo.reverse %arg0, dims = [0, 1] : (tensor<1x0x1xi32>) -> tensor<1x0x1xi32>
++  // CHECK: return [[ARG]] : tensor<1x0x1xi32>
++  return %0 : tensor<1x0x1xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_one_element_in_all_dim
++// CHECK-SAME: [[ARG:%.+]]: tensor<1x1x1xi32>
++func.func @reverse_one_element_in_all_dim(%arg0: tensor<1x1x1xi32>) -> tensor<1x1x1xi32> {
++  // CHECK-NOT: stablehlo.reverse
++  %0 = stablehlo.reverse %arg0, dims = [0, 1] : (tensor<1x1x1xi32>) -> tensor<1x1x1xi32>
++  // CHECK: return [[ARG]] : tensor<1x1x1xi32>
++  return %0 : tensor<1x1x1xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_all_dim_to_reverse_equals_one
++// CHECK-SAME: [[ARG:%.+]]: tensor<1x1x3xi32>
++func.func @reverse_all_dim_to_reverse_equals_one(%arg0: tensor<1x1x3xi32>) -> tensor<1x1x3xi32> {
++  // CHECK-NOT: stablehlo.reverse
++  %0 = stablehlo.reverse %arg0, dims = [0, 1] : (tensor<1x1x3xi32>) -> tensor<1x1x3xi32>
++  // CHECK: return [[ARG]] : tensor<1x1x3xi32>
++  return %0 : tensor<1x1x3xi32>
++}
++
++// -----
++
++// CHECK-LABEL: @reverse_splat_cst
++func.func @reverse_splat_cst() -> tensor<3x2xi32> {
++  // CHECK: stablehlo.constant dense<1> : tensor<3x2xi32>
++  // CHECK-NOT: stablehlo.reverse
++  %operand = stablehlo.constant dense<1> : tensor<3x2xi32>
++  %result = stablehlo.reverse %operand, dims = [0] : tensor<3x2xi32>
++  return %result : tensor<3x2xi32>
++}
+diff --ruN a/stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp b/stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp
+--- stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp
++++ stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp
+@@ -1268,6 +1268,132 @@
+   }
+ };
+ 
++// foldReverseHelper handles the three cases:
++//   - If the input is a splat, the reverse is a no-op.
++//   - If the input has 0 elements, the reverse is a no-op. Note that,
++//   this also handles cases where any dimension has size 0. If any
++//   dimension is 0 then the product of all dimensions is 0.
++//   - If the input is compile-time constant, and its elements are either
++//   integer or float, then reverse the elements.
++//
++// Before calling this function, matchAndRewrite has handled input that have
++// empty dimensions to reverse, or all dimensions of tensor have size 1.
++template <typename T>
++static DenseElementsAttr foldReverseHelper(const DenseElementsAttr attr,
++                                           const ShapedType type,
++                                           ArrayRef<int64_t> dims) {
++  // flat array representation of the input tensor
++  SmallVector<T> result(attr.getValues<T>().begin(), attr.getValues<T>().end());
++  int64_t numElements = attr.getNumElements();
++
++  size_t rank = type.getRank();
++  // stride[i] is the number of elements contained within Dimension i and all
++  // dimensions that follow it. It is the "jump size" required to skip over one
++  // full unit of the previous dimension
++  SmallVector<int64_t> stride(rank + 1, numElements);
++
++  for (size_t i = 0; i < rank; i++) {
++    stride[i + 1] = stride[i] / type.getDimSize(i);
++  }
++
++  for (int64_t dim : dims) {
++    // For example, given:
++    //   * tensor: tensor<2x3x2xi32>
++    //     [[[1, 2], [3, 4], [5, 6]], [[7, 8], [9,10], [11, 12]]]
++    //   * dim: [1]
++    //
++    // We're going to reverse the tensor with respect to dim as follows:
++    //   1) Split the tensor into blocks, i.e. smaller tensors whose type is
++    //   derived from the tensor by dropping the first `dim` dimensions, i.e.
++    //   tensor<3x2xi32> for the running example.
++    //   2) Split each block into windows, i.e. even smaller tensors whose type
++    //   is derived from the block by dropping the first dimension of the
++    //   block, i.e. tensor<2xi32> for the running example.
++    //   3) Within each block, swap windows but don't change the order of
++    //   elements within the windows: 0th window goes to N-1st spot, 1st window
++    //   goes to N-2nd spot etc.
++    //
++    // For the running example, the result will be:
++    //   [[[5, 6], [3, 4], [1, 2]], [[11, 12], [9, 10], [7, 8]]].
++    //
++    // Note how elements within windows haven't changed their order with respect
++    // to each other and how blocks haven't changed their order with respect to
++    // each other.
++
++    // numWindows is the dimension size of the dimension to reverse.
++    int64_t numWindows = type.getDimSize(dim);
++    // windowSize is the number of slices to cut the block
++    int64_t windowSize = stride[dim] / numWindows;
++    // numBlocks can be viewed as the contiguous block elements on a flat array
++    // to reverse
++    int64_t numBlocks = numElements / stride[dim];
++
++    for (int64_t block = 0; block < numBlocks; ++block) {
++      for (int64_t window = 0; window < numWindows / 2; ++window) {
++        // reversedWindow is the window that will be swapped with the window.
++        int64_t reversedWindow = numWindows - window - 1;
++
++        // windowStart is the starting index of the window in the result array.
++        int64_t windowStart = block * stride[dim] + window * windowSize;
++        // reversedWindowStart is the starting index of the reversed window in
++        // the result array.
++        int64_t reversedWindowStart =
++            block * stride[dim] + reversedWindow * windowSize;
++
++        // Swap elements along the window with the elements along the reversed
++        // window.
++        for (int64_t i = 0; i < windowSize; ++i) {
++          std::swap(result[windowStart + i], result[reversedWindowStart + i]);
++        }
++      }
++    }
++  }
++  return DenseElementsAttr::get(type, result);
++}
++
++struct FoldReverseOpPattern : public ShapeOpRewritePattern<ReverseOp> {
++  using ShapeOpRewritePattern::ShapeOpRewritePattern;
++
++  LogicalResult matchAndRewrite(ReverseOp op,
++                                PatternRewriter& rewriter) const override {
++    Value input = op.getOperand();
++    auto shapedType = cast<ShapedType>(input.getType());
++
++    // Validate shapedType and element count of resultType
++    if (failed(validateStaticShapeResult(rewriter, op, shapedType)) ||
++        failed(validateElementCountForFold(rewriter, op, shapedType)))
++      return failure();
++
++    DenseElementsAttr inputAttr;
++    if (!matchPattern(input, m_Constant(&inputAttr))) {
++      return rewriter.notifyMatchFailure(op, "expected constant operand");
++    }
++
++    // Handle trivial reverses in simplifier
++    ArrayRef<int64_t> dims = op.getDimensions();
++    bool allReverseDimsOne = llvm::all_of(
++        dims, [&](int64_t dim) { return shapedType.getDimSize(dim) == 1; });
++    if (dims.empty() || shapedType.getNumElements() <= 1 ||
++        inputAttr.isSplat() || allReverseDimsOne) {
++      return rewriter.notifyMatchFailure(
++          op, "trivial reverse handled by simplifier");
++    }
++
++    auto elementType = shapedType.getElementType();
++    DenseElementsAttr resultAttr;
++    if (isa<IntegerType>(elementType)) {
++      resultAttr = foldReverseHelper<APInt>(inputAttr, shapedType, dims);
++    } else if (isa<FloatType>(elementType)) {
++      resultAttr = foldReverseHelper<APFloat>(inputAttr, shapedType, dims);
++    } else {
++      return rewriter.notifyMatchFailure(op,
++                                         "unsupported element type to reverse");
++    }
++    rewriter.replaceOpWithNewOp<ConstantOp>(op, resultAttr);
++    return success();
++  }
++};
++
+ struct FoldSelectOpPattern : public ShapeOpRewritePattern<SelectOp> {
+   using ShapeOpRewritePattern::ShapeOpRewritePattern;
+ 
+@@ -2039,6 +2165,7 @@
+                 FoldReduceOpReducingZeroDims,         //
+                 FoldReduceOpToConstantInitializer,    //
+                 FoldReduceOpWithRedundantResults,     //
++                FoldReverseOpPattern,                 //
+                 FoldRoundOpPattern,                   //
+                 FoldRoundNearestEvenOpPattern,        //
+                 FoldRsqrtOpPattern,                   //
+diff --ruN a/stablehlo/tmp_file.txt b/stablehlo/tmp_file.txt
+--- stablehlo/tmp_file.txt
++++ stablehlo/tmp_file.txt
+@@ -0,0 +1,368 @@
++module {
++  func.func @helper() -> tensor<2xi32> {
++    %c = stablehlo.constant dense<[2, 1]> : tensor<2xi32>
++    return %c : tensor<2xi32>
++  }
++  func.func @add_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<2> : tensor<i32>
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @broadcast_in_dim_fold_splat(%arg0: tensor<3x3xi32>) -> (tensor<6xi32>, tensor<3xf32>, tensor<5xcomplex<f32>>, tensor<3x3xi32>) {
++    %c = stablehlo.constant dense<5> : tensor<6xi32>
++    %cst = stablehlo.constant dense<3.000000e+00> : tensor<3xf32>
++    %cst_0 = stablehlo.constant dense<(1.000000e+00,2.000000e+00)> : tensor<5xcomplex<f32>>
++    %c_1 = stablehlo.constant dense<1> : tensor<3x3xi32>
++    return %c, %cst, %cst_0, %c_1 : tensor<6xi32>, tensor<3xf32>, tensor<5xcomplex<f32>>, tensor<3x3xi32>
++  }
++  func.func @case_fold_constant_branch_index_int_result(%arg0: tensor<i32>, %arg1: tensor<i32>, %arg2: tensor<i32>) -> tensor<i32> {
++    return %arg1 : tensor<i32>
++  }
++  func.func @case_fold_constant_branch_index_complex_result(%arg0: tensor<complex<f32>>, %arg1: tensor<complex<f32>>, %arg2: tensor<complex<f32>>) -> tensor<complex<f32>> {
++    return %arg1 : tensor<complex<f32>>
++  }
++  func.func @case_fold_inline_call_tf_function(%arg0: !stablehlo.token {jax.token = true}, %arg1: tensor<16xi32>, %arg2: tensor<16xi64>) -> (!stablehlo.token {jax.token = true}, tensor<16xi32> {jax.result_info = "result"}) {
++    %c = stablehlo.constant dense<0> : tensor<i32>
++    %0 = stablehlo.custom_call @tf.call_tf_function(%arg0, %arg1, %arg2) {api_version = 2 : i32, has_side_effect = true, tf.backend_config = {called_index = 0 : i64, has_token_input_output = true}} : (!stablehlo.token, tensor<16xi32>, tensor<16xi64>) -> !stablehlo.token
++    %1 = "stablehlo.case"(%c) ({
++      %2 = stablehlo.after_all  : !stablehlo.token
++      stablehlo.return %2 : !stablehlo.token
++    }, {
++      %2 = stablehlo.custom_call @tf.call_tf_function(%arg0, %arg1, %arg2) {api_version = 2 : i32, has_side_effect = true, tf.backend_config = {called_index = 1 : i64, has_token_input_output = true}} : (!stablehlo.token, tensor<16xi32>, tensor<16xi64>) -> !stablehlo.token
++      stablehlo.return %2 : !stablehlo.token
++    }) : (tensor<i32>) -> !stablehlo.token
++    return %0, %arg1 : !stablehlo.token, tensor<16xi32>
++  }
++  func.func @case_fold_preserve_side_effects(%arg0: tensor<f32>, %arg1: tensor<f32>, %arg2: tensor<f32>) -> (tensor<3x2xi32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %c = stablehlo.constant dense<0> : tensor<3x2xi32>
++    %c_0 = stablehlo.constant dense<1> : tensor<i32>
++    %0 = stablehlo.custom_call @bar(%arg1) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++    %1:2 = "stablehlo.case"(%c_0) ({
++      %2 = stablehlo.custom_call @foo(%arg0) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++      stablehlo.return %2, %arg0 : tensor<3x2xi32>, tensor<f32>
++    }, {
++      stablehlo.return %c, %cst : tensor<3x2xi32>, tensor<f32>
++    }, {
++      %2 = stablehlo.custom_call @baz(%arg2) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++      stablehlo.return %2, %arg2 : tensor<3x2xi32>, tensor<f32>
++    }) : (tensor<i32>) -> (tensor<3x2xi32>, tensor<f32>)
++    return %0, %arg1 : tensor<3x2xi32>, tensor<f32>
++  }
++  func.func @case_fold_non_trivially_dead(%arg0: tensor<i32>, %arg1: tensor<i32>, %arg2: tensor<i32>) -> tensor<i32> {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    %0 = "stablehlo.case"(%c) ({
++      stablehlo.return %arg0 : tensor<i32>
++    }, {
++      %1 = stablehlo.custom_call @bar(%arg1) {has_side_effect = true} : (tensor<i32>) -> tensor<i32>
++      stablehlo.return %arg1 : tensor<i32>
++    }, {
++      stablehlo.return %arg2 : tensor<i32>
++    }) : (tensor<i32>) -> tensor<i32>
++    return %arg1 : tensor<i32>
++  }
++  func.func @clamp_fold(%arg0: tensor<3xi32>) -> tensor<3xi32> {
++    %c = stablehlo.constant dense<[1, 25, 11]> : tensor<3xi32>
++    return %c : tensor<3xi32>
++  }
++  func.func @compare_fold_int() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c, %c, %c, %c_0, %c, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @compare_fold_with_implicit_comparison_type() -> (tensor<3xi1>, tensor<3xi1>) {
++    %c = stablehlo.constant dense<[false, true, true]> : tensor<3xi1>
++    return %c, %c : tensor<3xi1>, tensor<3xi1>
++  }
++  func.func @compare_fold_float() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c_0, %c, %c_0, %c, %c, %c, %c_0, %c_0, %c, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @compare_fold_float_edge_cases() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c, %c, %c_0, %c, %c, %c, %c, %c_0, %c, %c, %c, %c, %c, %c_0, %c_0, %c, %c_0, %c, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c, %c_0, %c, %c, %c, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c, %c, %c, %c_0, %c_0, %c_0, %c_0, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @concatenate_fold() -> (tensor<6xi32>, tensor<3xi32>, tensor<3x3xi32>, tensor<2x5xi32>) {
++    %c = stablehlo.constant dense<[0, 1, 2, 3, 4, 5]> : tensor<6xi32>
++    %c_0 = stablehlo.constant dense<[0, 1, 5]> : tensor<3xi32>
++    %c_1 = stablehlo.constant dense<[[0, 1, 2], [3, 4, 5], [6, 7, 8]]> : tensor<3x3xi32>
++    %c_2 = stablehlo.constant dense<[[0, 1, 2, 11, 12], [3, 4, 5, 13, 14]]> : tensor<2x5xi32>
++    return %c, %c_0, %c_1, %c_2 : tensor<6xi32>, tensor<3xi32>, tensor<3x3xi32>, tensor<2x5xi32>
++  }
++  func.func @fold_concatenate_splat_leading(%arg0: tensor<1xi32>) -> tensor<3xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %0 = stablehlo.concatenate %c, %arg0, dim = 0 : (tensor<2xi32>, tensor<1xi32>) -> tensor<3xi32>
++    return %0 : tensor<3xi32>
++  }
++  func.func @fold_concatenate_splat_trailing(%arg0: tensor<2xi32>) -> tensor<6xi32> {
++    %c = stablehlo.constant dense<0> : tensor<4xi32>
++    %0 = stablehlo.concatenate %arg0, %c, dim = 0 : (tensor<2xi32>, tensor<4xi32>) -> tensor<6xi32>
++    return %0 : tensor<6xi32>
++  }
++  func.func @fold_concatenate_splat_middle(%arg0: tensor<1xi32>) -> tensor<4xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %0 = stablehlo.concatenate %arg0, %c, %arg0, dim = 0 : (tensor<1xi32>, tensor<2xi32>, tensor<1xi32>) -> tensor<4xi32>
++    return %0 : tensor<4xi32>
++  }
++  func.func @fold_concatenate_splat_multiple(%arg0: tensor<1xi32>) -> tensor<5xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %c_0 = stablehlo.constant dense<1> : tensor<2xi32>
++    %0 = stablehlo.concatenate %c, %c_0, %arg0, dim = 0 : (tensor<2xi32>, tensor<2xi32>, tensor<1xi32>) -> tensor<5xi32>
++    return %0 : tensor<5xi32>
++  }
++  func.func @div_fold_cst() -> (tensor<i32>, tensor<ui32>, tensor<f32>) {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    %c_0 = stablehlo.constant dense<1> : tensor<ui32>
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %c, %c_0, %cst : tensor<i32>, tensor<ui32>, tensor<f32>
++  }
++  func.func @div_fold_cst_zero_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7F800000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @div_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @max_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @min_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @mul_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<4> : tensor<i32>
++    %cst = stablehlo.constant dense<4.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @subtract_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<2> : tensor<i32>
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @eval_iota() -> (tensor<1xi32>, tensor<3x4x5xi32>, tensor<3x4x5xi32>) {
++    %c = stablehlo.constant dense<0> : tensor<1xi32>
++    %0 = stablehlo.iota dim = 1 : tensor<3x4x5xi32>
++    %1 = stablehlo.iota dim = 2 : tensor<3x4x5xi32>
++    return %c, %0, %1 : tensor<1xi32>, tensor<3x4x5xi32>, tensor<3x4x5xi32>
++  }
++  func.func @eval_iota_zero_dimension() -> (tensor<0xi32>, tensor<5x0x2xi32>) {
++    %c = stablehlo.constant dense<> : tensor<0xi32>
++    %c_0 = stablehlo.constant dense<> : tensor<5x0x2xi32>
++    return %c, %c_0 : tensor<0xi32>, tensor<5x0x2xi32>
++  }
++  func.func @reduce_op_fold(%arg0: tensor<i64>) -> tensor<i1> {
++    %c = stablehlo.constant dense<false> : tensor<i1>
++    return %c : tensor<i1>
++  }
++  func.func @reshape_fold() -> (tensor<1xf32>, tensor<2x2xi32>, tensor<3x2xcomplex<f32>>) {
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<1xf32>
++    %c = stablehlo.constant dense<[[1, 2], [3, 4]]> : tensor<2x2xi32>
++    %cst_0 = stablehlo.constant dense<(1.000000e+00,2.000000e+00)> : tensor<3x2xcomplex<f32>>
++    return %cst, %c, %cst_0 : tensor<1xf32>, tensor<2x2xi32>, tensor<3x2xcomplex<f32>>
++  }
++  func.func @slice_fold(%arg0: tensor<6x1xi32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<2> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @slice_fold_splat(%arg0: tensor<6x1xi32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<1> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @dynamic_slice_fold(%arg0: tensor<i32>, %arg1: tensor<i32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<256> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @eval_convert_f32_to_i64() -> tensor<2xi64> {
++    %c = stablehlo.constant dense<[1, 2]> : tensor<2xi64>
++    return %c : tensor<2xi64>
++  }
++  func.func @eval_convert_bool_f32() -> tensor<2xf32> {
++    %cst = stablehlo.constant dense<[0.000000e+00, 1.000000e+00]> : tensor<2xf32>
++    return %cst : tensor<2xf32>
++  }
++  func.func @eval_convert_bool_i32() -> tensor<2xi32> {
++    %c = stablehlo.constant dense<[0, 1]> : tensor<2xi32>
++    return %c : tensor<2xi32>
++  }
++  func.func @eval_convert_i32_bool() -> tensor<3xi1> {
++    %c = stablehlo.constant dense<[false, true, true]> : tensor<3xi1>
++    return %c : tensor<3xi1>
++  }
++  func.func @eval_convert_f32_bool() -> tensor<4xi1> {
++    %c = stablehlo.constant dense<[true, false, true, true]> : tensor<4xi1>
++    return %c : tensor<4xi1>
++  }
++  func.func @eval_convert_f32_non_convertable() -> (tensor<2xi64>, tensor<2xi64>, tensor<2xi64>) {
++    %cst = stablehlo.constant dense<[1.000000e+00, 0x7F800000]> : tensor<2xf32>
++    %cst_0 = stablehlo.constant dense<[2.000000e+00, 0xFF800000]> : tensor<2xf32>
++    %cst_1 = stablehlo.constant dense<[3.000000e+00, -0.000000e+00]> : tensor<2xf32>
++    %0 = stablehlo.convert %cst : (tensor<2xf32>) -> tensor<2xi64>
++    %1 = stablehlo.convert %cst_0 : (tensor<2xf32>) -> tensor<2xi64>
++    %2 = stablehlo.convert %cst_1 : (tensor<2xf32>) -> tensor<2xi64>
++    return %0, %1, %2 : tensor<2xi64>, tensor<2xi64>, tensor<2xi64>
++  }
++  func.func @eval_convert_f32_non_fittable() -> (tensor<1xi32>, tensor<1xi32>) {
++    %cst = stablehlo.constant dense<2.14748365E+9> : tensor<1xf32>
++    %c = stablehlo.constant dense<2147483520> : tensor<1xi32>
++    %0 = stablehlo.convert %cst : (tensor<1xf32>) -> tensor<1xi32>
++    return %c, %0 : tensor<1xi32>, tensor<1xi32>
++  }
++  func.func @eval_convert_i32_non_exact() -> (tensor<1xf32>, tensor<1xf32>) {
++    %cst = stablehlo.constant dense<0x4B7FFFFF> : tensor<1xf32>
++    %cst_0 = stablehlo.constant dense<0x4B800000> : tensor<1xf32>
++    return %cst, %cst_0 : tensor<1xf32>, tensor<1xf32>
++  }
++  func.func @eval_convert_f64_precision_loss() -> (tensor<1xf32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<9.99999996E-13> : tensor<1xf32>
++    %cst_0 = stablehlo.constant dense<8.000000e+00> : tensor<f32>
++    return %cst, %cst_0 : tensor<1xf32>, tensor<f32>
++  }
++  func.func @fold_abs() -> (tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %c = stablehlo.constant dense<0> : tensor<i32>
++    %c_0 = stablehlo.constant dense<10> : tensor<i32>
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0x7F800000> : tensor<f32>
++    return %c, %c_0, %c_0, %cst, %cst_1, %cst_1, %cst_2, %cst_2 : tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_cosine() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.866025388> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.707106769> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0.49999997> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<-4.37113883E-8> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_3 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_erf() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-0.520499885> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.900003731> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_exponential() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<2.71828175> : tensor<f32>
++    return %cst, %cst_0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_log() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.99999994> : tensor<f32>
++    %0 = stablehlo.log %cst : tensor<f32>
++    return %cst, %cst_0, %0 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_logistic() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_negate() -> (tensor<i32>, tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<-4> : tensor<i32>
++    %c_0 = stablehlo.constant dense<0> : tensor<i32>
++    %cst = stablehlo.constant dense<9.999000e+02> : tensor<f32>
++    return %c, %c_0, %cst : tensor<i32>, tensor<i32>, tensor<f32>
++  }
++  func.func @fold_not() -> (tensor<i32>, tensor<i32>) {
++    %c = stablehlo.constant dense<42> : tensor<i32>
++    %c_0 = stablehlo.constant dense<-1> : tensor<i32>
++    return %c, %c_0 : tensor<i32>, tensor<i32>
++  }
++  func.func @fold_round_nearest_afz() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-3.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<-2.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    %cst_4 = stablehlo.constant dense<3.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_2, %cst_3, %cst_4 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_round_nearest_even() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-2.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %cst, %cst, %cst_0, %cst_0, %cst_1, %cst_2, %cst_2 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_rsqrt() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %0 = stablehlo.rsqrt %cst : tensor<f32>
++    return %cst_0, %0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sign() -> (tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    %c = stablehlo.constant dense<-1> : tensor<i32>
++    %c_0 = stablehlo.constant dense<0> : tensor<i32>
++    %c_1 = stablehlo.constant dense<1> : tensor<i32>
++    %cst_2 = stablehlo.constant dense<-1.000000e+00> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_4 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %0 = stablehlo.sign %cst : tensor<f32>
++    return %c, %c_0, %c_1, %cst_2, %cst_3, %cst_4, %0 : tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sine() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.707106769> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0.866025447> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_3 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sqrt() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    %0 = stablehlo.sqrt %cst : tensor<f32>
++    return %cst_0, %0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_tan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @fold_tanh() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-0.44721359> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.44721359> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_set_dimension_size(%arg0: tensor<10xf32>) -> tensor<10xf32> {
++    return %arg0 : tensor<10xf32>
++  }
++  func.func @no_fold_set_dimension_size(%arg0: tensor<10xf32>) -> tensor<?xf32, #stablehlo.bounds<10>> {
++    %c = stablehlo.constant dense<10> : tensor<i32>
++    %0 = stablehlo.set_dimension_size %arg0, %c, dim = 0 : (tensor<10xf32>, tensor<i32>) -> tensor<?xf32, #stablehlo.bounds<10>>
++    return %0 : tensor<?xf32, #stablehlo.bounds<10>>
++  }
++  func.func @no_fold_set_dimension_size_bounded_input(%arg0: tensor<?x4xf32, #stablehlo.bounds<8, ?>>) -> tensor<8x4xf32> {
++    %c = stablehlo.constant dense<8> : tensor<i32>
++    %0 = stablehlo.set_dimension_size %arg0, %c, dim = 0 : (tensor<?x4xf32, #stablehlo.bounds<8, ?>>, tensor<i32>) -> tensor<8x4xf32>
++    return %0 : tensor<8x4xf32>
++  }
++  func.func @eval_transpose() -> (tensor<2x3x2xi32>, tensor<2x4x3xi32>, tensor<4x3x2xi32>) {
++    %c = stablehlo.constant dense<[[[1, 7], [3, 9], [5, 11]], [[2, 8], [4, 10], [6, 12]]]> : tensor<2x3x2xi32>
++    %c_0 = stablehlo.constant dense<[[[1, 3, 5], [7, 9, 11], [13, 15, 17], [19, 21, 23]], [[2, 4, 6], [8, 10, 12], [14, 16, 18], [20, 22, 24]]]> : tensor<2x4x3xi32>
++    %c_1 = stablehlo.constant dense<[[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [11, 12]], [[13, 14], [15, 16], [17, 18]], [[19, 20], [21, 22], [23, 24]]]> : tensor<4x3x2xi32>
++    return %c, %c_0, %c_1 : tensor<2x3x2xi32>, tensor<2x4x3xi32>, tensor<4x3x2xi32>
++  }
++  func.func @eval_transpose_zerodim() -> tensor<10x3x0xf32> {
++    %cst = stablehlo.constant dense<> : tensor<10x3x0xf32>
++    return %cst : tensor<10x3x0xf32>
++  }
++  func.func @eval_transpose_zerorank() -> tensor<i32> {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    return %c : tensor<i32>
++  }
++  func.func @eval_transpose_splat() -> tensor<10x3x1xi32> {
++    %c = stablehlo.constant dense<1> : tensor<10x3x1xi32>
++    return %c : tensor<10x3x1xi32>
++  }
++  func.func @dce_while_false_condition() -> tensor<i64> {
++    %c = stablehlo.constant dense<0> : tensor<i64>
++    return %c : tensor<i64>
++  }
++}
++
+diff --ruN a/stablehlo/tmp_file1.txt b/stablehlo/tmp_file1.txt
+--- stablehlo/tmp_file1.txt
++++ stablehlo/tmp_file1.txt
+@@ -0,0 +1,368 @@
++module {
++  func.func @helper() -> tensor<2xi32> {
++    %c = stablehlo.constant dense<[2, 1]> : tensor<2xi32>
++    return %c : tensor<2xi32>
++  }
++  func.func @add_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<2> : tensor<i32>
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @broadcast_in_dim_fold_splat(%arg0: tensor<3x3xi32>) -> (tensor<6xi32>, tensor<3xf32>, tensor<5xcomplex<f32>>, tensor<3x3xi32>) {
++    %c = stablehlo.constant dense<5> : tensor<6xi32>
++    %cst = stablehlo.constant dense<3.000000e+00> : tensor<3xf32>
++    %cst_0 = stablehlo.constant dense<(1.000000e+00,2.000000e+00)> : tensor<5xcomplex<f32>>
++    %c_1 = stablehlo.constant dense<1> : tensor<3x3xi32>
++    return %c, %cst, %cst_0, %c_1 : tensor<6xi32>, tensor<3xf32>, tensor<5xcomplex<f32>>, tensor<3x3xi32>
++  }
++  func.func @case_fold_constant_branch_index_int_result(%arg0: tensor<i32>, %arg1: tensor<i32>, %arg2: tensor<i32>) -> tensor<i32> {
++    return %arg1 : tensor<i32>
++  }
++  func.func @case_fold_constant_branch_index_complex_result(%arg0: tensor<complex<f32>>, %arg1: tensor<complex<f32>>, %arg2: tensor<complex<f32>>) -> tensor<complex<f32>> {
++    return %arg1 : tensor<complex<f32>>
++  }
++  func.func @case_fold_inline_call_tf_function(%arg0: !stablehlo.token {jax.token = true}, %arg1: tensor<16xi32>, %arg2: tensor<16xi64>) -> (!stablehlo.token {jax.token = true}, tensor<16xi32> {jax.result_info = "result"}) {
++    %c = stablehlo.constant dense<0> : tensor<i32>
++    %0 = stablehlo.custom_call @tf.call_tf_function(%arg0, %arg1, %arg2) {api_version = 2 : i32, has_side_effect = true, tf.backend_config = {called_index = 0 : i64, has_token_input_output = true}} : (!stablehlo.token, tensor<16xi32>, tensor<16xi64>) -> !stablehlo.token
++    %1 = "stablehlo.case"(%c) ({
++      %2 = stablehlo.after_all  : !stablehlo.token
++      stablehlo.return %2 : !stablehlo.token
++    }, {
++      %2 = stablehlo.custom_call @tf.call_tf_function(%arg0, %arg1, %arg2) {api_version = 2 : i32, has_side_effect = true, tf.backend_config = {called_index = 1 : i64, has_token_input_output = true}} : (!stablehlo.token, tensor<16xi32>, tensor<16xi64>) -> !stablehlo.token
++      stablehlo.return %2 : !stablehlo.token
++    }) : (tensor<i32>) -> !stablehlo.token
++    return %0, %arg1 : !stablehlo.token, tensor<16xi32>
++  }
++  func.func @case_fold_preserve_side_effects(%arg0: tensor<f32>, %arg1: tensor<f32>, %arg2: tensor<f32>) -> (tensor<3x2xi32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %c = stablehlo.constant dense<0> : tensor<3x2xi32>
++    %c_0 = stablehlo.constant dense<1> : tensor<i32>
++    %0 = stablehlo.custom_call @bar(%arg1) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++    %1:2 = "stablehlo.case"(%c_0) ({
++      %2 = stablehlo.custom_call @foo(%arg0) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++      stablehlo.return %2, %arg0 : tensor<3x2xi32>, tensor<f32>
++    }, {
++      stablehlo.return %c, %cst : tensor<3x2xi32>, tensor<f32>
++    }, {
++      %2 = stablehlo.custom_call @baz(%arg2) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++      stablehlo.return %2, %arg2 : tensor<3x2xi32>, tensor<f32>
++    }) : (tensor<i32>) -> (tensor<3x2xi32>, tensor<f32>)
++    return %0, %arg1 : tensor<3x2xi32>, tensor<f32>
++  }
++  func.func @case_fold_non_trivially_dead(%arg0: tensor<i32>, %arg1: tensor<i32>, %arg2: tensor<i32>) -> tensor<i32> {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    %0 = "stablehlo.case"(%c) ({
++      stablehlo.return %arg0 : tensor<i32>
++    }, {
++      %1 = stablehlo.custom_call @bar(%arg1) {has_side_effect = true} : (tensor<i32>) -> tensor<i32>
++      stablehlo.return %arg1 : tensor<i32>
++    }, {
++      stablehlo.return %arg2 : tensor<i32>
++    }) : (tensor<i32>) -> tensor<i32>
++    return %arg1 : tensor<i32>
++  }
++  func.func @clamp_fold(%arg0: tensor<3xi32>) -> tensor<3xi32> {
++    %c = stablehlo.constant dense<[1, 25, 11]> : tensor<3xi32>
++    return %c : tensor<3xi32>
++  }
++  func.func @compare_fold_int() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c, %c, %c, %c_0, %c, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @compare_fold_with_implicit_comparison_type() -> (tensor<3xi1>, tensor<3xi1>) {
++    %c = stablehlo.constant dense<[false, true, true]> : tensor<3xi1>
++    return %c, %c : tensor<3xi1>, tensor<3xi1>
++  }
++  func.func @compare_fold_float() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c_0, %c, %c_0, %c, %c, %c, %c_0, %c_0, %c, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @compare_fold_float_edge_cases() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c, %c, %c_0, %c, %c, %c, %c, %c_0, %c, %c, %c, %c, %c, %c_0, %c_0, %c, %c_0, %c, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c, %c_0, %c, %c, %c, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c, %c, %c, %c_0, %c_0, %c_0, %c_0, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @concatenate_fold() -> (tensor<6xi32>, tensor<3xi32>, tensor<3x3xi32>, tensor<2x5xi32>) {
++    %c = stablehlo.constant dense<[0, 1, 2, 3, 4, 5]> : tensor<6xi32>
++    %c_0 = stablehlo.constant dense<[0, 1, 5]> : tensor<3xi32>
++    %c_1 = stablehlo.constant dense<[[0, 1, 2], [3, 4, 5], [6, 7, 8]]> : tensor<3x3xi32>
++    %c_2 = stablehlo.constant dense<[[0, 1, 2, 11, 12], [3, 4, 5, 13, 14]]> : tensor<2x5xi32>
++    return %c, %c_0, %c_1, %c_2 : tensor<6xi32>, tensor<3xi32>, tensor<3x3xi32>, tensor<2x5xi32>
++  }
++  func.func @fold_concatenate_splat_leading(%arg0: tensor<1xi32>) -> tensor<3xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %0 = stablehlo.concatenate %c, %arg0, dim = 0 : (tensor<2xi32>, tensor<1xi32>) -> tensor<3xi32>
++    return %0 : tensor<3xi32>
++  }
++  func.func @fold_concatenate_splat_trailing(%arg0: tensor<2xi32>) -> tensor<6xi32> {
++    %c = stablehlo.constant dense<0> : tensor<4xi32>
++    %0 = stablehlo.concatenate %arg0, %c, dim = 0 : (tensor<2xi32>, tensor<4xi32>) -> tensor<6xi32>
++    return %0 : tensor<6xi32>
++  }
++  func.func @fold_concatenate_splat_middle(%arg0: tensor<1xi32>) -> tensor<4xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %0 = stablehlo.concatenate %arg0, %c, %arg0, dim = 0 : (tensor<1xi32>, tensor<2xi32>, tensor<1xi32>) -> tensor<4xi32>
++    return %0 : tensor<4xi32>
++  }
++  func.func @fold_concatenate_splat_multiple(%arg0: tensor<1xi32>) -> tensor<5xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %c_0 = stablehlo.constant dense<1> : tensor<2xi32>
++    %0 = stablehlo.concatenate %c, %c_0, %arg0, dim = 0 : (tensor<2xi32>, tensor<2xi32>, tensor<1xi32>) -> tensor<5xi32>
++    return %0 : tensor<5xi32>
++  }
++  func.func @div_fold_cst() -> (tensor<i32>, tensor<ui32>, tensor<f32>) {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    %c_0 = stablehlo.constant dense<1> : tensor<ui32>
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %c, %c_0, %cst : tensor<i32>, tensor<ui32>, tensor<f32>
++  }
++  func.func @div_fold_cst_zero_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7F800000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @div_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @max_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @min_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @mul_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<4> : tensor<i32>
++    %cst = stablehlo.constant dense<4.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @subtract_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<2> : tensor<i32>
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @eval_iota() -> (tensor<1xi32>, tensor<3x4x5xi32>, tensor<3x4x5xi32>) {
++    %c = stablehlo.constant dense<0> : tensor<1xi32>
++    %0 = stablehlo.iota dim = 1 : tensor<3x4x5xi32>
++    %1 = stablehlo.iota dim = 2 : tensor<3x4x5xi32>
++    return %c, %0, %1 : tensor<1xi32>, tensor<3x4x5xi32>, tensor<3x4x5xi32>
++  }
++  func.func @eval_iota_zero_dimension() -> (tensor<0xi32>, tensor<5x0x2xi32>) {
++    %c = stablehlo.constant dense<> : tensor<0xi32>
++    %c_0 = stablehlo.constant dense<> : tensor<5x0x2xi32>
++    return %c, %c_0 : tensor<0xi32>, tensor<5x0x2xi32>
++  }
++  func.func @reduce_op_fold(%arg0: tensor<i64>) -> tensor<i1> {
++    %c = stablehlo.constant dense<false> : tensor<i1>
++    return %c : tensor<i1>
++  }
++  func.func @reshape_fold() -> (tensor<1xf32>, tensor<2x2xi32>, tensor<3x2xcomplex<f32>>) {
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<1xf32>
++    %c = stablehlo.constant dense<[[1, 2], [3, 4]]> : tensor<2x2xi32>
++    %cst_0 = stablehlo.constant dense<(1.000000e+00,2.000000e+00)> : tensor<3x2xcomplex<f32>>
++    return %cst, %c, %cst_0 : tensor<1xf32>, tensor<2x2xi32>, tensor<3x2xcomplex<f32>>
++  }
++  func.func @slice_fold(%arg0: tensor<6x1xi32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<2> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @slice_fold_splat(%arg0: tensor<6x1xi32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<1> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @dynamic_slice_fold(%arg0: tensor<i32>, %arg1: tensor<i32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<256> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @eval_convert_f32_to_i64() -> tensor<2xi64> {
++    %c = stablehlo.constant dense<[1, 2]> : tensor<2xi64>
++    return %c : tensor<2xi64>
++  }
++  func.func @eval_convert_bool_f32() -> tensor<2xf32> {
++    %cst = stablehlo.constant dense<[0.000000e+00, 1.000000e+00]> : tensor<2xf32>
++    return %cst : tensor<2xf32>
++  }
++  func.func @eval_convert_bool_i32() -> tensor<2xi32> {
++    %c = stablehlo.constant dense<[0, 1]> : tensor<2xi32>
++    return %c : tensor<2xi32>
++  }
++  func.func @eval_convert_i32_bool() -> tensor<3xi1> {
++    %c = stablehlo.constant dense<[false, true, true]> : tensor<3xi1>
++    return %c : tensor<3xi1>
++  }
++  func.func @eval_convert_f32_bool() -> tensor<4xi1> {
++    %c = stablehlo.constant dense<[true, false, true, true]> : tensor<4xi1>
++    return %c : tensor<4xi1>
++  }
++  func.func @eval_convert_f32_non_convertable() -> (tensor<2xi64>, tensor<2xi64>, tensor<2xi64>) {
++    %cst = stablehlo.constant dense<[1.000000e+00, 0x7F800000]> : tensor<2xf32>
++    %cst_0 = stablehlo.constant dense<[2.000000e+00, 0xFF800000]> : tensor<2xf32>
++    %cst_1 = stablehlo.constant dense<[3.000000e+00, -0.000000e+00]> : tensor<2xf32>
++    %0 = stablehlo.convert %cst : (tensor<2xf32>) -> tensor<2xi64>
++    %1 = stablehlo.convert %cst_0 : (tensor<2xf32>) -> tensor<2xi64>
++    %2 = stablehlo.convert %cst_1 : (tensor<2xf32>) -> tensor<2xi64>
++    return %0, %1, %2 : tensor<2xi64>, tensor<2xi64>, tensor<2xi64>
++  }
++  func.func @eval_convert_f32_non_fittable() -> (tensor<1xi32>, tensor<1xi32>) {
++    %cst = stablehlo.constant dense<2.14748365E+9> : tensor<1xf32>
++    %c = stablehlo.constant dense<2147483520> : tensor<1xi32>
++    %0 = stablehlo.convert %cst : (tensor<1xf32>) -> tensor<1xi32>
++    return %c, %0 : tensor<1xi32>, tensor<1xi32>
++  }
++  func.func @eval_convert_i32_non_exact() -> (tensor<1xf32>, tensor<1xf32>) {
++    %cst = stablehlo.constant dense<0x4B7FFFFF> : tensor<1xf32>
++    %cst_0 = stablehlo.constant dense<0x4B800000> : tensor<1xf32>
++    return %cst, %cst_0 : tensor<1xf32>, tensor<1xf32>
++  }
++  func.func @eval_convert_f64_precision_loss() -> (tensor<1xf32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<9.99999996E-13> : tensor<1xf32>
++    %cst_0 = stablehlo.constant dense<8.000000e+00> : tensor<f32>
++    return %cst, %cst_0 : tensor<1xf32>, tensor<f32>
++  }
++  func.func @fold_abs() -> (tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %c = stablehlo.constant dense<0> : tensor<i32>
++    %c_0 = stablehlo.constant dense<10> : tensor<i32>
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0x7F800000> : tensor<f32>
++    return %c, %c_0, %c_0, %cst, %cst_1, %cst_1, %cst_2, %cst_2 : tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_cosine() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.866025388> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.707106769> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0.49999997> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<-4.37113883E-8> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_3 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_erf() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-0.520499885> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.900003731> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_exponential() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<2.71828175> : tensor<f32>
++    return %cst, %cst_0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_log() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.99999994> : tensor<f32>
++    %0 = stablehlo.log %cst : tensor<f32>
++    return %cst, %cst_0, %0 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_logistic() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_negate() -> (tensor<i32>, tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<-4> : tensor<i32>
++    %c_0 = stablehlo.constant dense<0> : tensor<i32>
++    %cst = stablehlo.constant dense<9.999000e+02> : tensor<f32>
++    return %c, %c_0, %cst : tensor<i32>, tensor<i32>, tensor<f32>
++  }
++  func.func @fold_not() -> (tensor<i32>, tensor<i32>) {
++    %c = stablehlo.constant dense<42> : tensor<i32>
++    %c_0 = stablehlo.constant dense<-1> : tensor<i32>
++    return %c, %c_0 : tensor<i32>, tensor<i32>
++  }
++  func.func @fold_round_nearest_afz() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-3.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<-2.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    %cst_4 = stablehlo.constant dense<3.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_2, %cst_3, %cst_4 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_round_nearest_even() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-2.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %cst, %cst, %cst_0, %cst_0, %cst_1, %cst_2, %cst_2 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_rsqrt() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %0 = stablehlo.rsqrt %cst : tensor<f32>
++    return %cst_0, %0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sign() -> (tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    %c = stablehlo.constant dense<-1> : tensor<i32>
++    %c_0 = stablehlo.constant dense<0> : tensor<i32>
++    %c_1 = stablehlo.constant dense<1> : tensor<i32>
++    %cst_2 = stablehlo.constant dense<-1.000000e+00> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_4 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %0 = stablehlo.sign %cst : tensor<f32>
++    return %c, %c_0, %c_1, %cst_2, %cst_3, %cst_4, %0 : tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sine() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.707106769> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0.866025447> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_3 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sqrt() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    %0 = stablehlo.sqrt %cst : tensor<f32>
++    return %cst_0, %0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_tan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @fold_tanh() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-0.44721359> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.44721359> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_set_dimension_size(%arg0: tensor<10xf32>) -> tensor<10xf32> {
++    return %arg0 : tensor<10xf32>
++  }
++  func.func @no_fold_set_dimension_size(%arg0: tensor<10xf32>) -> tensor<?xf32, #stablehlo.bounds<10>> {
++    %c = stablehlo.constant dense<10> : tensor<i32>
++    %0 = stablehlo.set_dimension_size %arg0, %c, dim = 0 : (tensor<10xf32>, tensor<i32>) -> tensor<?xf32, #stablehlo.bounds<10>>
++    return %0 : tensor<?xf32, #stablehlo.bounds<10>>
++  }
++  func.func @no_fold_set_dimension_size_bounded_input(%arg0: tensor<?x4xf32, #stablehlo.bounds<8, ?>>) -> tensor<8x4xf32> {
++    %c = stablehlo.constant dense<8> : tensor<i32>
++    %0 = stablehlo.set_dimension_size %arg0, %c, dim = 0 : (tensor<?x4xf32, #stablehlo.bounds<8, ?>>, tensor<i32>) -> tensor<8x4xf32>
++    return %0 : tensor<8x4xf32>
++  }
++  func.func @eval_transpose() -> (tensor<2x3x2xi32>, tensor<2x4x3xi32>, tensor<4x3x2xi32>) {
++    %c = stablehlo.constant dense<[[[1, 7], [3, 9], [5, 11]], [[2, 8], [4, 10], [6, 12]]]> : tensor<2x3x2xi32>
++    %c_0 = stablehlo.constant dense<[[[1, 3, 5], [7, 9, 11], [13, 15, 17], [19, 21, 23]], [[2, 4, 6], [8, 10, 12], [14, 16, 18], [20, 22, 24]]]> : tensor<2x4x3xi32>
++    %c_1 = stablehlo.constant dense<[[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [11, 12]], [[13, 14], [15, 16], [17, 18]], [[19, 20], [21, 22], [23, 24]]]> : tensor<4x3x2xi32>
++    return %c, %c_0, %c_1 : tensor<2x3x2xi32>, tensor<2x4x3xi32>, tensor<4x3x2xi32>
++  }
++  func.func @eval_transpose_zerodim() -> tensor<10x3x0xf32> {
++    %cst = stablehlo.constant dense<> : tensor<10x3x0xf32>
++    return %cst : tensor<10x3x0xf32>
++  }
++  func.func @eval_transpose_zerorank() -> tensor<i32> {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    return %c : tensor<i32>
++  }
++  func.func @eval_transpose_splat() -> tensor<10x3x1xi32> {
++    %c = stablehlo.constant dense<1> : tensor<10x3x1xi32>
++    return %c : tensor<10x3x1xi32>
++  }
++  func.func @dce_while_false_condition() -> tensor<i64> {
++    %c = stablehlo.constant dense<0> : tensor<i64>
++    return %c : tensor<i64>
++  }
++}
++
+diff --ruN a/stablehlo/tmp_file2.txt b/stablehlo/tmp_file2.txt
+--- stablehlo/tmp_file2.txt
++++ stablehlo/tmp_file2.txt
+@@ -0,0 +1,368 @@
++module {
++  func.func @helper() -> tensor<2xi32> {
++    %c = stablehlo.constant dense<[2, 1]> : tensor<2xi32>
++    return %c : tensor<2xi32>
++  }
++  func.func @add_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<2> : tensor<i32>
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @broadcast_in_dim_fold_splat(%arg0: tensor<3x3xi32>) -> (tensor<6xi32>, tensor<3xf32>, tensor<5xcomplex<f32>>, tensor<3x3xi32>) {
++    %c = stablehlo.constant dense<5> : tensor<6xi32>
++    %cst = stablehlo.constant dense<3.000000e+00> : tensor<3xf32>
++    %cst_0 = stablehlo.constant dense<(1.000000e+00,2.000000e+00)> : tensor<5xcomplex<f32>>
++    %c_1 = stablehlo.constant dense<1> : tensor<3x3xi32>
++    return %c, %cst, %cst_0, %c_1 : tensor<6xi32>, tensor<3xf32>, tensor<5xcomplex<f32>>, tensor<3x3xi32>
++  }
++  func.func @case_fold_constant_branch_index_int_result(%arg0: tensor<i32>, %arg1: tensor<i32>, %arg2: tensor<i32>) -> tensor<i32> {
++    return %arg1 : tensor<i32>
++  }
++  func.func @case_fold_constant_branch_index_complex_result(%arg0: tensor<complex<f32>>, %arg1: tensor<complex<f32>>, %arg2: tensor<complex<f32>>) -> tensor<complex<f32>> {
++    return %arg1 : tensor<complex<f32>>
++  }
++  func.func @case_fold_inline_call_tf_function(%arg0: !stablehlo.token {jax.token = true}, %arg1: tensor<16xi32>, %arg2: tensor<16xi64>) -> (!stablehlo.token {jax.token = true}, tensor<16xi32> {jax.result_info = "result"}) {
++    %c = stablehlo.constant dense<0> : tensor<i32>
++    %0 = stablehlo.custom_call @tf.call_tf_function(%arg0, %arg1, %arg2) {api_version = 2 : i32, has_side_effect = true, tf.backend_config = {called_index = 0 : i64, has_token_input_output = true}} : (!stablehlo.token, tensor<16xi32>, tensor<16xi64>) -> !stablehlo.token
++    %1 = "stablehlo.case"(%c) ({
++      %2 = stablehlo.after_all  : !stablehlo.token
++      stablehlo.return %2 : !stablehlo.token
++    }, {
++      %2 = stablehlo.custom_call @tf.call_tf_function(%arg0, %arg1, %arg2) {api_version = 2 : i32, has_side_effect = true, tf.backend_config = {called_index = 1 : i64, has_token_input_output = true}} : (!stablehlo.token, tensor<16xi32>, tensor<16xi64>) -> !stablehlo.token
++      stablehlo.return %2 : !stablehlo.token
++    }) : (tensor<i32>) -> !stablehlo.token
++    return %0, %arg1 : !stablehlo.token, tensor<16xi32>
++  }
++  func.func @case_fold_preserve_side_effects(%arg0: tensor<f32>, %arg1: tensor<f32>, %arg2: tensor<f32>) -> (tensor<3x2xi32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %c = stablehlo.constant dense<0> : tensor<3x2xi32>
++    %c_0 = stablehlo.constant dense<1> : tensor<i32>
++    %0 = stablehlo.custom_call @bar(%arg1) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++    %1:2 = "stablehlo.case"(%c_0) ({
++      %2 = stablehlo.custom_call @foo(%arg0) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++      stablehlo.return %2, %arg0 : tensor<3x2xi32>, tensor<f32>
++    }, {
++      stablehlo.return %c, %cst : tensor<3x2xi32>, tensor<f32>
++    }, {
++      %2 = stablehlo.custom_call @baz(%arg2) {has_side_effect = true} : (tensor<f32>) -> tensor<3x2xi32>
++      stablehlo.return %2, %arg2 : tensor<3x2xi32>, tensor<f32>
++    }) : (tensor<i32>) -> (tensor<3x2xi32>, tensor<f32>)
++    return %0, %arg1 : tensor<3x2xi32>, tensor<f32>
++  }
++  func.func @case_fold_non_trivially_dead(%arg0: tensor<i32>, %arg1: tensor<i32>, %arg2: tensor<i32>) -> tensor<i32> {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    %0 = "stablehlo.case"(%c) ({
++      stablehlo.return %arg0 : tensor<i32>
++    }, {
++      %1 = stablehlo.custom_call @bar(%arg1) {has_side_effect = true} : (tensor<i32>) -> tensor<i32>
++      stablehlo.return %arg1 : tensor<i32>
++    }, {
++      stablehlo.return %arg2 : tensor<i32>
++    }) : (tensor<i32>) -> tensor<i32>
++    return %arg1 : tensor<i32>
++  }
++  func.func @clamp_fold(%arg0: tensor<3xi32>) -> tensor<3xi32> {
++    %c = stablehlo.constant dense<[1, 25, 11]> : tensor<3xi32>
++    return %c : tensor<3xi32>
++  }
++  func.func @compare_fold_int() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c, %c, %c, %c_0, %c, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @compare_fold_with_implicit_comparison_type() -> (tensor<3xi1>, tensor<3xi1>) {
++    %c = stablehlo.constant dense<[false, true, true]> : tensor<3xi1>
++    return %c, %c : tensor<3xi1>, tensor<3xi1>
++  }
++  func.func @compare_fold_float() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c_0, %c, %c_0, %c, %c, %c, %c_0, %c_0, %c, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @compare_fold_float_edge_cases() -> (tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>) {
++    %c = stablehlo.constant dense<true> : tensor<i1>
++    %c_0 = stablehlo.constant dense<false> : tensor<i1>
++    return %c, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c, %c, %c_0, %c, %c, %c, %c, %c_0, %c, %c, %c, %c, %c, %c_0, %c_0, %c, %c_0, %c, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c, %c_0, %c, %c, %c, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c_0, %c_0, %c_0, %c_0, %c_0, %c_0, %c, %c, %c_0, %c_0, %c_0, %c, %c_0, %c_0, %c, %c, %c, %c_0, %c_0, %c_0, %c_0, %c_0 : tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>, tensor<i1>
++  }
++  func.func @concatenate_fold() -> (tensor<6xi32>, tensor<3xi32>, tensor<3x3xi32>, tensor<2x5xi32>) {
++    %c = stablehlo.constant dense<[0, 1, 2, 3, 4, 5]> : tensor<6xi32>
++    %c_0 = stablehlo.constant dense<[0, 1, 5]> : tensor<3xi32>
++    %c_1 = stablehlo.constant dense<[[0, 1, 2], [3, 4, 5], [6, 7, 8]]> : tensor<3x3xi32>
++    %c_2 = stablehlo.constant dense<[[0, 1, 2, 11, 12], [3, 4, 5, 13, 14]]> : tensor<2x5xi32>
++    return %c, %c_0, %c_1, %c_2 : tensor<6xi32>, tensor<3xi32>, tensor<3x3xi32>, tensor<2x5xi32>
++  }
++  func.func @fold_concatenate_splat_leading(%arg0: tensor<1xi32>) -> tensor<3xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %0 = stablehlo.concatenate %c, %arg0, dim = 0 : (tensor<2xi32>, tensor<1xi32>) -> tensor<3xi32>
++    return %0 : tensor<3xi32>
++  }
++  func.func @fold_concatenate_splat_trailing(%arg0: tensor<2xi32>) -> tensor<6xi32> {
++    %c = stablehlo.constant dense<0> : tensor<4xi32>
++    %0 = stablehlo.concatenate %arg0, %c, dim = 0 : (tensor<2xi32>, tensor<4xi32>) -> tensor<6xi32>
++    return %0 : tensor<6xi32>
++  }
++  func.func @fold_concatenate_splat_middle(%arg0: tensor<1xi32>) -> tensor<4xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %0 = stablehlo.concatenate %arg0, %c, %arg0, dim = 0 : (tensor<1xi32>, tensor<2xi32>, tensor<1xi32>) -> tensor<4xi32>
++    return %0 : tensor<4xi32>
++  }
++  func.func @fold_concatenate_splat_multiple(%arg0: tensor<1xi32>) -> tensor<5xi32> {
++    %c = stablehlo.constant dense<0> : tensor<2xi32>
++    %c_0 = stablehlo.constant dense<1> : tensor<2xi32>
++    %0 = stablehlo.concatenate %c, %c_0, %arg0, dim = 0 : (tensor<2xi32>, tensor<2xi32>, tensor<1xi32>) -> tensor<5xi32>
++    return %0 : tensor<5xi32>
++  }
++  func.func @div_fold_cst() -> (tensor<i32>, tensor<ui32>, tensor<f32>) {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    %c_0 = stablehlo.constant dense<1> : tensor<ui32>
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %c, %c_0, %cst : tensor<i32>, tensor<ui32>, tensor<f32>
++  }
++  func.func @div_fold_cst_zero_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7F800000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @div_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @max_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @min_fold_cst_nan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @mul_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<4> : tensor<i32>
++    %cst = stablehlo.constant dense<4.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @subtract_fold_cst() -> (tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<2> : tensor<i32>
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %c, %cst : tensor<i32>, tensor<f32>
++  }
++  func.func @eval_iota() -> (tensor<1xi32>, tensor<3x4x5xi32>, tensor<3x4x5xi32>) {
++    %c = stablehlo.constant dense<0> : tensor<1xi32>
++    %0 = stablehlo.iota dim = 1 : tensor<3x4x5xi32>
++    %1 = stablehlo.iota dim = 2 : tensor<3x4x5xi32>
++    return %c, %0, %1 : tensor<1xi32>, tensor<3x4x5xi32>, tensor<3x4x5xi32>
++  }
++  func.func @eval_iota_zero_dimension() -> (tensor<0xi32>, tensor<5x0x2xi32>) {
++    %c = stablehlo.constant dense<> : tensor<0xi32>
++    %c_0 = stablehlo.constant dense<> : tensor<5x0x2xi32>
++    return %c, %c_0 : tensor<0xi32>, tensor<5x0x2xi32>
++  }
++  func.func @reduce_op_fold(%arg0: tensor<i64>) -> tensor<i1> {
++    %c = stablehlo.constant dense<false> : tensor<i1>
++    return %c : tensor<i1>
++  }
++  func.func @reshape_fold() -> (tensor<1xf32>, tensor<2x2xi32>, tensor<3x2xcomplex<f32>>) {
++    %cst = stablehlo.constant dense<2.000000e+00> : tensor<1xf32>
++    %c = stablehlo.constant dense<[[1, 2], [3, 4]]> : tensor<2x2xi32>
++    %cst_0 = stablehlo.constant dense<(1.000000e+00,2.000000e+00)> : tensor<3x2xcomplex<f32>>
++    return %cst, %c, %cst_0 : tensor<1xf32>, tensor<2x2xi32>, tensor<3x2xcomplex<f32>>
++  }
++  func.func @slice_fold(%arg0: tensor<6x1xi32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<2> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @slice_fold_splat(%arg0: tensor<6x1xi32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<1> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @dynamic_slice_fold(%arg0: tensor<i32>, %arg1: tensor<i32>) -> tensor<1x1xi32> {
++    %c = stablehlo.constant dense<256> : tensor<1x1xi32>
++    return %c : tensor<1x1xi32>
++  }
++  func.func @eval_convert_f32_to_i64() -> tensor<2xi64> {
++    %c = stablehlo.constant dense<[1, 2]> : tensor<2xi64>
++    return %c : tensor<2xi64>
++  }
++  func.func @eval_convert_bool_f32() -> tensor<2xf32> {
++    %cst = stablehlo.constant dense<[0.000000e+00, 1.000000e+00]> : tensor<2xf32>
++    return %cst : tensor<2xf32>
++  }
++  func.func @eval_convert_bool_i32() -> tensor<2xi32> {
++    %c = stablehlo.constant dense<[0, 1]> : tensor<2xi32>
++    return %c : tensor<2xi32>
++  }
++  func.func @eval_convert_i32_bool() -> tensor<3xi1> {
++    %c = stablehlo.constant dense<[false, true, true]> : tensor<3xi1>
++    return %c : tensor<3xi1>
++  }
++  func.func @eval_convert_f32_bool() -> tensor<4xi1> {
++    %c = stablehlo.constant dense<[true, false, true, true]> : tensor<4xi1>
++    return %c : tensor<4xi1>
++  }
++  func.func @eval_convert_f32_non_convertable() -> (tensor<2xi64>, tensor<2xi64>, tensor<2xi64>) {
++    %cst = stablehlo.constant dense<[1.000000e+00, 0x7F800000]> : tensor<2xf32>
++    %cst_0 = stablehlo.constant dense<[2.000000e+00, 0xFF800000]> : tensor<2xf32>
++    %cst_1 = stablehlo.constant dense<[3.000000e+00, -0.000000e+00]> : tensor<2xf32>
++    %0 = stablehlo.convert %cst : (tensor<2xf32>) -> tensor<2xi64>
++    %1 = stablehlo.convert %cst_0 : (tensor<2xf32>) -> tensor<2xi64>
++    %2 = stablehlo.convert %cst_1 : (tensor<2xf32>) -> tensor<2xi64>
++    return %0, %1, %2 : tensor<2xi64>, tensor<2xi64>, tensor<2xi64>
++  }
++  func.func @eval_convert_f32_non_fittable() -> (tensor<1xi32>, tensor<1xi32>) {
++    %cst = stablehlo.constant dense<2.14748365E+9> : tensor<1xf32>
++    %c = stablehlo.constant dense<2147483520> : tensor<1xi32>
++    %0 = stablehlo.convert %cst : (tensor<1xf32>) -> tensor<1xi32>
++    return %c, %0 : tensor<1xi32>, tensor<1xi32>
++  }
++  func.func @eval_convert_i32_non_exact() -> (tensor<1xf32>, tensor<1xf32>) {
++    %cst = stablehlo.constant dense<0x4B7FFFFF> : tensor<1xf32>
++    %cst_0 = stablehlo.constant dense<0x4B800000> : tensor<1xf32>
++    return %cst, %cst_0 : tensor<1xf32>, tensor<1xf32>
++  }
++  func.func @eval_convert_f64_precision_loss() -> (tensor<1xf32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<9.99999996E-13> : tensor<1xf32>
++    %cst_0 = stablehlo.constant dense<8.000000e+00> : tensor<f32>
++    return %cst, %cst_0 : tensor<1xf32>, tensor<f32>
++  }
++  func.func @fold_abs() -> (tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %c = stablehlo.constant dense<0> : tensor<i32>
++    %c_0 = stablehlo.constant dense<10> : tensor<i32>
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0x7F800000> : tensor<f32>
++    return %c, %c_0, %c_0, %cst, %cst_1, %cst_1, %cst_2, %cst_2 : tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_cosine() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.866025388> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.707106769> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0.49999997> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<-4.37113883E-8> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_3 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_erf() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-0.520499885> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.900003731> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_exponential() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<2.71828175> : tensor<f32>
++    return %cst, %cst_0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_log() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.99999994> : tensor<f32>
++    %0 = stablehlo.log %cst : tensor<f32>
++    return %cst, %cst_0, %0 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_logistic() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_negate() -> (tensor<i32>, tensor<i32>, tensor<f32>) {
++    %c = stablehlo.constant dense<-4> : tensor<i32>
++    %c_0 = stablehlo.constant dense<0> : tensor<i32>
++    %cst = stablehlo.constant dense<9.999000e+02> : tensor<f32>
++    return %c, %c_0, %cst : tensor<i32>, tensor<i32>, tensor<f32>
++  }
++  func.func @fold_not() -> (tensor<i32>, tensor<i32>) {
++    %c = stablehlo.constant dense<42> : tensor<i32>
++    %c_0 = stablehlo.constant dense<-1> : tensor<i32>
++    return %c, %c_0 : tensor<i32>, tensor<i32>
++  }
++  func.func @fold_round_nearest_afz() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-3.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<-2.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    %cst_4 = stablehlo.constant dense<3.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_2, %cst_3, %cst_4 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_round_nearest_even() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-2.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    return %cst, %cst, %cst_0, %cst_0, %cst_1, %cst_2, %cst_2 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_rsqrt() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %0 = stablehlo.rsqrt %cst : tensor<f32>
++    return %cst_0, %0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sign() -> (tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0x7FC00000> : tensor<f32>
++    %c = stablehlo.constant dense<-1> : tensor<i32>
++    %c_0 = stablehlo.constant dense<0> : tensor<i32>
++    %c_1 = stablehlo.constant dense<1> : tensor<i32>
++    %cst_2 = stablehlo.constant dense<-1.000000e+00> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_4 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    %0 = stablehlo.sign %cst : tensor<f32>
++    return %c, %c_0, %c_1, %cst_2, %cst_3, %cst_4, %0 : tensor<i32>, tensor<i32>, tensor<i32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sine() -> (tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<5.000000e-01> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.707106769> : tensor<f32>
++    %cst_2 = stablehlo.constant dense<0.866025447> : tensor<f32>
++    %cst_3 = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst, %cst_0, %cst_1, %cst_2, %cst_3 : tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_sqrt() -> (tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-1.000000e+00> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<2.000000e+00> : tensor<f32>
++    %0 = stablehlo.sqrt %cst : tensor<f32>
++    return %cst_0, %0 : tensor<f32>, tensor<f32>
++  }
++  func.func @fold_tan() -> tensor<f32> {
++    %cst = stablehlo.constant dense<1.000000e+00> : tensor<f32>
++    return %cst : tensor<f32>
++  }
++  func.func @fold_tanh() -> (tensor<f32>, tensor<f32>, tensor<f32>) {
++    %cst = stablehlo.constant dense<-0.44721359> : tensor<f32>
++    %cst_0 = stablehlo.constant dense<0.000000e+00> : tensor<f32>
++    %cst_1 = stablehlo.constant dense<0.44721359> : tensor<f32>
++    return %cst, %cst_0, %cst_1 : tensor<f32>, tensor<f32>, tensor<f32>
++  }
++  func.func @fold_set_dimension_size(%arg0: tensor<10xf32>) -> tensor<10xf32> {
++    return %arg0 : tensor<10xf32>
++  }
++  func.func @no_fold_set_dimension_size(%arg0: tensor<10xf32>) -> tensor<?xf32, #stablehlo.bounds<10>> {
++    %c = stablehlo.constant dense<10> : tensor<i32>
++    %0 = stablehlo.set_dimension_size %arg0, %c, dim = 0 : (tensor<10xf32>, tensor<i32>) -> tensor<?xf32, #stablehlo.bounds<10>>
++    return %0 : tensor<?xf32, #stablehlo.bounds<10>>
++  }
++  func.func @no_fold_set_dimension_size_bounded_input(%arg0: tensor<?x4xf32, #stablehlo.bounds<8, ?>>) -> tensor<8x4xf32> {
++    %c = stablehlo.constant dense<8> : tensor<i32>
++    %0 = stablehlo.set_dimension_size %arg0, %c, dim = 0 : (tensor<?x4xf32, #stablehlo.bounds<8, ?>>, tensor<i32>) -> tensor<8x4xf32>
++    return %0 : tensor<8x4xf32>
++  }
++  func.func @eval_transpose() -> (tensor<2x3x2xi32>, tensor<2x4x3xi32>, tensor<4x3x2xi32>) {
++    %c = stablehlo.constant dense<[[[1, 7], [3, 9], [5, 11]], [[2, 8], [4, 10], [6, 12]]]> : tensor<2x3x2xi32>
++    %c_0 = stablehlo.constant dense<[[[1, 3, 5], [7, 9, 11], [13, 15, 17], [19, 21, 23]], [[2, 4, 6], [8, 10, 12], [14, 16, 18], [20, 22, 24]]]> : tensor<2x4x3xi32>
++    %c_1 = stablehlo.constant dense<[[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [11, 12]], [[13, 14], [15, 16], [17, 18]], [[19, 20], [21, 22], [23, 24]]]> : tensor<4x3x2xi32>
++    return %c, %c_0, %c_1 : tensor<2x3x2xi32>, tensor<2x4x3xi32>, tensor<4x3x2xi32>
++  }
++  func.func @eval_transpose_zerodim() -> tensor<10x3x0xf32> {
++    %cst = stablehlo.constant dense<> : tensor<10x3x0xf32>
++    return %cst : tensor<10x3x0xf32>
++  }
++  func.func @eval_transpose_zerorank() -> tensor<i32> {
++    %c = stablehlo.constant dense<1> : tensor<i32>
++    return %c : tensor<i32>
++  }
++  func.func @eval_transpose_splat() -> tensor<10x3x1xi32> {
++    %c = stablehlo.constant dense<1> : tensor<10x3x1xi32>
++    return %c : tensor<10x3x1xi32>
++  }
++  func.func @dce_while_false_condition() -> tensor<i64> {
++    %c = stablehlo.constant dense<0> : tensor<i64>
++    return %c : tensor<i64>
++  }
++}
++
 
