@@ -47,8 +47,10 @@ limitations under the License.
 #include "mlir/Transforms/DialectConversion.h"
 #include "shardy/dialect/sdy/ir/dialect.h"
 #include "shardy/dialect/sdy/ir/utils.h"
+#include "shardy/dialect/sdy/transforms/import/passes.h"
 #include "stablehlo/dialect/StablehloOps.h"
 #include "xla/service/spmd/shardy/constants.h"
+#include "xla/service/spmd/shardy/sdy_round_trip/dedup_meshes.h"
 #include "xla/service/spmd/shardy/utils.h"
 
 namespace xla {
@@ -171,6 +173,9 @@ class SdyRoundTripShardMapImportPass
  public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SdyRoundTripShardMapImportPass)
 
+  SdyRoundTripShardMapImportPass(bool enableHloShardingV3)
+      : enableHloShardingV3(enableHloShardingV3) {}
+
  private:
   void runOnOperation() final {
     ModuleOp module = getOperation();
@@ -181,17 +186,18 @@ class SdyRoundTripShardMapImportPass
 
     // Clone multiple calls to the same function.
     module->walk([&](CallOp op) {
-      if (!op.getCallee().contains(kManualComputationFuncName)) {
-        return;
+      if (isManualComputation(op)) {
+        if (auto [_, inserted] =
+                manualComputationCalleeNames.insert(op.getCallee());
+            inserted) {
+          return;
+        }
+        // TODO(b/446881697): Clone just the body on demand like in
+        // shardy/stablehlo_round_trip/shard_map_import.cc.
+        FuncOp funcOp = symbolTable.lookup<FuncOp>(op.getCallee()).clone();
+        op.setCallee(symbolTable.insert(funcOp));
+        manualComputationCalleeNames.insert(funcOp.getName());
       }
-      if (manualComputationCalleeNames.insert(op.getCallee()).second) {
-        return;
-      }
-      // TODO(b/446881697): Clone just the body on demand like in
-      // shardy/stablehlo_round_trip/shard_map_import.cc.
-      FuncOp funcOp = symbolTable.lookup<FuncOp>(op.getCallee()).clone();
-      op.setCallee(symbolTable.insert(funcOp));
-      manualComputationCalleeNames.insert(funcOp.getName());
     });
 
     mlir::CallGraph callGraph(module);
@@ -200,15 +206,16 @@ class SdyRoundTripShardMapImportPass
       if (node->isExternal()) continue;
       if (node->getCallableRegion()
               ->walk([&](CallOp callOp) {
-                if (!callOp.getCallee().contains(kManualComputationFuncName)) {
-                  return mlir::WalkResult::advance();
-                }
-                rewriter.setInsertionPoint(callOp);
-                if (mlir::failed(rewriteManualComputation(callOp, rewriter,
-                                                          symbolTable))) {
-                  callOp.emitError(
-                      "failed to rewrite func.call to manual computation");
-                  return mlir::WalkResult::interrupt();
+                if (isManualComputation(callOp)) {
+                  rewriter.setInsertionPoint(callOp);
+                  if (mlir::failed(rewriteManualComputation(callOp, rewriter,
+                                                            symbolTable))) {
+                    // TODO(enver): Return callOp.emitError direcly here and
+                    // elsewhere.
+                    callOp.emitError(
+                        "failed to rewrite func.call to manual computation");
+                    return mlir::WalkResult::interrupt();
+                  }
                 }
                 return mlir::WalkResult::advance();
               })
@@ -233,9 +240,22 @@ class SdyRoundTripShardMapImportPass
       }
     });
 
-    // Erase all manual computation func ops that now have no call ops.
-    for (StringRef calleeName : manualComputationCalleeNames) {
-      symbolTable.erase(symbolTable.lookup(calleeName));
+    // Erase all manual computation func ops as now they have no call ops.
+    module->walk([](FuncOp funcOp) {
+      if (isManualComputation(funcOp)) {
+        funcOp.erase();
+      }
+    });
+
+    if (enableHloShardingV3) {
+      // Lift inlined meshes, as meshes are inlined while storing sdy
+      // shardings in frontend attributes during sdy shard map export.
+      mlir::PassManager pm(module->getContext());
+      pm.addPass(mlir::sdy::createLiftInlinedMeshesPass());
+      pm.addPass(createSdyRoundTripDedupMeshesPass());
+      if (mlir::failed(pm.run(module))) {
+        signalPassFailure();
+      }
     }
   }
 
@@ -252,16 +272,21 @@ class SdyRoundTripShardMapImportPass
   void getDependentDialects(mlir::DialectRegistry& registry) const final {
     registry.insert<sdy::SdyDialect>();
   }
+
+  bool enableHloShardingV3 = false;
 };
 
 }  // namespace
 
 void registerSdyRoundTripShardMapImportPass() {
-  mlir::registerPass(createSdyRoundTripShardMapImportPass);
+  mlir::registerPass([]() {
+    return createSdyRoundTripShardMapImportPass(/*enableHloShardingV3=*/false);
+  });
 }
 
-std::unique_ptr<mlir::Pass> createSdyRoundTripShardMapImportPass() {
-  return std::make_unique<SdyRoundTripShardMapImportPass>();
+std::unique_ptr<mlir::Pass> createSdyRoundTripShardMapImportPass(
+    bool enableHloShardingV3) {
+  return std::make_unique<SdyRoundTripShardMapImportPass>(enableHloShardingV3);
 }
 
 }  // namespace sdy

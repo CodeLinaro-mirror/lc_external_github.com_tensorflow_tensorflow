@@ -102,6 +102,7 @@ cc_library(
     srcs = ["shard_map_import.cc"],
     hdrs = ["shard_map_import.h"],
     deps = [
+        ":dedup_meshes",
         "//xla/service/spmd/shardy:constants",
         "//xla/service/spmd/shardy:utils",
         "@com_google_absl//absl/log:check",
@@ -113,6 +114,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@shardy//shardy/dialect/sdy/ir:dialect",
+        "@shardy//shardy/dialect/sdy/transforms/import:passes",
         "@stablehlo//:stablehlo_ops",
     ],
 )
