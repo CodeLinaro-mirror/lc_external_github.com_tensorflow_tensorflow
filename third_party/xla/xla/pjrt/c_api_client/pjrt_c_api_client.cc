@@ -598,6 +598,19 @@ std::string GetPluginStablehloVersionOrDefault(PjRtClient* client) {
 
 }  // namespace
 
+absl::StatusOr<std::unique_ptr<PjRtExecutable>> PjRtCApiClient::Compile(
+    mlir::ModuleOp module, CompileOptions options) {
+  TF_ASSIGN_OR_RETURN(const PjRtTopologyDescription* const topology,
+                      GetTopologyDescription());
+  std::optional<PjRtCompiler*> compiler = topology->compiler();
+  if (!compiler.has_value()) {
+    return absl::UnimplementedError(
+        "Compile with MLIR module requires a PjRtCompiler, but none was "
+        "provided by the topology.");
+  }
+  return (*compiler)->Compile(options, module, *topology, this);
+}
+
 absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
 PjRtCApiClient::CompileAndLoad(mlir::ModuleOp module, CompileOptions options) {
   if (!pjrt_c_api()) llvm::report_fatal_error("pjrt_c_api is null");
