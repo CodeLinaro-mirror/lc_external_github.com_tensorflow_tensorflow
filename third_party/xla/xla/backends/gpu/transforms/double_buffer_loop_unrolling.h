@@ -18,6 +18,7 @@ limitations under the License.
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/pass/hlo_pass_interface.h"
 
@@ -59,6 +60,8 @@ class DoubleBufferLoopUnrolling : public HloModulePass {
   }
 
  protected:
+  virtual absl::StatusOr<bool> AutoUnroll(HloInstruction* while_instr,
+                                          HloModule* module);
   absl::StatusOr<bool> RunImpl(
       HloModule* module,
       const absl::flat_hash_set<absl::string_view>& execution_threads) override;
@@ -67,6 +70,18 @@ class DoubleBufferLoopUnrolling : public HloModulePass {
   UnrollStrategy unroll_strategy_;
 };
 
+class WhileLoopUnrolling : public DoubleBufferLoopUnrolling {
+ public:
+  explicit WhileLoopUnrolling()
+      : DoubleBufferLoopUnrolling(UnrollStrategy::kAuto) {};
+  ~WhileLoopUnrolling() override = default;
+
+  absl::string_view name() const override { return "while-loop-unrolling"; }
+
+ protected:
+  absl::StatusOr<bool> AutoUnroll(HloInstruction* while_instr,
+                                  HloModule* module) override;
+};
 }  // end namespace gpu
 }  // end namespace xla
 

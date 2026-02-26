@@ -412,10 +412,12 @@ absl::StatusOr<bool> DoubleBufferingUnroll(HloInstruction* while_instr,
   return true;  // changed
 }
 
+}  // namespace
+
 // Function performs double buffering unrolling strategy iff there is any
 // collective operation within a body computation.
-absl::StatusOr<bool> AutoUnroll(HloInstruction* while_instr,
-                                HloModule* module) {
+absl::StatusOr<bool> DoubleBufferLoopUnrolling::AutoUnroll(
+    HloInstruction* while_instr, HloModule* module) {
   CHECK_EQ(while_instr->opcode(), HloOpcode::kWhile);
 
   bool any_collective_present = absl::c_any_of(
@@ -428,8 +430,6 @@ absl::StatusOr<bool> AutoUnroll(HloInstruction* while_instr,
   }
   return false;  // IR not changed.
 }
-
-}  // namespace
 
 absl::StatusOr<bool> DoubleBufferLoopUnrolling::RunImpl(
     HloModule* module,
@@ -482,6 +482,52 @@ absl::StatusOr<bool> DoubleBufferLoopUnrolling::RunImpl(
   }
 
   return changed;
+}
+
+// Fully unroll while loops with small enough body and static, slow trip count.
+// Unrolling allows while bodies to be in a single command buffer and thus
+// reduce scheduling overhead.
+absl::StatusOr<bool> WhileLoopUnrolling::AutoUnroll(HloInstruction* while_instr,
+                                                    HloModule* module) {
+  CHECK_EQ(while_instr->opcode(), HloOpcode::kWhile);
+
+  bool any_collective_present = absl::c_any_of(
+      while_instr->while_body()->MakeInstructionPostOrder(),
+      [](HloInstruction* instr) {
+        return hlo_query::IsCollectiveCommunicationOp(instr->opcode());
+      });
+  if (any_collective_present) {
+    return false;
+  }
+
+  if (auto backend_config =
+          while_instr->backend_config<WhileLoopBackendConfig>();
+      backend_config.ok()) {
+    if (backend_config->has_known_trip_count()) {
+      int64_t trip_count = backend_config->known_trip_count().n();
+      int64_t body_size =
+          while_instr->while_body()->instruction_count() -
+          while_instr->while_body()->parameter_instructions().size();
+      body_size = 0;
+      for (auto instr : while_instr->while_body()->instructions()) {
+        if (instr->opcode() != HloOpcode::kParameter &&
+            instr->opcode() != HloOpcode::kGetTupleElement &&
+            instr->opcode() != HloOpcode::kTuple) {
+          body_size++;
+        }
+      }
+      VLOG(0) << "Considering full unrolling for while loop: "
+              << while_instr->name() << " with trip count: " << trip_count
+              << " and body size: " << body_size;
+      if (body_size < 8 && trip_count < 64) {
+        VLOG(0) << "Fully unrolling while loop: " << while_instr->name();
+        return FullyUnroll(while_instr, module);
+      }
+      VLOG(0) << "While loop: " << while_instr->name()
+              << " is too large to fully unroll.";
+    }
+  }
+  return false;  // IR not changed.
 }
 
 }  // end namespace gpu

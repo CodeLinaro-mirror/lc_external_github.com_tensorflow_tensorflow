@@ -309,6 +309,7 @@ limitations under the License.
 #include "xla/service/while_loop_all_reduce_code_motion.h"
 #include "xla/service/while_loop_constant_sinking.h"
 #include "xla/service/while_loop_simplifier.h"
+#include "xla/service/while_loop_unroller.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
 #include "xla/status_macros.h"
@@ -1307,7 +1308,7 @@ absl::Status RunPostFusionPasses(
   if (blueconnect_num_devices_per_host > 0) {
     pipeline.AddPass<AllReduceBlueConnect>(blueconnect_num_devices_per_host);
   }
-
+  pipeline.AddPass<WhileLoopUnrolling>();
   AddDoubleBufferingPasses(*hlo_module, pipeline);
 
   return pipeline.Run(hlo_module, {HloInstruction::kMainExecutionThread})
