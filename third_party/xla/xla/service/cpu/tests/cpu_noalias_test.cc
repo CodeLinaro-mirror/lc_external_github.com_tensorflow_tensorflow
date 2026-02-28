@@ -35,7 +35,7 @@ limitations under the License.
 #include "xla/literal.h"
 #include "xla/literal_util.h"
 #include "xla/service/buffer_assignment.h"
-#include "xla/service/cpu/tests/cpu_codegen_test.h"
+#include "xla/service/cpu/tests/cpu_pjrt_codegen_test.h"
 #include "xla/service/llvm_ir/alias_analysis.h"
 #include "xla/service/llvm_ir/ir_array.h"
 #include "xla/service/llvm_ir/llvm_util.h"
@@ -48,7 +48,7 @@ limitations under the License.
 namespace xla {
 namespace cpu {
 
-class CpuNoAliasTest : public CpuCodegenTest {};
+class CpuNoAliasTest : public CpuPjRtCodegenTest {};
 
 // Creates a simple HLO ir_module (runs concat(concat(x, y), x)), and then
 // inspects the aliasing information for loads to its buffers.
@@ -80,7 +80,7 @@ TEST_F(CpuNoAliasTest, Concat) {
   auto status_or_buffer_assn = BufferAssigner::Run(
       hlo_module.get(),
       std::make_unique<DependencyHloOrdering>(hlo_module.get()),
-      backend().compiler()->BufferSizeBytesFunction(), &alias_info,
+      compiler()->BufferSizeBytesFunction(), &alias_info,
       [](LogicalBuffer::Color) { return /*alignment=*/1; },
       BufferAssigner::Options{});
   ASSERT_EQ(status_or_buffer_assn.status(), absl::OkStatus());

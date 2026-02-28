@@ -21,7 +21,7 @@ limitations under the License.
 #include "xla/debug_options_flags.h"
 #include "xla/service/cpu/cpu_compiler.h"
 #include "xla/service/cpu/test_target_triple_helper.h"
-#include "xla/service/cpu/tests/cpu_codegen_test.h"
+#include "xla/service/cpu/tests/cpu_pjrt_codegen_test.h"
 #include "xla/service/executable.h"
 #include "xla/service/hlo_module_config.h"
 #include "xla/tsl/lib/core/status_test_util.h"
@@ -31,7 +31,7 @@ namespace xla {
 namespace cpu {
 namespace {
 
-class CpuSpmdCompileTest : public CpuCodegenTest {};
+class CpuSpmdCompileTest : public CpuPjRtCodegenTest {};
 
 TEST_F(CpuSpmdCompileTest, SinglePartition) {
   // Module with "Sharding" custom call and use_spmd_partitioning enabled.
@@ -47,11 +47,12 @@ ENTRY entry {
 
   HloModuleConfig config;
   config.set_use_spmd_partitioning(true);
-  auto hlo_module = ParseAndReturnVerifiedModule(hlo_string, config).value();
+  auto hlo_module = ParseAndReturnVerifiedModule(hlo_string, config);
+  TF_ASSERT_OK(hlo_module.status());
 
   // Verify that compilation succeeded.
-  absl::StatusOr<std::unique_ptr<Executable>> executable =
-      CompileToExecutable(std::move(hlo_module));
+  absl::StatusOr<std::unique_ptr<Executable>> executable = CompileToExecutable(
+      std::move(hlo_module.value()), /*run_optimization_passes=*/true);
   TF_EXPECT_OK(executable.status());
 }
 

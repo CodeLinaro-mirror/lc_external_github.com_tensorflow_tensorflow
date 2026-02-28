@@ -31,7 +31,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/hlo/testlib/hlo_hardware_independent_test_base.h"
 #include "xla/service/cpu/cpu_compiler.h"
-#include "xla/service/cpu/tests/cpu_codegen_test.h"
+#include "xla/service/cpu/tests/cpu_pjrt_codegen_test.h"
 #include "xla/shape_util.h"
 #include "xla/tsl/platform/test.h"
 #include "xla/xla.pb.h"
@@ -55,7 +55,7 @@ struct VectorizationTestSpec {
 
 // Tests that the vectorizer does what we want.
 class CpuVectorizationTest
-    : public CpuCodegenTest,
+    : public CpuPjRtCodegenTest,
       public ::testing::WithParamInterface<VectorizationTestSpec> {
  public:
   static std::string Name(
@@ -87,9 +87,8 @@ class CpuVectorizationTest
 
  private:
   DebugOptions GetDebugOptionsForTest() const override {
-    DebugOptions debug_options =
-        HloHardwareIndependentTestBase::GetDebugOptionsForTest();
-    HloTestBase::SetAotFastMathDebugOptions(&debug_options);
+    DebugOptions debug_options = CpuPjRtCodegenTest::GetDebugOptionsForTest();
+    CpuPjRtCodegenTest::SetAotFastMathDebugOptions(&debug_options);
     return debug_options;
   }
 };
@@ -154,7 +153,7 @@ struct MaxIsaTestSpec {
   bool should_enable;
 };
 
-class MaxIsaTest : public CpuCodegenTest,
+class MaxIsaTest : public CpuPjRtCodegenTest,
                    public ::testing::WithParamInterface<MaxIsaTestSpec> {
  public:
   static std::string Name(
@@ -231,14 +230,13 @@ INSTANTIATE_TEST_SUITE_P(AArch64MaxIsaTestInstantiation, AArch64MaxIsaTest,
                          ::testing::ValuesIn(GetAArch64MaxIsaTestCases()),
                          AArch64MaxIsaTest::Name);
 
-class DefaultMaxIsaTest : public CpuCodegenTest {};
+class DefaultMaxIsaTest : public CpuPjRtCodegenTest {};
 
 TEST_F(DefaultMaxIsaTest, NeonForOssAArch64) {
   if (!tsl::port::IsAarch64CPU()) {
     GTEST_SKIP() << "This test is for AArch64 CPUs.";
   }
-  DebugOptions debug_options =
-      HloHardwareIndependentTestBase::GetDebugOptionsForTest();
+  DebugOptions debug_options = CpuPjRtCodegenTest::GetDebugOptionsForTest();
   EXPECT_EQ(debug_options.xla_cpu_max_isa(), "NEON");
 }
 
@@ -250,7 +248,7 @@ struct JitVectorizationTestSpec {
 };
 
 class JitVectorizationTest
-    : public CpuCodegenTest,
+    : public CpuPjRtCodegenTest,
       public ::testing::WithParamInterface<JitVectorizationTestSpec> {
  public:
   static std::string Name(
@@ -263,8 +261,7 @@ class JitVectorizationTest
  private:
   DebugOptions GetDebugOptionsForTest() const override {
     JitVectorizationTestSpec spec = GetParam();
-    DebugOptions debug_options =
-        HloHardwareIndependentTestBase::GetDebugOptionsForTest();
+    DebugOptions debug_options = CpuPjRtCodegenTest::GetDebugOptionsForTest();
     debug_options.set_xla_cpu_max_isa(spec.max_isa);
     // For AVX512, we have to override the default `prefer_vector_width=256`
     // setting. Otherwise, LLVM won't generate AVX512.
