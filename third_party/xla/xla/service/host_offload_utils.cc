@@ -221,6 +221,11 @@ std::vector<InstructionAndShapeIndex> GetPredecessors(
   } else if (instruction->opcode() == HloOpcode::kPad) {
     result.push_back({instruction->mutable_operand(0),
                       instruction_and_shape_index.shape_index});
+  } else if (instruction->opcode() == HloOpcode::kSend) {
+    // Explicitly handle Send, which has 2 operands (data, token).
+    // We follow the data path (operand 0).
+    result.push_back({instruction->mutable_operand(0),
+                      instruction_and_shape_index.shape_index});
   } else {
     CHECK(instruction->operand_count() == 1) << absl::StreamFormat(
         "Expecting instruction %s to have 1 operand, but it has %d.",
@@ -233,12 +238,21 @@ std::vector<InstructionAndShapeIndex> GetPredecessors(
 
 bool IsValidDuringPureMemoryOffload(const HloInstruction* instruction) {
   static constexpr std::array allowed_opcodes = {
-      HloOpcode::kGetTupleElement, HloOpcode::kBitcast,
-      HloOpcode::kTuple,           HloOpcode::kCall,
-      HloOpcode::kWhile,           HloOpcode::kConditional,
-      HloOpcode::kParameter,       HloOpcode::kOptimizationBarrier,
-      HloOpcode::kAsyncStart,      HloOpcode::kAsyncDone,
-      HloOpcode::kCustomCall};
+      HloOpcode::kGetTupleElement,
+      HloOpcode::kBitcast,
+      HloOpcode::kTuple,
+      HloOpcode::kCall,
+      HloOpcode::kWhile,
+      HloOpcode::kConditional,
+      HloOpcode::kParameter,
+      HloOpcode::kOptimizationBarrier,
+      HloOpcode::kAsyncStart,
+      HloOpcode::kAsyncDone,
+      HloOpcode::kCustomCall,
+      HloOpcode::kSend,
+      HloOpcode::kRecv,
+      HloOpcode::kSendDone,
+      HloOpcode::kRecvDone};
   return absl::c_linear_search(allowed_opcodes, instruction->opcode());
 }
 
