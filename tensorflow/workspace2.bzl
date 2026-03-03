@@ -912,10 +912,9 @@ def _tf_repositories():
 
     tf_http_archive(
         name = "org_xprof",
-        sha256 = "d27bcd502a0843e463fc4eb7d3532d0d720ddd6af6e39942846f1aa769352625",
-        strip_prefix = "xprof-c695e43eba127a74a67263775ab611bded7fba34",
-        patch_file = ["//third_party/xprof:xprof.patch"],
-        urls = tf_mirror_urls("https://github.com/openxla/xprof/archive/c695e43eba127a74a67263775ab611bded7fba34.zip"),
+        sha256 = "0ddec1392b3dd2b09b9045526cd3a5207611a9f15d23896dece2304aa55c4b40",
+        strip_prefix = "xprof-1508d35002f3ff55e7fd704cffb91f1d3f8b0949",
+        urls = tf_mirror_urls("https://github.com/openxla/xprof/archive/1508d35002f3ff55e7fd704cffb91f1d3f8b0949.zip"),
         repo_mapping = {
             "@xla": "@xla",
             "@tsl": "@tsl",
