@@ -113,6 +113,7 @@ limitations under the License.
 #include "tsl/platform/fingerprint.h"
 #include "tsl/platform/numa.h"
 #include "tsl/platform/numbers.h"
+#include "xla/tsl/platform/status_macros.h"
 
 namespace stream_executor {
 namespace gpu {
@@ -795,6 +796,15 @@ absl::StatusOr<FabricInfo> GetDeviceFabricInfo(nvmlDevice_t device) {
   VLOG(2) << error_message;
   return absl::InternalError(error_message);
 #endif  // CUDA_VERSION >= 12040
+}
+
+absl::StatusOr<SemanticVersion> GetDeviceDriverVersion() {
+  constexpr int kDriverMaxLen = 100;
+  char version[kDriverMaxLen];
+  nvmlReturn_t result = nvmlSystemGetDriverVersion(version, kDriverMaxLen);
+  RETURN_IF_ERROR(ToStatus(result));
+
+  return SemanticVersion::ParseFromString(version);
 }
 
 }  // namespace
@@ -1726,6 +1736,12 @@ CudaExecutor::CreateDeviceDescription(int device_ordinal) {
   }
   desc.set_driver_version(
       ParseCudaVersion(driver_version).value_or(SemanticVersion{0, 0, 0}));
+
+  if (auto version = GetDeviceDriverVersion(); version.ok()) {
+    desc.set_device_driver_version(*version);
+  } else {
+    LOG(ERROR) << version;
+  }
 
   int32_t runtime_version{};
   {

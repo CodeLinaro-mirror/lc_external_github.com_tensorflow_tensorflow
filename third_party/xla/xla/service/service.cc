@@ -63,6 +63,7 @@ limitations under the License.
 #include "xla/status_macros.h"
 #include "xla/stream_executor/device_address_allocator.h"
 #include "xla/stream_executor/platform.h"
+#include "xla/stream_executor/semantic_version.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/statusor.h"
@@ -158,11 +159,18 @@ Service::Service(const ServiceOptions& options,
     for (int i = 0; i < execute_backend_->device_count(); ++i) {
       se::StreamExecutor* executor = stream_executors.at(i);
       const auto& description = executor->GetDeviceDescription();
+
+      std::string driver_version = description.driver_version().ToString();
+      se::SemanticVersion device_driver = description.device_driver_version();
+      if (device_driver.IsValid()) {
+        absl::StrAppend(&driver_version, "[", device_driver.ToString(), "]");
+      }
+
       LOG(INFO) << StrFormat(
           "  StreamExecutor [%d]: %s, %s"
           " (Driver: %v; Runtime: %v; Toolkit: %v; DNN: %v)",
-          i, description.name(), description.platform_version(),
-          description.driver_version(), description.runtime_version(),
+          i, description.name(), description.platform_version(), driver_version,
+          description.runtime_version(),
           description.compile_time_toolkit_version(),
           description.dnn_version());
     }
