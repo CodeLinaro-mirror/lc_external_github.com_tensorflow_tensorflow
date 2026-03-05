@@ -15,7 +15,7 @@ limitations under the License.
 
 #include "xla/stream_executor/sycl/sycl_timer.h"
 
-#include <level_zero/ze_api.h>
+#include <ze_api.h>
 
 #include "xla/stream_executor/activate_context.h"
 

@@ -17,7 +17,7 @@ limitations under the License.
 #define XLA_STREAM_EXECUTOR_SYCL_SYCL_GPU_RUNTIME_H_
 
 // clang-format off
-#include <level_zero/ze_api.h>
+#include <ze_api.h>
 #include <sycl/sycl.hpp>
 // clang-format on
 
