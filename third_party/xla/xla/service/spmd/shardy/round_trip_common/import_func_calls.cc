@@ -120,8 +120,8 @@ void importCallOp(
   TensorShardingPerValueAttr callOpResultShardings =
       mlir::sdy::getShardingPerValue(callOp);
   auto namedCompOp = NamedComputationOp::create(
-      rewriter, callOp->getLoc(), callOp->getResultTypes(), calleeName,
-      callOp.getOperands(),
+      rewriter, callOp->getLoc(), callOp->getResultTypes(),
+      getOriginalFuncName(funcOp), callOp.getOperands(),
       /*inShardings=*/getFuncArgShardings(callOp, funcOp, symbolTable),
       // TODO(b/439018088): Take func result shardings if call op result
       // shardings are empty.
@@ -183,9 +183,19 @@ class ImportFuncCallsPass
       });
     }
 
-    // Erase all func ops that now have no call ops.
-    for (auto [calleeName, _] : calleeNameToMovedRegion) {
-      symbolTable.erase(symbolTable.lookup(calleeName));
+    // Erase all non-main func ops as now they have no call ops.
+    moduleOp->walk([](FuncOp funcOp) {
+      if (funcOp.isPrivate()) {
+        funcOp.erase();
+      }
+    });
+
+    // Verify there is only one (main) function.
+    auto funcOps = moduleOp.getOps<FuncOp>();
+    if (std::next(funcOps.begin()) != funcOps.end()) {
+      moduleOp.emitError(
+          "module contains multiple functions; expected only one.");
+      return;
     }
   }
 
