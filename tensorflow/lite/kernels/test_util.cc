@@ -148,12 +148,6 @@ bool AlmostEquals(float lhs, float rhs, uint32_t max_ulps) {
          max_ulps;
 }
 
-MATCHER_P3(FloatAbsRelNear, value, max_abs_err, max_rel_err, "") {
-  auto matcher =
-      FloatNear(value, std::max(max_abs_err, std::abs(max_rel_err * value)));
-  return ::testing::ExplainMatchResult(matcher, arg, result_listener);
-}
-
 MATCHER(Fp16Eq, "") {
   // FP16 only has 10 bits precision while FP32 has 23 bits precision. Thus, to
   // check if results of FP16 are almost equal, we could check the result is
@@ -309,27 +303,6 @@ Matcher<std::tuple<float, float>> FloatingPointAlmostEq() {
   return FloatEq();
 }
 
-std::vector<Matcher<float>> ArrayFloatNear(const std::vector<float>& values,
-                                           float max_abs_err,
-                                           float fp16_max_abs_err,
-                                           float max_rel_err,
-                                           float fp16_max_rel_err) {
-  if (AllowFp16PrecisionForFp32()) {
-    if (fp16_max_abs_err == kFpErrorAuto) {
-      max_abs_err = std::max(max_abs_err, std::sqrt(max_abs_err));
-    } else {
-      max_abs_err = fp16_max_abs_err;
-    }
-    max_rel_err = fp16_max_rel_err;
-  }
-  std::vector<Matcher<float>> matchers;
-  matchers.reserve(values.size());
-  for (const float& v : values) {
-    matchers.emplace_back(FloatAbsRelNear(v, max_abs_err, max_rel_err));
-  }
-  return matchers;
-}
-
 std::vector<Matcher<std::complex<float>>> ArrayComplex64Near(
     const std::vector<std::complex<float>>& values, float max_abs_error) {
   std::vector<Matcher<std::complex<float>>> matchers;
@@ -441,6 +414,14 @@ void SingleOpModel::SetCustomOp(
       builder_.CreateVector<int32_t>(outputs_), BuiltinOptions_NONE, 0,
       builder_.CreateVector<uint8_t>(custom_option),
       CustomOptionsFormat_FLEXBUFFERS));
+}
+
+TfLiteStatus SingleOpModel::AllocateTensors() {
+  TfLiteStatus status = interpreter_->AllocateTensors();
+  if (status == kTfLiteOk) {
+    interpreter_->ResetVariableTensors();
+  }
+  return status;
 }
 
 void SingleOpModel::AllocateAndDelegate(bool apply_delegate) {
