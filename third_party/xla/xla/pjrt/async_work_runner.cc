@@ -1,4 +1,4 @@
-/* Copyright 2018 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2026 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,24 +12,31 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tensorflow/lite/testing/init_tensorflow.h"
 
-#include <cstdlib>
+#include "xla/pjrt/async_work_runner.h"
 
-#include "tensorflow/core/platform/init_main.h"
+#include <memory>
+#include <utility>
 
-namespace tflite {
-void InitTensorFlow() {
-  static const char* kFakeName = "fake program name";
-  int argc = 1;
-  char* fake_name_copy = strdup(kFakeName);
-  char** argv = &fake_name_copy;
-  ::tensorflow::port::InitMain(kFakeName, &argc, &argv);
-  free(fake_name_copy);
-}
+#include "xla/tsl/concurrency/executor.h"
 
-void InitTensorFlow(int argc, char** argv) {
-  ::tensorflow::port::InitMain(argv[0], &argc, &argv);
-}
+namespace xla {
 
-}  // namespace tflite
+namespace {
+
+class AsyncWorkRunnerExecutor : public tsl::Executor {
+ public:
+  explicit AsyncWorkRunnerExecutor(AsyncWorkRunner* runner) : runner_(runner) {}
+
+  void Execute(Task task) override { runner_->Schedule(std::move(task)); }
+
+ private:
+  AsyncWorkRunner* const runner_;
+};
+
+}  // namespace
+
+AsyncWorkRunner::AsyncWorkRunner()
+    : executor_(std::make_unique<AsyncWorkRunnerExecutor>(this)) {}
+
+}  // namespace xla
