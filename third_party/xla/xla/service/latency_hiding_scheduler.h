@@ -682,9 +682,17 @@ class HloGraphNode {
   size_t GetReadyNodesIfScheduled() const { return ready_nodes_if_scheduled_; }
   void UpdateReadyNodesIfScheduled() {
     ready_nodes_if_scheduled_ = 0;
-    for (auto& pred : GetPredecessors()) {
-      if (pred.Target().GetOutdegree() == 1) {
-        ++ready_nodes_if_scheduled_;
+    if (top_down_scheduling_) {
+      for (auto& succ : GetSuccessors()) {
+        if (succ.Target().GetIndegree() == 1) {
+          ++ready_nodes_if_scheduled_;
+        }
+      }
+    } else {
+      for (auto& pred : GetPredecessors()) {
+        if (pred.Target().GetOutdegree() == 1) {
+          ++ready_nodes_if_scheduled_;
+        }
       }
     }
   }
@@ -694,10 +702,17 @@ class HloGraphNode {
   int32_t GetIndegree() const { return indegree_; }
   int32_t GetOutdegree() const { return outdegree_; }
   TimeCost GetReadyTime() const { return ready_time_; }
-  void SetIndegree(int32_t indeg) { indegree_ = indeg; }
+  void SetIndegree(int32_t indeg) {
+    indegree_ = indeg;
+    if (top_down_scheduling_ && indeg == 1) {
+      for (HloEdge& pred : GetPredecessors()) {
+        pred.Target().UpdateReadyNodesIfScheduled();
+      }
+    }
+  }
   void SetOutdegree(int32_t outdeg) {
     outdegree_ = outdeg;
-    if (outdeg == 1) {
+    if (!top_down_scheduling_ && outdeg == 1) {
       for (HloEdge& succ : GetSuccessors()) {
         succ.Target().UpdateReadyNodesIfScheduled();
       }
@@ -708,9 +723,11 @@ class HloGraphNode {
   TimeCost GetCost() const { return cost_; }
   void SetCost(TimeCost cost) { cost_ = cost; }
   TimeCost GetAsyncDepth() const { return async_depth_; }
+  TimeCost GetAsyncHeight() const { return async_height_; }
   TimeCost GetDepth() const { return depth_; }
   TimeCost GetGraphDepth() const { return graph_depth_; }
   void SetAsyncDepth(TimeCost async_depth) { async_depth_ = async_depth; }
+  void SetAsyncHeight(TimeCost async_height) { async_height_ = async_height; }
   bool IsSupportedAsyncDone() const { return is_supported_async_done_; }
   bool IsSupportedAsyncStart() const { return is_supported_async_start_; }
   void SetDepth(TimeCost depth) { depth_ = depth; }
@@ -918,6 +935,9 @@ class HloGraphNode {
   bool HasUserThatIsSupportedAsyncStart() const {
     return has_user_that_is_supported_async_start_;
   }
+  void SetTopDownScheduling(bool top_down_scheduling) {
+    top_down_scheduling_ = top_down_scheduling;
+  }
 
  private:
   friend class HloScheduleGraph;
@@ -979,6 +999,8 @@ class HloGraphNode {
   // Force the scheduling of the nodes with attribute as late as possible,
   // but do it after evaluating the early target scheduling rule.
   bool force_delay_after_target_ = false;
+  // If true, schedule the nodes from top to bottom.
+  bool top_down_scheduling_ = false;
 
   // Preference value used for scheduling heuristics,
   // a graph node having a higher preference value means it's scheduled
@@ -1025,6 +1047,9 @@ class HloGraphNode {
   TimeCost cost_ = 0.0;
   // Depth in latency terms of a node based on Async operation cost on the path.
   TimeCost async_depth_ = 0.0;
+  // Height in latency terms of a node based on Async operation cost on the
+  // path.
+  TimeCost async_height_ = 0.0;
   // Depth in latency terms of node based on operation cost on the path to the
   // entry node.
   TimeCost depth_ = 0.0;
