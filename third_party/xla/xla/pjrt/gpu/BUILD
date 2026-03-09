@@ -710,6 +710,7 @@ cc_library(
     name = "se_gpu_pjrt_runtime_abi_version",
     srcs = ["se_gpu_pjrt_runtime_abi_version.cc"],
     hdrs = ["se_gpu_pjrt_runtime_abi_version.h"],
+    visibility = internal_visibility(["//xla:internal"]),
     deps = [
         "//xla/pjrt:pjrt_abi_version",
         "//xla/pjrt:pjrt_common",
