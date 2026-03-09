@@ -244,6 +244,7 @@ cc_library(
     deps = [
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:source_location",
         "@xla//xla/tsl/platform:logging",
         "@xla//xla/tsl/platform:macros",
     ],
@@ -257,9 +258,9 @@ tsl_cc_test(
         "//tsl/platform",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_googletest//:gtest_main",
         "@xla//xla/tsl/platform:test",
         "@xla//xla/tsl/platform:test_benchmark",
+        "@xla//xla/tsl/platform:test_main",
     ],
 )
 
