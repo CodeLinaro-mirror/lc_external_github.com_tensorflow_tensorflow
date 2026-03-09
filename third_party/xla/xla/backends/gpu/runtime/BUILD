@@ -1023,6 +1023,32 @@ xla_cc_test(
 )
 
 cc_library(
+    name = "cub_scan_thunk",
+    srcs = ["cub_scan_thunk.cc"],
+    hdrs = ["cub_scan_thunk.h"],
+    deps = [
+        ":thunk",
+        "//xla:shape_util",
+        "//xla/backends/gpu:ffi",
+        "//xla/ffi",
+        "//xla/ffi:call_frame",
+        "//xla/ffi:ffi_registry",
+        "//xla/ffi:invoke",
+        "//xla/ffi/api:c_api",
+        "//xla/service:buffer_assignment",
+        "//xla/service/gpu:buffer_allocations",
+        "//xla/stream_executor:device_address",
+        "//xla/stream_executor:stream",
+        "//xla/tsl/platform:errors",
+        "//xla/tsl/platform:statusor",
+        "@com_google_absl//absl/base",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
     name = "cub_sort_thunk",
     srcs = ["cub_sort_thunk.cc"],
     hdrs = ["cub_sort_thunk.h"],
