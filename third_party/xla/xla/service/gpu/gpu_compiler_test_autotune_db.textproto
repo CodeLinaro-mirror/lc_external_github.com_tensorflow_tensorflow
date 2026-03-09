@@ -11,6 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# To update the database, find failing test in gpu_compiler_test.cc.
+# Change set_xla_gpu_require_complete_aot_autotune_results in the test to false.
+# bazel test @tensorflow/compiler/xla/service/gpu:gpu_compiler_test_h100 \
+#   --config=cuda --test_sharding_strategy=disabled \
+#   --test_filter="ADD_FAILING_TEST_FILTER" \
+#   --test_env=XLA_FLAGS=" --xla_dump_to=sponge"
+# Navigate to "Artifacts" tab. Open file with *autotune_results.pbtxt.
+# Copy contents to this file.
+# Remove version field within each result.
+# Revert change to set_xla_gpu_require_complete_aot_autotune_results.
+# Rerun the test to confirm it passes.
 version: 3
 results {
   device: "CUDA: 9.0, Cores: 132, GPU clock: 1.98 GHz, Memory bandwidth: 3352 GB/s, L2 cache: 50 MB, DNN version: 9.10.0"
