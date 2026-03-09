@@ -63,9 +63,12 @@ class XlaCompileLibTest : public HloPjRtTestBase {
 
 TEST_F(XlaCompileLibTest, CompilesForGpuWithDevice) {
   CompilationResult result;
-  EXPECT_THAT(CompileExecutable(std::move(module_), BackendType::kGpu,
-                                std::nullopt, std::nullopt, result),
-              absl_testing::IsOkAndHolds(Not(IsEmpty())));
+  EXPECT_THAT(
+      CompileExecutable(std::move(module_), BackendType::kGpu,
+                        /*gpu_target_config=*/std::nullopt,
+                        /*cpu_target_config=*/std::nullopt,
+                        /*num_partitions=*/1, /*num_replicas=*/1, result),
+      absl_testing::IsOkAndHolds(Not(IsEmpty())));
   EXPECT_TRUE(result.has_hlo_module()) << result.DebugString();
 }
 
@@ -84,7 +87,8 @@ TEST_F(XlaCompileLibTest, CompilesForGpuWithoutDevice) {
   EXPECT_THAT(CompileExecutable(
                   std::move(module_), BackendType::kGpu,
                   Compiler::GpuTargetConfig::FromProto(target_config).value(),
-                  /*cpu_target_config=*/std::nullopt, result),
+                  /*cpu_target_config=*/std::nullopt, /*num_partitions=*/1,
+                  /*num_replicas=*/1, result),
               absl_testing::IsOkAndHolds(Not(IsEmpty())));
   EXPECT_TRUE(result.has_hlo_module()) << result.DebugString();
 }
