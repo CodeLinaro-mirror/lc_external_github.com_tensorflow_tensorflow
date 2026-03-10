@@ -247,10 +247,24 @@ StreamExecutorExecutable::GetOutputMemoryKinds() const {
 absl::StatusOr<std::unique_ptr<LocalExecutable>>
 StreamExecutorExecutable::ConsumeExecutable(
     LocalClient* client, const CompileOptions& compile_options) {
+  TF_RETURN_IF_ERROR(GetOrLoadExecutable(client, compile_options).status());
   if (std::holds_alternative<std::vector<std::unique_ptr<LocalExecutable>>>(
           executables_)) {
     auto tmp = std::get<std::vector<std::unique_ptr<LocalExecutable>>>(
         std::move(executables_));
+    if (tmp.size() == 1) {
+      return std::move(tmp[0]);
+    }
+  }
+  return absl::UnimplementedError("Unsupported executable type.");
+}
+
+absl::StatusOr<LocalExecutable*> StreamExecutorExecutable::GetOrLoadExecutable(
+    LocalClient* client, const CompileOptions& compile_options) {
+  if (std::holds_alternative<std::vector<std::unique_ptr<LocalExecutable>>>(
+          executables_)) {
+    const auto& tmp =
+        std::get<std::vector<std::unique_ptr<LocalExecutable>>>(executables_);
     if (tmp.size() == 0) {
       return absl::InternalError("No local executable");
     }
@@ -258,7 +272,7 @@ StreamExecutorExecutable::ConsumeExecutable(
       return absl::InternalError(
           "ConsumeExecutable is not supported for more than one executable.");
     }
-    return std::move(tmp[0]);
+    return tmp[0].get();
   } else if (std::holds_alternative<
                  std::vector<std::unique_ptr<CompiledModule>>>(executables_)) {
     auto aot_executables =
@@ -271,8 +285,14 @@ StreamExecutorExecutable::ConsumeExecutable(
       return absl::InternalError(
           "ConsumeExecutable is not supported for more than one executable.");
     }
-    return client->Load(std::move(aot_executables[0]),
-                        compile_options.executable_build_options);
+    std::vector<std::unique_ptr<LocalExecutable>> tmp;
+    TF_ASSIGN_OR_RETURN(auto local_executable,
+                        client->Load(std::move(aot_executables[0]),
+                                     compile_options.executable_build_options));
+    tmp.push_back(std::move(local_executable));
+    auto* result = tmp[0].get();
+    executables_ = std::move(tmp);
+    return result;
   }
   return absl::UnimplementedError("Unsupported executable type.");
 }

@@ -88,6 +88,9 @@ class StreamExecutorExecutable : public PjRtExecutable {
   absl::StatusOr<std::unique_ptr<LocalExecutable>> ConsumeExecutable(
       LocalClient* client, const CompileOptions& compile_options);
 
+  absl::StatusOr<LocalExecutable*> GetOrLoadExecutable(
+      LocalClient* client, const CompileOptions& compile_options);
+
   absl::StatusOr<std::string> FingerprintExecutable() const override {
     return fingerprint_;
   }
