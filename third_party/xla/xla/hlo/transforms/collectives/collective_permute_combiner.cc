@@ -65,7 +65,24 @@ absl::Status CombineCollectivePermutes(
     TF_RET_CHECK(hlo->opcode() == HloOpcode::kCollectivePermute);
     TF_RET_CHECK(hlo->operand_count() == 1);
     TF_RET_CHECK(hlo->shape().IsArray());
-    TF_RET_CHECK(hlo->source_target_pairs() == source_target_pairs);
+
+    if (hlo->parent()
+            ->parent()
+            ->config()
+            .debug_options()
+            .xla_enable_enzyme_comms_opt()) {
+      std::vector<std::pair<int64_t, int64_t>> sorted_source_target_pairs =
+          source_target_pairs;
+      std::sort(source_target_pairs.begin(), source_target_pairs.end());
+      std::vector<std::pair<int64_t, int64_t>> sorted_hlo_source_target_pairs =
+          hlo->source_target_pairs();
+      std::sort(sorted_hlo_source_target_pairs.begin(),
+                sorted_hlo_source_target_pairs.end());
+      TF_RET_CHECK(sorted_source_target_pairs ==
+                   sorted_hlo_source_target_pairs);
+    } else {
+      TF_RET_CHECK(hlo->source_target_pairs() == source_target_pairs);
+    }
     operands.push_back(hlo->operands().front());
     operand_shapes.push_back(&hlo->operands().front()->shape());
   }
