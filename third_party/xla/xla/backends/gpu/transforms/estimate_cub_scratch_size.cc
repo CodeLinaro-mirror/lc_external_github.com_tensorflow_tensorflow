@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "xla/backends/gpu/transforms/estimate_cub_scratch_size.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -27,7 +28,6 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
-#include "xla/backends/gpu/runtime/cub_scan_thunk.h"
 #include "xla/backends/gpu/runtime/cub_sort_thunk.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_computation.h"
@@ -36,6 +36,9 @@ limitations under the License.
 #include "xla/service/gpu/cublas_cudnn.h"
 #include "xla/shape.h"
 #include "xla/shape_util.h"
+#include "xla/stream_executor/cuda/cub_scan_kernel_cuda.h"
+#include "xla/tsl/platform/logging.h"
+#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 #include "xla/xla_data.pb.h"
 #include "xla/tsl/platform/status_macros.h"
@@ -90,23 +93,33 @@ absl::Status EstimateCubScratchSize::RunOnScanInstruction(
     HloCustomCallInstruction* custom_call) {
   CHECK_EQ(custom_call->custom_call_target(),
            kCubDeviceScanUnassignedScratchSizeTarget);
-  const Shape& key_shape = custom_call->operand(0)->shape();
+  const Shape& key_shape = custom_call->operand(1)->shape();
   PrimitiveType key_type = key_shape.element_type();
 
-  ASSIGN_OR_RETURN(std::unique_ptr<CubScanRunnerInterface> runner,
-                   CubScanRunnerInterface::Create(key_type, platform_name_));
+  TF_ASSIGN_OR_RETURN(CubScanOptions options,
+                      custom_call->backend_config<CubScanOptions>());
 
-  int64_t num_elements = Product(key_shape.dimensions());
-  ASSIGN_OR_RETURN(int64_t scratch_size, runner->GetScratchSize(num_elements));
+  if (options.kind() == CubScanOptions::KIND_INVALID) {
+    return absl::InvalidArgumentError("Invalid scan kind.");
+  }
+  stream_executor::cuda::CubScanKind kind =
+      static_cast<stream_executor::cuda::CubScanKind>(options.kind());
+
+  ASSIGN_OR_RETURN(size_t scratch_size,
+                   stream_executor::cuda::CubScanGetScratchSize(
+                       key_type, options.vector_length(), options.row_length(),
+                       options.column_length(), kind, options.is_reverse()));
 
   // Update the custom call.
   Shape new_shape = custom_call->shape();
   new_shape.mutable_tuple_shapes()->back() =
-      ShapeUtil::MakeShape(U8, {scratch_size});
+      ShapeUtil::MakeShape(U8, {static_cast<int64_t>(scratch_size)});
   HloInstruction* new_custom_call =
       custom_call->AddInstruction(HloInstruction::CreateCustomCall(
           new_shape, absl::MakeSpan(custom_call->operands()),
-          kCubDeviceScanTarget));
+          "xla.gpu.ext.cub_scan"));
+  static_cast<HloCustomCallInstruction*>(new_custom_call)
+      ->set_api_version(CustomCallApiVersion::API_VERSION_TYPED_FFI);
   new_custom_call->SetupDerivedInstruction(custom_call);
   RETURN_IF_ERROR(custom_call->parent()->ReplaceInstructionWithDifferentShape(
       custom_call, new_custom_call));
