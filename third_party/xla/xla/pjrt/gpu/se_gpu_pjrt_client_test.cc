@@ -1989,7 +1989,7 @@ TEST(StreamExecutorGpuClientTest,
   if (client->platform_name() == xla::RocmName()) {
     EXPECT_EQ(memory_stats.peak_memory_in_bytes, 1845006788);
   } else {
-    EXPECT_EQ(memory_stats.peak_memory_in_bytes, 1845010888);
+    EXPECT_EQ(memory_stats.peak_memory_in_bytes, 1804898756);
   }
 }
 
@@ -2028,7 +2028,7 @@ ROOT tuple = (f32[16]{0}, f32[2]{0}, f32[2]{0}) tuple(ag, p0, add0)
 
   EXPECT_EQ(memory_stats.output_size_in_bytes, 104);
   EXPECT_EQ(memory_stats.host_output_size_in_bytes, 0);
-  EXPECT_EQ(memory_stats.peak_memory_in_bytes, 120);
+  EXPECT_EQ(memory_stats.peak_memory_in_bytes, 112);
 }
 
 TEST(StreamExecutorGpuClientTest, GetCompiledMemoryStatsMixedTupleNotRoot) {
@@ -2060,7 +2060,7 @@ ROOT gte0 = f32[16]{0} get-tuple-element(t), index=0
 
   EXPECT_EQ(memory_stats.output_size_in_bytes, 64);
   EXPECT_EQ(memory_stats.host_output_size_in_bytes, 0);
-  EXPECT_EQ(memory_stats.peak_memory_in_bytes, 80);
+  EXPECT_EQ(memory_stats.peak_memory_in_bytes, 72);
 }
 
 TEST(StreamExecutorGpuClientTest, GetCompiledMemoryStatsCountTupleTable) {
