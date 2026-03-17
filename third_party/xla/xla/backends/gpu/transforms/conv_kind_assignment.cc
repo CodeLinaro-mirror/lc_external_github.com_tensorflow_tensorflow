@@ -434,7 +434,7 @@ ConvolutionMatch MatchBackwardInput(HloInstruction* conv) {
   return rhs;
 }
 
-using ConvKind = HloConvolutionInstruction::ConvKind;
+using ConvKind = ConvolutionKind;
 
 HloInstruction* CreateGpuConv(ConvKind conv_kind, HloInstruction* conv,
                               HloInstruction* lhs, HloInstruction* rhs) {
@@ -502,15 +502,17 @@ absl::StatusOr<HloInstruction*> AssignConvKind(
     const se::dnn::VersionInfo& dnn_version) {
   TF_RETURN_IF_ERROR(CheckTypes(conv, cc, dnn_version));
   if (ConvolutionMatch m = MatchBackwardInput(conv)) {
-    conv = CreateGpuConv(ConvKind::DGRAD, conv, conv->mutable_operand(0), *m);
+    conv = CreateGpuConv(CONVOLUTION_KIND_DGRAD, conv, conv->mutable_operand(0),
+                         *m);
   } else if (ConvolutionMatch m = MatchBackwardFilter(conv)) {
-    conv = CreateGpuConv(ConvKind::WGRAD, conv, *m, conv->mutable_operand(1));
+    conv = CreateGpuConv(CONVOLUTION_KIND_WGRAD, conv, *m,
+                         conv->mutable_operand(1));
   } else if (CanImplementAsGpuForwardConv(conv)) {
     // If all else fails, try a forward convolution.
     if (conv->batch_group_count() > 1) {
       conv = ConvertBatchGroupedToFeatureGroupedConvolution(conv);
     }
-    conv = CreateGpuConv(ConvKind::FPROP, conv, conv->mutable_operand(0),
+    conv = CreateGpuConv(CONVOLUTION_KIND_FPROP, conv, conv->mutable_operand(0),
                          conv->mutable_operand(1));
   }
   return conv;

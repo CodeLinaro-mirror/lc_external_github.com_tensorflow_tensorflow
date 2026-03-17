@@ -4664,8 +4664,7 @@ TEST(HloParserSingleOpTest, ConvolutionWithKind) {
   ASSERT_NE(computation, nullptr);
   auto* convolution =
       Cast<HloConvolutionInstruction>(computation->root_instruction());
-  EXPECT_EQ(convolution->conv_kind(),
-            HloConvolutionInstruction::ConvKind::FPROP);
+  EXPECT_EQ(convolution->conv_kind(), CONVOLUTION_KIND_FPROP);
 }
 
 TEST(HloParserSingleOpTest, MultipleOpsProducesError) {
