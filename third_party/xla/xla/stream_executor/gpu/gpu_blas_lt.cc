@@ -243,6 +243,7 @@ absl::StatusOr<ComputationType> GetBlasComputationType(
       case PrimitiveType::F64:  // fall-through
       case PrimitiveType::C128:
         return ComputationType::kF64;
+      case PrimitiveType::S8:
       case PrimitiveType::S32:
         return ComputationType::kI32;
       default:
@@ -289,6 +290,10 @@ bool MakeOutputColumnMajor(MatrixLayout& lhs, MatrixLayout& rhs,
 }
 
 DataType GetScaleType(DataType c_type, ComputationType computation_type) {
+  if (c_type == DataType::kInt8) {
+    return DataType::kFloat;
+  }
+
   return (computation_type == ComputationType::kF32 &&
                   c_type != DataType::kComplexFloat
               ? DataType::kFloat
