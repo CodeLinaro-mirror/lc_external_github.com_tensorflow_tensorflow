@@ -101,7 +101,7 @@ CompilationProviderTest::CreateCompilationProvider(absl::string_view name) {
   }
 
   if (name == kDriverCompilationProviderName) {
-    return std::make_unique<DriverCompilationProvider>();
+    return std::make_unique<DriverCompilationProvider>(0);
   }
 
   if (name == kCompositeNvptxCompilerAndNvJitLinkCompilationProviderName) {

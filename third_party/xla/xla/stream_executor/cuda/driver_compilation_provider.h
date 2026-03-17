@@ -29,7 +29,8 @@ namespace stream_executor::cuda {
 
 class DriverCompilationProvider : public CompilationProvider {
  public:
-  explicit DriverCompilationProvider() = default;
+  explicit DriverCompilationProvider(int device_ordinal)
+      : device_ordinal_(device_ordinal) {}
 
   std::string name() const override { return "DriverCompilationProvider"; }
 
@@ -50,6 +51,9 @@ class DriverCompilationProvider : public CompilationProvider {
       const CompilationOptions& options) const override;
 
   absl::StatusOr<int> GetLatestPtxIsaVersion() const override;
+
+ private:
+  int device_ordinal_;
 };
 
 }  // namespace stream_executor::cuda

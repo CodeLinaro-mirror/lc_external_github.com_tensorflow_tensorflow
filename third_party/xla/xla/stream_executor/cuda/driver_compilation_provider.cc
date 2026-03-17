@@ -68,10 +68,10 @@ absl::StatusOr<Assembly> DriverCompilationProvider::CompileAndLink(
     const CudaComputeCapability& cc,
     absl::Span<const RelocatableModuleOrPtx> inputs,
     const CompilationOptions& options) const {
-  TF_ASSIGN_OR_RETURN(Platform * platform,
-                      PlatformManager::PlatformWithId(kCudaPlatformId));
-  TF_ASSIGN_OR_RETURN(StreamExecutor * executor,
-                      platform->ExecutorForDevice(0));
+  ASSIGN_OR_RETURN(Platform * platform,
+                   PlatformManager::PlatformWithId(kCudaPlatformId));
+  ASSIGN_OR_RETURN(StreamExecutor * executor,
+                   platform->ExecutorForDevice(device_ordinal_));
   std::unique_ptr<ActivateContext> context = executor->Activate();
 
   CUlinkState link_state;

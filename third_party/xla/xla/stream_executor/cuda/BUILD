@@ -2354,6 +2354,7 @@ cc_library(
     ]),
     deps = [
         "//xla:xla_proto_cc",
+        "//xla/stream_executor:stream_executor_h",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
