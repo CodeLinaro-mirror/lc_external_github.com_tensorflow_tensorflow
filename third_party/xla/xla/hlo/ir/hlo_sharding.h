@@ -549,6 +549,11 @@ class HloSharding {
     if (sharding.tuple_) {
       return H::combine(std::move(h), sharding.tuple_elements_);
     }
+    if (sharding.UseNamedShardingLeaf() &&
+        sharding.named_sharding_.has_value()) {
+      return AbslHashValue(std::move(h),
+                           V3ToV2Sharding(*sharding.named_sharding_));
+    }
     return H::combine(
         std::move(h), sharding.replicated_, sharding.manual_, sharding.unknown_,
         sharding.unreduced_, sharding.tile_assignment_.array(),
