@@ -217,9 +217,11 @@ mlir::LogicalResult IfrtArrayType::verify(
 }
 
 xla::ifrt::MemoryKind IfrtArrayType::MemoryKind() const {
-  return getMemoryKindAttr() == nullptr
+  mlir::StringAttr memory_kind_attr = getMemoryKindAttr();
+  return memory_kind_attr == nullptr ||
+                 memory_kind_attr.getValue() == "(default)"
              ? xla::ifrt::MemoryKind()
-             : xla::ifrt::MemoryKind(getMemoryKindAttr().str());
+             : xla::ifrt::MemoryKind(memory_kind_attr.str());
 };
 
 // TODO(icgog): Migrate to xla::ifrt::Layout.
