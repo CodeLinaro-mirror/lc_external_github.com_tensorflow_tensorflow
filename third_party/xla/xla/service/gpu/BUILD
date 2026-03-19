@@ -1791,6 +1791,7 @@ cc_library(
         "//xla/hlo/transforms/simplifiers:broadcast_canonicalizer",
         "//xla/hlo/transforms/simplifiers:conditional_canonicalizer",
         "//xla/hlo/transforms/simplifiers:convert_mover",
+        "//xla/hlo/transforms/simplifiers:dot_dimension_merger",
         "//xla/hlo/transforms/simplifiers:dot_merger",
         "//xla/hlo/transforms/simplifiers:dynamic_dimension_simplifier",
         "//xla/hlo/transforms/simplifiers:flatten_call_graph",
