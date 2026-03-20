@@ -1140,7 +1140,8 @@ to be batched.}]>:$captured_tensors,
     DefaultValuedOptionalAttr<TF_AnyStrAttrOf<["PAD_UP", "BATCH_DOWN", "MINIMIZE_TPU_COST_PER_REQUEST"]>, "\"PAD_UP\"">:$batch_padding_policy,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$enable_large_batch_splitting,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$enable_priority_aware_batch_scheduler,
-    DefaultValuedOptionalAttr<BoolAttr, "false">:$enable_priority_aware_batch_scheduler_resplit
+    DefaultValuedOptionalAttr<BoolAttr, "false">:$enable_priority_aware_batch_scheduler_resplit,
+    DefaultValuedOptionalAttr<I64Attr, "0">:$num_warmup_batch_threads
   );
 
   let results = (outs
