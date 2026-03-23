@@ -36,11 +36,9 @@ absl::Status CubScanLaunchKernel(xla::PrimitiveType type, void* d_temp_storage,
                                  CubScanKind kind, bool is_reverse,
                                  CUstream stream);
 
-absl::StatusOr<size_t> CubScanGetScratchSize(xla::PrimitiveType type,
-                                             int64_t vector_length,
-                                             int64_t row_length,
-                                             int64_t column_length,
-                                             CubScanKind kind, bool is_reverse);
+absl::StatusOr<int64_t> CubScanGetScratchSize(
+    xla::PrimitiveType type, int64_t vector_length, int64_t row_length,
+    int64_t column_length, CubScanKind kind, bool is_reverse);
 
 }  // namespace stream_executor::cuda
 

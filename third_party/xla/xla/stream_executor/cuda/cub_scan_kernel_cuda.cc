@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "xla/stream_executor/cuda/cub_scan_kernel_cuda.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -46,14 +45,14 @@ absl::Status CubScanLaunchKernelFfiHandler(
       vector_length, row_length, column_length, kind, is_reverse, stream);
 }
 
-absl::StatusOr<std::unique_ptr<size_t>> CubScanGetScratchSizeFfiHandler(
+absl::StatusOr<std::unique_ptr<int64_t>> CubScanGetScratchSizeFfiHandler(
     xla::PrimitiveType element_type, int64_t vector_length, int64_t row_length,
     int64_t column_length, CubScanKind kind, bool is_reverse) {
   ASSIGN_OR_RETURN(
-      size_t temp_bytes,
+      int64_t temp_bytes,
       CubScanGetScratchSize(element_type, vector_length, row_length,
                             column_length, kind, is_reverse));
-  return std::make_unique<size_t>(temp_bytes);
+  return std::make_unique<int64_t>(temp_bytes);
 }
 
 }  // namespace

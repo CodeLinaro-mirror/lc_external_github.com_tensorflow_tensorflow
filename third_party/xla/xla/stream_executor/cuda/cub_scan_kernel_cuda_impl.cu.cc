@@ -201,14 +201,14 @@ absl::Status CubScanLaunchKernel(xla::PrimitiveType type, void* d_temp_storage,
                          is_reverse, stream);
 }
 
-absl::StatusOr<size_t> CubScanGetScratchSize(
+absl::StatusOr<int64_t> CubScanGetScratchSize(
     xla::PrimitiveType type, int64_t vector_length, int64_t row_length,
     int64_t column_length, CubScanKind kind, bool is_reverse) {
   size_t temp_bytes = 0;
   TF_RETURN_IF_ERROR(CubScanDispatch(type, nullptr, &temp_bytes, nullptr,
                                      nullptr, vector_length, row_length,
                                      column_length, kind, is_reverse, nullptr));
-  return temp_bytes;
+  return static_cast<int64_t>(temp_bytes);
 }
 
 }  // namespace stream_executor::cuda
