@@ -18,7 +18,6 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -56,7 +55,6 @@ limitations under the License.
 #include "xla/shape_util.h"
 #include "xla/stream_executor/device_address.h"
 #include "xla/stream_executor/device_address_handle.h"
-#include "xla/stream_executor/event.h"
 #include "xla/stream_executor/gpu/multi_gpu_barrier_kernel.h"
 #include "xla/stream_executor/gpu/ragged_all_to_all_kernel.h"
 #include "xla/stream_executor/memory_allocation.h"
@@ -156,84 +154,6 @@ absl::Status RunAllToAllOnIndexBuffer(
   return stream.BlockHostUntilDone();
 }
 
-// Executes the rendezvous before the kernel start.
-// Inserts CUDA events into the stream to ensure that all devices have reached
-// the start event before the kernel starts.
-absl::StatusOr<std::shared_ptr<std::vector<RaggedAllToAllRendezvousValue>>>
-RendezvousBeforeKernelStart(const GpuCliqueKey& clique_key, se::Stream& stream,
-                            RankId rank, se::Event* start_event,
-                            se::Event* end_event,
-                            const se::DeviceAddressBase& output_buffer) {
-  int64_t num_ranks = clique_key.num_local_participants();
-
-  RaggedAllToAllRendezvousValue rendezvous_value;
-  rendezvous_value.rank = rank;
-  rendezvous_value.output_buffer = output_buffer;
-  rendezvous_value.start_event = start_event;
-  rendezvous_value.end_event = end_event;
-
-  // Record that this device has started the memcpy ragged-all-to-all. We do
-  // this before the rendezvous to make sure that RecordEvent is called before
-  // WaitFor on another stream.
-  RETURN_IF_ERROR(stream.RecordEvent(start_event));
-
-  auto rendezvous_fn =
-      [](absl::Span<const RaggedAllToAllRendezvousValue* const> values) {
-        std::vector<RaggedAllToAllRendezvousValue> values_copy;
-        for (const auto& value : values) {
-          values_copy.push_back(*value);
-        }
-        // Sort to make sure that values are in the same order as the devices
-        // are ordered in the communicator.
-        absl::c_sort(values_copy);
-        return values_copy;
-      };
-
-  std::string name =
-      absl::StrFormat("start one-shot ragged-all-to-all for rank %d, clique %s",
-                      rank.value(), clique_key.ToString());
-  ASSIGN_OR_RETURN(
-      std::shared_ptr<std::vector<RaggedAllToAllRendezvousValue>>
-          rendezvous_values,
-      Rendezvous<std::vector<RaggedAllToAllRendezvousValue>>(
-          name, clique_key, rendezvous_value, num_ranks, rendezvous_fn));
-
-  // Wait for all devices to reach the start event. This indicates that all
-  // output buffers are ready for transfer.
-  for (auto& value : *rendezvous_values) {
-    RETURN_IF_ERROR(stream.WaitFor(value.start_event));
-  }
-
-  return rendezvous_values;
-}
-
-// Executes the rendezvous after the kernel finish. Waits for all devices to
-// reach the end event.
-absl::Status RendezvousAfterKernelFinish(
-    const GpuCliqueKey& clique_key, se::Stream& stream, RankId rank,
-    se::Event* end_event,
-    const std::vector<RaggedAllToAllRendezvousValue>& rendezvous_values) {
-  int64_t num_ranks = clique_key.num_local_participants();
-
-  // Record that this device has finished the memcpy ragged-all-to-all.
-  RETURN_IF_ERROR(stream.RecordEvent(end_event));
-
-  // Do another rendezvous to make sure that we call RecordEvent for end_event
-  // before WaitFor on another stream.
-  std::string name = absl::StrFormat(
-      "finish one-shot ragged-all-to-all for rank %d, clique %s", rank.value(),
-      clique_key.ToString());
-  RETURN_IF_ERROR(Rendezvous(name, clique_key, num_ranks));
-
-  // Wait for all devices to reach the end event. This indicates that all
-  // updates from other devices have arrived.
-  for (auto& value : rendezvous_values) {
-    RETURN_IF_ERROR(stream.WaitFor(value.end_event));
-  }
-
-  return absl::OkStatus();
-}
-
 // Helper to launch the MultiGpuBarrierKernel.
 absl::Status LaunchMultiGpuBarrier(
     se::Stream* stream, RankId rank, int64_t num_ranks,
@@ -267,10 +187,6 @@ RaggedAllToAllStartThunk::RaggedAllToAllStartThunk(
           instr->GetModule()
               ->config()
               .debug_options()
-              .xla_gpu_experimental_ragged_all_to_all_use_barrier(),
-          instr->GetModule()
-              ->config()
-              .debug_options()
               .xla_gpu_experimental_ragged_all_to_all_use_barrier_with_nccl()) {
 }
 
@@ -278,15 +194,12 @@ RaggedAllToAllStartThunk::RaggedAllToAllStartThunk(
     ThunkInfo thunk_info, const RaggedAllToAllConfig& config,
     std::shared_ptr<AsyncEvents> async_events,
     std::vector<CollectiveThunk::Buffer> buffers, bool one_shot_kernel_enabled,
-    bool use_multi_gpu_barrier_in_one_shot_kernel,
     bool use_multi_gpu_barrier_with_nccl_in_one_shot_kernel)
     : CollectiveThunk(Thunk::kRaggedAllToAllStart, thunk_info, async_events,
                       false),
       config_(config),
       buffers_(std::move(buffers)),
       one_shot_kernel_enabled_(one_shot_kernel_enabled),
-      use_multi_gpu_barrier_in_one_shot_kernel_(
-          use_multi_gpu_barrier_in_one_shot_kernel),
       use_multi_gpu_barrier_with_nccl_in_one_shot_kernel_(
           use_multi_gpu_barrier_with_nccl_in_one_shot_kernel) {
   CHECK_EQ(config_.config.operand_element_type.size(), buffers_.size());
@@ -365,15 +278,7 @@ RaggedAllToAllStartThunk::InitializeOnce(const InitializeParams& params) {
     return absl::InternalError("Failed to allocate output offsets buffer.");
   }
 
-  bool use_cuda_events = !use_multi_gpu_barrier_in_one_shot_kernel_ &&
-                         !use_multi_gpu_barrier_with_nccl_in_one_shot_kernel_;
-
-  if (is_local(params.local_device_count) && use_cuda_events) {
-    ASSIGN_OR_RETURN(state->start_event, executor->CreateEvent());
-    ASSIGN_OR_RETURN(state->end_event, executor->CreateEvent());
-  }
-
-  if (is_local(params.local_device_count) && !use_cuda_events) {
+  if (is_local(params.local_device_count)) {
     using MultiGpuBarrierKernel = se::gpu::MultiGpuBarrierKernel;
 
     ASSIGN_OR_RETURN(
@@ -440,8 +345,7 @@ absl::Status RaggedAllToAllStartThunk::Initialize(
             state->clique_key, std::move(barrier_signal_symmetric_memory)));
   }
 
-  if (is_local(params.local_device_count) &&
-      use_multi_gpu_barrier_in_one_shot_kernel_) {
+  if (is_local(params.local_device_count)) {
     // Rendezvous - Exchange output pointers and barrier signal buffers.
     ASSIGN_OR_RETURN(
         std::vector<DeviceBufferPair> device_buffers,
@@ -509,7 +413,6 @@ RaggedAllToAllStartThunk::FromProto(
                            thunk_proto.num_input_rows(),
                            thunk_proto.num_row_elements()},
       async_events, std::move(buffers), thunk_proto.one_shot_kernel_enabled(),
-      thunk_proto.use_multi_gpu_barrier_in_one_shot_kernel(),
       thunk_proto.use_multi_gpu_barrier_with_nccl_in_one_shot_kernel());
 }
 
@@ -535,8 +438,6 @@ absl::StatusOr<ThunkProto> RaggedAllToAllStartThunk::ToProto() const {
   thunk_proto->set_num_input_rows(config_.num_input_rows);
   thunk_proto->set_num_row_elements(config_.num_row_elements);
   thunk_proto->set_one_shot_kernel_enabled(one_shot_kernel_enabled_);
-  thunk_proto->set_use_multi_gpu_barrier_in_one_shot_kernel(
-      use_multi_gpu_barrier_in_one_shot_kernel_);
   thunk_proto->set_use_multi_gpu_barrier_with_nccl_in_one_shot_kernel(
       use_multi_gpu_barrier_with_nccl_in_one_shot_kernel_);
 
@@ -574,21 +475,12 @@ absl::Status RaggedAllToAllStartThunk::RunCollective(
           *state->participants);
     }
 
-    if (use_multi_gpu_barrier_in_one_shot_kernel_) {
-      return RunOneShotRaggedAllToAll(
-          clique_key, stream, state->rank,
-          state->barrier_signal_buffer
-              ->address(),  // Buff peers write signals to
-          state->barrier_signal_value
-              ->address(),  // Local monotonic step counter
-          config_.num_total_updates, config_.num_input_rows,
-          config_.num_row_elements, device_buffers, *state->participants);
-    }
-
     return RunOneShotRaggedAllToAll(
-        clique_key, stream, state->rank, state->start_event.get(),
-        state->end_event.get(), config_.num_total_updates,
-        config_.num_input_rows, config_.num_row_elements, device_buffers);
+        clique_key, stream, state->rank,
+        state->barrier_signal_buffer->address(),  // Buff peers write signals to
+        state->barrier_signal_value->address(),  // Local monotonic step counter
+        config_.num_total_updates, config_.num_input_rows,
+        config_.num_row_elements, device_buffers, *state->participants);
   }
 
   // Get buffer allocs to load sizes and offsets of ragged tensors from device
@@ -718,7 +610,7 @@ absl::Status RunRaggedAllToAll(
 // Executes the RaggedAllToAll collective using a "One-Shot" kernel with
 // explicit device-side synchronization.
 // The execution flow is:
-// Pre-requisite: Rendezvous - Exchange output buffers and barrier signal
+// Prerequisite: Rendezvous - Exchange output buffers and barrier signal
 // buffers with peers.
 // 1. Pre-Kernel Barrier: Wait until all peers are ready to receive data.
 // 2. Execution: Run the RaggedAllToAll kernel (direct P2P writes).
@@ -775,52 +667,10 @@ absl::Status RunOneShotRaggedAllToAllWithNccl(
   return absl::OkStatus();
 }
 
-// Legacy: Event Synchronization (To be removed)
-absl::Status RunOneShotRaggedAllToAll(
-    const GpuCliqueKey& clique_key, se::Stream& stream, RankId rank,
-    se::Event* start_event, se::Event* end_event, int64_t num_total_updates,
-    int64_t num_input_rows, int64_t num_row_elements,
-    absl::Span<DeviceBufferPair const> buffers) {
-  int device_ordinal = stream.parent()->device_ordinal();
-  const int64_t num_ranks = clique_key.num_local_participants();
-
-  XLA_VLOG_DEVICE(3, device_ordinal)
-      << "Performing one-shot ragged-all-to-all rank: " << rank.value();
-
-  PrimitiveType element_type = buffers[0].element_type;
-
-  se::DeviceAddressBase input_buffer = buffers[0].source_buffer;
-  se::DeviceAddressBase output_buffer = buffers[1].destination_buffer;
-
-  // Note: RecordEvent and WaitFor(event) wouldn't work with CUDA graph.
-  // b/409511004: Use atomics for multi-GPU barrier in ragged-all-to-all thunk
-  TF_ASSIGN_OR_RETURN(
-      std::shared_ptr<std::vector<RaggedAllToAllRendezvousValue>>
-          rendezvous_values,
-      RendezvousBeforeKernelStart(clique_key, stream, rank, start_event,
-                                  end_event, output_buffer));
-
-  const int64_t num_updates_per_replica = num_total_updates / num_ranks;
-
-  stream_executor::gpu::RaggedAllToAllOutputPtrs output_ptrs;
-  for (int i = 0; i < rendezvous_values->size(); ++i) {
-    output_ptrs[i] = (*rendezvous_values)[i].output_buffer.opaque();
-  }
-
-  TF_RETURN_IF_ERROR(RunRaggedAllToAllKernel(
-      &stream, element_type, input_buffer, output_ptrs,
-      buffers[2].source_buffer, buffers[3].source_buffer,
-      buffers[4].source_buffer, num_ranks, num_updates_per_replica,
-      num_input_rows, num_row_elements));
-
-  return RendezvousAfterKernelFinish(clique_key, stream, rank, end_event,
-                                     *rendezvous_values);
-}
-
 // Executes the RaggedAllToAll collective using a "One-Shot" kernel with
 // explicit device-side synchronization.
 // The execution flow is:
-// Pre-requisite: Rendezvous - Exchange output buffers and barrier signal
+// Prerequisite: Rendezvous - Exchange output buffers and barrier signal
 // buffers with peers.
 // 1. Pre-Kernel Barrier: Wait until all peers are ready to receive data.
 // 2. Execution: Run the RaggedAllToAll kernel (direct P2P writes).
