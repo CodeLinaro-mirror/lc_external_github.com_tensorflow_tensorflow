@@ -54,7 +54,7 @@ absl::StatusOr<CustomKernel> GetPtxCustomKernel(std::string kernel_name,
           ptx, kernel_name, /*arity=*/num_args, KernelArgsPacking);
   return CustomKernel(std::move(kernel_name), kernel_spec, block_dim,
                       thread_dim, shared_memory_bytes);
-};
+}
 
 absl::StatusOr<CustomKernel> GetPtxCustomKernel(
     std::string kernel_name, absl::string_view ptx, int num_args,
@@ -65,7 +65,7 @@ absl::StatusOr<CustomKernel> GetPtxCustomKernel(
           ptx, kernel_name, /*arity=*/num_args, KernelArgsPacking);
   return CustomKernel(std::move(kernel_name), kernel_spec, block_dim,
                       thread_dim, cluster_dim, shared_memory_bytes);
-};
+}
 
 absl::StatusOr<CustomKernel> GetOwnedPtxCustomKernel(
     std::string kernel_name, std::string ptx, int num_args,
@@ -73,9 +73,20 @@ absl::StatusOr<CustomKernel> GetOwnedPtxCustomKernel(
     size_t shared_memory_bytes) {
   se::KernelLoaderSpec kernel_spec =
       se::KernelLoaderSpec::CreateOwningCudaPtxInMemorySpec(
-          ptx, kernel_name, /*arity=*/num_args, KernelArgsPacking);
+          std::move(ptx), kernel_name, /*arity=*/num_args, KernelArgsPacking);
   return CustomKernel(std::move(kernel_name), kernel_spec, block_dim,
                       thread_dim, shared_memory_bytes);
-};
+}
+
+absl::StatusOr<CustomKernel> CreateOwnedCubinCustomKernel(
+    std::string kernel_name, std::vector<uint8_t> cubin, int num_args,
+    se::BlockDim block_dim, se::ThreadDim thread_dim,
+    size_t shared_memory_bytes) {
+  se::KernelLoaderSpec kernel_spec =
+      se::KernelLoaderSpec::CreateOwningCudaCubinInMemorySpec(
+          std::move(cubin), kernel_name, /*arity=*/num_args, KernelArgsPacking);
+  return CustomKernel(std::move(kernel_name), kernel_spec, block_dim,
+                      thread_dim, shared_memory_bytes);
+}
 
 }  // namespace xla::gpu::kernel

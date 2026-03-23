@@ -216,7 +216,8 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
     se::Platform::Id platform_id, const se::DeviceDescription& device_desc,
     const GpuAliasInfo* alias_info,
     BufferValue::SizeFunction buffer_size_bytes_function,
-    llvm_ir::LLVMCommandLineOptionsReleasableLock& llvm_options_lock) {
+    llvm_ir::LLVMCommandLineOptionsReleasableLock& llvm_options_lock,
+    LlvmIrCompiler compiler) {
   tsl::profiler::TraceMe traceme("CompileModuleToLlvmIr");
   const bool use_cache = UseCache(hlo_module->config().debug_options());
 
@@ -243,7 +244,7 @@ absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
       hlo_module, results.buffer_assignment.get(),
       results.execution_stream_assignment.get(), platform_id->ToName(),
       device_desc, mlir_context.get(), llvm_context, /*emit_kernels=*/true,
-      llvm::Triple(target_triple), data_layout);
+      llvm::Triple(target_triple), data_layout, std::move(compiler));
   ThunkEmitter thunk_emitter(&ir_emitter_context, &llvm_options_lock);
 
   const DebugOptions& options = hlo_module->config().debug_options();
