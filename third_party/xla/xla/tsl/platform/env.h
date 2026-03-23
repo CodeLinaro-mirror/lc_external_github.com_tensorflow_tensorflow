@@ -731,112 +731,51 @@ absl::Status FileSystemCopyFile(FileSystem* src_fs, const std::string& src,
                                 const std::string& target);
 
 /// A utility routine: reads contents of named file into `*data`
-absl::Status ReadFileToString(Env* env, const std::string& fname,
+absl::Status ReadFileToString(Env* env, absl::string_view fname,
                               std::string* data);
-
-// TODO(b/485502789): Remove the const std::string& version of this function
-// and move the actual implementation here, avoiding the string copy.
-// Until then, we need to SFINAE out the std::string case to avoid ambiguity
-// errors when T could be deduced as either absl::string_view or std::string
-// (e.g. tstring).
-template <typename T, typename = std::enable_if_t<
-                          std::is_convertible_v<const T&, absl::string_view> &&
-                          !std::is_same_v<std::decay_t<T>, std::string>>>
-inline absl::Status ReadFileToString(Env* env, const T& fname,
-                                     std::string* data) {
-  return ReadFileToString(env, std::string(fname), data);
-}
 
 /// A utility routine: write contents of `data` to file named `fname`
 /// (overwriting existing contents, if any).
-absl::Status WriteStringToFile(Env* env, const std::string& fname,
+absl::Status WriteStringToFile(Env* env, absl::string_view fname,
                                absl::string_view data);
-
-// TODO(b/485502789): Remove the const std::string& version of this function
-// and move the actual implementation here, avoiding the string copy.
-// Until then, we need to SFINAE out the std::string case to avoid ambiguity
-// errors when T could be deduced as either absl::string_view or std::string
-// (e.g. tstring).
-template <typename T, typename = std::enable_if_t<
-                          std::is_convertible_v<const T&, absl::string_view> &&
-                          !std::is_same_v<std::decay_t<T>, std::string>>>
-inline absl::Status WriteStringToFile(Env* env, const T& fname,
-                                      absl::string_view data) {
-  return WriteStringToFile(env, std::string(fname), data);
-}
 
 /// A utility routine: append contents of `data` to file named `fname`.
 /// If the file does not exist, it is created.
-absl::Status AppendStringToFile(Env* env, const std::string& fname,
+absl::Status AppendStringToFile(Env* env, absl::string_view fname,
                                 absl::string_view data);
 
 /// Write binary representation of "proto" to the named file.
-absl::Status WriteBinaryProto(Env* env, const std::string& fname,
+absl::Status WriteBinaryProto(Env* env, absl::string_view fname,
                               const protobuf::MessageLite& proto);
 
 /// Reads contents of named file and parse as binary encoded proto data
 /// and store into `*proto`.
-absl::Status ReadBinaryProto(Env* env, const std::string& fname,
+absl::Status ReadBinaryProto(Env* env, absl::string_view fname,
                              protobuf::MessageLite* proto);
-
-// TODO(b/485502789): Remove the const std::string& version of this function
-// and move the actual implementation here, avoiding the string copy.
-// Until then, we need to SFINAE out the std::string case to avoid ambiguity
-// errors when T could be deduced as either absl::string_view or std::string
-// (e.g. tstring).
-template <typename T, typename = std::enable_if_t<
-                          std::is_convertible_v<const T&, absl::string_view> &&
-                          !std::is_same_v<std::decay_t<T>, std::string>>>
-absl::Status ReadBinaryProto(Env* env, const T& fname,
-                             protobuf::MessageLite* proto) {
-  return ReadBinaryProto(env, std::string(fname), proto);
-}
 
 /// Write the text representation of "proto" to the named file.
 inline absl::Status WriteTextProto(Env* /* env */,
-                                   const std::string& /* fname */,
+                                   absl::string_view /* fname */,
                                    const protobuf::MessageLite& /* proto */) {
   return absl::UnimplementedError("Can't write text protos with protolite.");
 }
-absl::Status WriteTextProto(Env* env, const std::string& fname,
+absl::Status WriteTextProto(Env* env, absl::string_view fname,
                             const protobuf::Message& proto);
-
-// TODO(b/485502789): Remove the const std::string& versions of these
-// functions and move the actual implementation here, avoiding the string
-// copy.
-// Until then, we need to SFINAE out the std::string case to avoid ambiguity
-// errors when T could be deduced as either absl::string_view or std::string
-// (e.g. tstring).
-template <typename T, typename = std::enable_if_t<
-                          std::is_convertible_v<const T&, absl::string_view> &&
-                          !std::is_same_v<std::decay_t<T>, std::string>>>
-inline absl::Status WriteTextProto(Env* env, const T& fname,
-                                   const protobuf::MessageLite& proto) {
-  return WriteTextProto(env, std::string(fname), proto);
-}
-template <typename T, typename = std::enable_if_t<
-                          std::is_convertible_v<const T&, absl::string_view> &&
-                          !std::is_same_v<std::decay_t<T>, std::string>>>
-absl::Status WriteTextProto(Env* env, const T& fname,
-                            const protobuf::Message& proto) {
-  return WriteTextProto(env, std::string(fname), proto);
-}
 
 /// Read contents of named file and parse as text encoded proto data
 /// and store into `*proto`.
-inline absl::Status ReadTextProto(Env* /* env */,
-                                  const std::string& /* fname */,
+inline absl::Status ReadTextProto(Env* /* env */, absl::string_view /* fname */,
                                   protobuf::MessageLite* /* proto */) {
   return absl::UnimplementedError("Can't parse text protos with protolite.");
 }
-absl::Status ReadTextProto(Env* env, const std::string& fname,
+absl::Status ReadTextProto(Env* env, absl::string_view fname,
                            protobuf::Message* proto);
 
 /// Read contents of named file and parse as either text or binary encoded proto
 /// data and store into `*proto`.
-absl::Status ReadTextOrBinaryProto(Env* env, const std::string& fname,
+absl::Status ReadTextOrBinaryProto(Env* env, absl::string_view fname,
                                    protobuf::Message* proto);
-absl::Status ReadTextOrBinaryProto(Env* env, const std::string& fname,
+absl::Status ReadTextOrBinaryProto(Env* env, absl::string_view fname,
                                    protobuf::MessageLite* proto);
 
 // START_SKIP_DOXYGEN
