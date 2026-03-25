@@ -194,6 +194,11 @@ class HloModule {
     return entry_computation()->root_instruction()->shape();
   }
 
+  // Returns the output shape in entry computation layout.
+  const Shape& output_shape() const {
+    return entry_computation_layout().result_shape();
+  }
+
   // Creates the ComputationLayout which describes the current status of the HLO
   // module entry computation.
   ComputationLayout compute_computation_layout() const {
