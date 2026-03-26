@@ -88,7 +88,8 @@ class SymbolicMap {
     return CreateSymbolExpr(idx, num_dimensions_, ctx_);
   }
   int64_t GetNumResults() const { return exprs_.size(); }
-  llvm::ArrayRef<SymbolicExpr> GetResults() const { return exprs_; }
+  llvm::ArrayRef<SymbolicExpr> GetResults() const& { return exprs_; }
+  llvm::ArrayRef<SymbolicExpr> GetResults() const&& = delete;
   SymbolicExpr GetResult(unsigned idx) const { return exprs_[idx]; }
   std::string ToString() const;
 

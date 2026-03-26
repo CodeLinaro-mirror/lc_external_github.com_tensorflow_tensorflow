@@ -149,7 +149,8 @@ absl::StatusOr<SmallVector<Value>> ComputeOffsets(
     const ge::TiledHloInstruction& tiled_hlo,
     const ::xla::IndexingMap& schedule) {
   SmallVector<mlir::AffineExpr> affine_exprs;
-  for (const auto& expr : schedule.GetSymbolicMap().GetResults()) {
+  auto symbolic_map = schedule.GetSymbolicMap();
+  for (const auto& expr : symbolic_map.GetResults()) {
     affine_exprs.push_back(SymbolicExprToAffineExpr(expr, 1));
   }
   SmallVector<mlir::AffineExpr> offsets;
