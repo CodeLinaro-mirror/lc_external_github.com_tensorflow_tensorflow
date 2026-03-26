@@ -38,11 +38,8 @@ limitations under the License.
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/blocking_counter.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/AsmParser/Parser.h"
-#include "llvm/Bitcode/BitcodeReader.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
@@ -50,11 +47,9 @@ limitations under the License.
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/SplitModule.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LLVM.h"
 #include "google/protobuf/text_format.h"
@@ -219,7 +214,6 @@ limitations under the License.
 #include "xla/hlo/transforms/simplifiers/zero_sized_hlo_elimination.h"
 #include "xla/hlo/transforms/while_loop_trip_count_annotator.h"
 #include "xla/hlo/utils/hlo_traversal.h"
-#include "xla/maybe_owning.h"
 #include "xla/pjrt/distributed/key_value_store_interface.h"
 #include "xla/pjrt/proto/compile_options.pb.h"
 #include "xla/service/all_reduce_promotion.h"
@@ -330,6 +324,7 @@ limitations under the License.
 #include "xla/tsl/platform/logging.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/threadpool.h"
+#include "xla/tsl/util/maybe_owning.h"
 #include "xla/util.h"
 #include "xla/util/split_proto/split_proto_reader.h"
 #include "xla/xla.pb.h"
@@ -2175,6 +2170,7 @@ absl::Status RunPostSchedulingCopyInsertion(HloModule* module,
 
   return absl::OkStatus();
 }
+
 }  // namespace
 
 using OutputInfoMap =
@@ -2189,31 +2185,6 @@ static void NullDiagnosticHandler(const llvm::DiagnosticInfo* diag_info,
 
   VLOG(5) << error_string;
 }
-
-namespace {
-
-std::unique_ptr<llvm::Module> CopyToContext(const llvm::Module& module,
-                                            llvm::LLVMContext& context) {
-  // We are setting llvm::SmallString's InternalLen to 0, because we want to
-  // allocate its buffer on the heap. We use llvm::SmallString instead of
-  // std::string, because llvm::raw_svector_ostream is a bit faster than
-  // llvm::raw_string_ostream.
-  llvm::SmallString<0> bitcode;
-  llvm::raw_svector_ostream bitcode_ostream(bitcode);
-  llvm::WriteBitcodeToFile(module, bitcode_ostream);
-
-  llvm::Expected<std::unique_ptr<llvm::Module>> new_module =
-      llvm::parseBitcodeFile(
-          llvm::MemoryBufferRef(llvm::StringRef(bitcode.data(), bitcode.size()),
-                                "split_module"),
-          context);
-  CHECK(new_module) << "Failed to parse bitcode "
-                    << llvm::toString(new_module.takeError());
-
-  return std::move(new_module.get());
-}
-
-}  // namespace
 
 absl::StatusOr<GpuCompiler::BackendCompileResult>
 GpuCompiler::CompileSingleModule(
