@@ -257,8 +257,13 @@ bool DeviceDescription::EqualsTo(
     if (numa_node_ != other.numa_node_) {
       return false;
     }
-    // Interconnect UUIDs can change between hosts.
-    if (interconnect_info_ != other.interconnect_info_) {
+    // Interconnect Cluster UUIDs can change between GPUs.
+    if (interconnect_info_.cluster_uuid !=
+        other.interconnect_info_.cluster_uuid) {
+      return false;
+    }
+    // Interconnect clique IDs can change between GPUs.
+    if (interconnect_info_.clique_id != other.interconnect_info_.clique_id) {
       return false;
     }
   }
@@ -308,7 +313,9 @@ bool DeviceDescription::EqualsTo(
          shared_memory_per_block_optin_ ==
              other.shared_memory_per_block_optin_ &&
          scalar_unit_description_ == other.scalar_unit_description_ &&
-         matrix_unit_description_ == other.matrix_unit_description_;
+         matrix_unit_description_ == other.matrix_unit_description_ &&
+         interconnect_info_.active_links ==
+             other.interconnect_info_.active_links;
 }
 
 const GpuComputeCapability& DeviceDescription::gpu_compute_capability() const {
@@ -419,6 +426,15 @@ std::string MakeComputeCapabilityAttributeString(
     return rocmcc->gfx_version();
   }
   return "unknown";
+}
+
+DeviceDescription DeviceDescription::DeviceSpecificFieldsCleared() const {
+  DeviceDescription desc = *this;
+  desc.pci_bus_id_ = kUndefinedString;
+  desc.numa_node_ = -1;
+  desc.interconnect_info_.cluster_uuid = "";
+  desc.interconnect_info_.clique_id = "";
+  return desc;
 }
 
 }  // namespace stream_executor
