@@ -177,7 +177,7 @@ class UnflattenCallGraphPass
           callOp, symbolTable, /*ignoreShardings=*/dedupFunctionsFully);
       FuncOp funcOp = funcCache[funcCacheKey];
       callOp.setCallee(funcOp.getName());
-      maybeInsertReshardsOnFuncArguments(funcOp, callOp, symbolTable, rewriter);
+      insertReshardsOnFuncArguments(funcOp, callOp, symbolTable, rewriter);
       insertReshardsOnFuncResults(funcOp, callOp, symbolTable, rewriter);
     });
 
