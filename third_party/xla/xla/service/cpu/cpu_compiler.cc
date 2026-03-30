@@ -111,6 +111,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_schedule.h"
 #include "xla/hlo/pass/hlo_pass_fix.h"
 #include "xla/hlo/pass/hlo_pass_pipeline.h"
+#include "xla/hlo/transforms/collectives/async_collective_destroyer.h"
 #include "xla/hlo/transforms/collectives/collective_permute_cse.h"
 #include "xla/hlo/transforms/expanders/bitcast_dtypes_expander.h"
 #include "xla/hlo/transforms/expanders/cholesky_expander.h"
@@ -581,6 +582,18 @@ absl::Status CpuCompiler::RunHloPassesThroughLayoutAssn(
       module->config().debug_options().xla_cpu_use_fusion_emitters();
   bool use_shardy_partitioner = module->config().use_shardy_partitioner();
   bool flatten_before_fusion = !options::FlattenAfterFusion(module->config());
+
+  // Replace asynchronous collectives with synchronous ones.
+  HloPassPipeline async_collective_pipeline("async-collective");
+  AsyncCollectiveDestroyer::Config acd_config;
+  acd_config.convert_all_reduce = HloPredicateTrue;
+  acd_config.convert_all_gather = HloPredicateTrue;
+  acd_config.convert_collective_broadcast = HloPredicateTrue;
+  acd_config.convert_collective_permute = HloPredicateTrue;
+  acd_config.convert_all_to_all = HloPredicateTrue;
+  acd_config.convert_reduce_scatter = HloPredicateTrue;
+  async_collective_pipeline.AddPass<AsyncCollectiveDestroyer>(acd_config);
+  TF_RETURN_IF_ERROR(async_collective_pipeline.Run(module).status());
 
   if (num_partitions > 1) {
     if (!module->config().use_spmd_partitioning()) {
