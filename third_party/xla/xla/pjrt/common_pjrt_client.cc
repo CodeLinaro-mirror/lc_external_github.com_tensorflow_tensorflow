@@ -387,7 +387,7 @@ CommonPjRtClient::BufferFromHostBuffer(
   hold.ConfirmDonation();
 
   absl::Span<const tsl::RCReference<tsl::AsyncValue>> events_span = events;
-  async_work_runner()->ScheduleWhenReady(
+  async_work_runner()->ExecuteWhenReady(
       events_span,
       [this, definition_event_promise = std::move(definition_event_promise),
        data, type, dims, byte_strides, host_buffer_semantics,
@@ -1595,7 +1595,7 @@ static absl::Status CommonCopyToMemorySpace(
   if (!src_raw_buffer) {
     absl::Span<const tsl::RCReference<tsl::AsyncValue>> definition_events_span =
         definition_events;
-    src_client->async_work_runner()->ScheduleWhenReady(
+    src_client->async_work_runner()->ExecuteWhenReady(
         definition_events_span,
         [dst_raw_buffer = std::move(dst_raw_buffer),
          definition_events = std::move(definition_events),
@@ -1651,7 +1651,7 @@ CommonPjRtBufferImpl::CopyFromCpuToMemorySpace(
   if (src_raw_buffer) {
     absl::Span<const tsl::RCReference<tsl::AsyncValue>> definition_events_span =
         definition_events;
-    src_client->async_work_runner()->ScheduleWhenReady(
+    src_client->async_work_runner()->ExecuteWhenReady(
         definition_events_span,
         [dst_raw_buffer = std::move(dst_raw_buffer),
          src_raw_buffer = std::move(src_raw_buffer), dst_client = dst_client,
@@ -1983,7 +1983,7 @@ Future<> CommonPjRtBufferImpl::ToLiteralImpl(
   // parallel.
   absl::Span<const tsl::RCReference<tsl::AsyncValue>>
       src_definition_events_avs_copy = src_definition_events_avs;
-  common_client->async_work_runner()->ScheduleWhenReady(
+  common_client->async_work_runner()->ExecuteWhenReady(
       src_definition_events_avs_copy,
       [common_client, shape = *std::move(device_shape),
        src_definition_events_avs = std::move(src_definition_events_avs),
@@ -2205,7 +2205,7 @@ Future<> CommonPjRtBufferImpl::CopyRawToHostFuture(Future<void*> dst,
     // to std::move(definition_events) and indirect_usage_event.
     absl::Span<const tsl::RCReference<tsl::AsyncValue>> definition_events_ref =
         definition_events;
-    buf_client->async_work_runner()->ScheduleWhenReady(
+    buf_client->async_work_runner()->ExecuteWhenReady(
         definition_events_ref,
         [dst = *dst, transfer_size, offset, raw_buffer = std::move(raw_buffer),
          definition_events = std::move(definition_events),
@@ -2245,7 +2245,7 @@ absl::StatusOr<Shape> CommonPjRtBufferImpl::logical_on_device_shape() {
           -> absl::StatusOr<tsl::RCReference<PjRtDeviceEvent>> {
         absl::Span<const tsl::RCReference<tsl::AsyncValue>>
             definition_events_ref = definition_events;
-        buf_client->async_work_runner()->ScheduleWhenReady(
+        buf_client->async_work_runner()->ExecuteWhenReady(
             definition_events_ref,
             [definition_events = std::move(definition_events),
              raw_buffer = raw_buffer, output_shape = output_shape,
