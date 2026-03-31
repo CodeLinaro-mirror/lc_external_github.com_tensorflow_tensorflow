@@ -155,6 +155,8 @@ class SpmdPartitioningTest
 };
 
 class SpmdPartitioningDotTest : public SpmdPartitioningTest {};
+class SpmdPartitioningReshardAsWindowedInputTest : public SpmdPartitioningTest {
+};
 
 std::string TestParamToString(
     const ::testing::TestParamInfo<ShardingFormatPicker::ShardingType>& data) {
@@ -172,6 +174,13 @@ INSTANTIATE_TEST_SUITE_P(
     All, SpmdPartitioningTest,
     ::testing::Values(ShardingFormatPicker::ShardingType::kV1,
                       ShardingFormatPicker::ShardingType::kBestEffortV2),
+    TestParamToString);
+
+INSTANTIATE_TEST_SUITE_P(
+    ReshardAsWindowedInputTests, SpmdPartitioningReshardAsWindowedInputTest,
+    ::testing::Values(ShardingFormatPicker::ShardingType::kV1,
+                      ShardingFormatPicker::ShardingType::kBestEffortV2,
+                      ShardingFormatPicker::ShardingType::kNamed),
     TestParamToString);
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1305,7 +1314,8 @@ ENTRY entry {
                 op::Constant())));
 }
 
-TEST_P(SpmdPartitioningTest, ReduceWindowTiledNegativeLeftHalo) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       ReduceWindowTiledNegativeLeftHalo) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -1346,7 +1356,8 @@ ENTRY entry {
                           op::ReduceWindow(masked, op::Constant())));
 }
 
-TEST_P(SpmdPartitioningTest, ReduceWindowTiledOneSideHaloBeyondNeighbor) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       ReduceWindowTiledOneSideHaloBeyondNeighbor) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -1382,7 +1393,8 @@ ENTRY entry {
                           op::ReduceWindow(masked, op::Constant())));
 }
 
-TEST_P(SpmdPartitioningTest, ReduceWindowTiledOneSideUnequalHalo) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       ReduceWindowTiledOneSideUnequalHalo) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -1425,7 +1437,8 @@ ENTRY entry {
                           op::ReduceWindow(masked, op::Constant())));
 }
 
-TEST_P(SpmdPartitioningTest, ReduceWindowTiledTwoSideHalo) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       ReduceWindowTiledTwoSideHalo) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -1471,7 +1484,7 @@ ENTRY entry {
                           op::ReduceWindow(masked, op::Constant())));
 }
 
-TEST_P(SpmdPartitioningTest, ReduceWindowTiled2D) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest, ReduceWindowTiled2D) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -14193,7 +14206,8 @@ ENTRY %module {
   EXPECT_THAT(root, op::Gather(param0, _));
 }
 
-TEST_P(SpmdPartitioningTest, WindowedEinsumPreferMemoryFootprint) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       WindowedEinsumPreferMemoryFootprint) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -14225,7 +14239,8 @@ ENTRY %module {
   EXPECT_EQ(*iterations->literal().GetFirstInteger(), 4);
 }
 
-TEST_P(SpmdPartitioningTest, WindowedEinsumPreferNumberIterations) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       WindowedEinsumPreferNumberIterations) {
   absl::string_view hlo_string = R"(
 HloModule module
 
@@ -14260,7 +14275,8 @@ ENTRY %module {
   EXPECT_EQ(*iterations->literal().GetFirstInteger(), 2);
 }
 
-TEST_P(SpmdPartitioningTest, WindowedEinsumPreferNumberIterations2) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       WindowedEinsumPreferNumberIterations2) {
   const char* const hlo_string = R"(
 HloModule module
 
@@ -14302,7 +14318,8 @@ ENTRY entry {
   EXPECT_EQ(*iterations->literal().GetFirstInteger(), 4);
 }
 
-TEST_P(SpmdPartitioningTest, WindowedEinsumPreferMemoryFootprint2) {
+TEST_P(SpmdPartitioningReshardAsWindowedInputTest,
+       WindowedEinsumPreferMemoryFootprint2) {
   const char* const hlo_string = R"(
 HloModule module
 
