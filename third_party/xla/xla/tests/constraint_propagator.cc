@@ -339,7 +339,7 @@ absl::Status ConstraintPropagator::SeedConstraints(
 
 absl::Status ConstraintPropagator::PropagateConstraintsExact(
     const HloInstruction* instruction) {
-  ConstraintState& output_state = states_[instruction];
+  ConstraintState output_state = states_[instruction];
   ConstraintInterval output_interval = output_state.GetConstraintInterval();
   StructuralConstraints output_structural =
       output_state.GetStructuralConstraints();
