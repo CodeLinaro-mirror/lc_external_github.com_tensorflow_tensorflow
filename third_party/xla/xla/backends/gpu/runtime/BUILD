@@ -370,6 +370,7 @@ cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
@@ -382,11 +383,13 @@ xla_cc_test(
         ":command_executor",
         ":kernel_thunk",
         ":thunk",
+        ":thunk_id",
         "//xla:shape_util",
         "//xla/codegen/emitters:kernel_arguments",
         "//xla/service:buffer_assignment",
         "//xla/tsl/platform:statusor",
         "//xla/tsl/platform:test",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
