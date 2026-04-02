@@ -25,8 +25,10 @@ limitations under the License.
 #include <stdlib.h>
 
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "tensorflow/lite/array.h"
@@ -127,6 +129,269 @@ TensorUniquePtr BuildTfLiteTensor(TfLiteType type, IntArrayUniquePtr dims,
                                   TfLiteAllocationType allocation_type);
 
 int GetBuiltinDataSize(BuiltinOperator op);
+
+// Wraps an integer value and allows checking if standard arithmetic operations
+// used to generate that value have over/underflowed.
+template <class T>
+class CheckedInt {
+ public:
+  using type = T;
+
+  static_assert(std::is_integral_v<T>, "T must but an integral value.");
+
+  CheckedInt() = default;
+  CheckedInt(const CheckedInt&) = default;
+  CheckedInt(CheckedInt&&) = default;
+  CheckedInt& operator=(const CheckedInt&) = default;
+  CheckedInt& operator=(CheckedInt&&) = default;
+
+  // NOLINTNEXTLINE(*-explicit-constructor): we want implicit conversion.
+  CheckedInt(T val) : value_(val), overflow_(false) {}
+
+  template <class U>
+  explicit CheckedInt(U val) : value_(static_cast<T>(val)) {
+    if constexpr (std::is_signed_v<U> == std::is_signed_v<T>) {
+      overflow_ = val < std::numeric_limits<T>::lowest() ||
+                  val > std::numeric_limits<T>::max();
+    } else if constexpr (!std::is_signed_v<U> && std::is_signed_v<T>) {
+      overflow_ = val > static_cast<U>(std::numeric_limits<T>::max());
+    } else {
+      overflow_ = val < 0 || static_cast<std::make_unsigned_t<U>>(val) >
+                                 std::numeric_limits<T>::max();
+    }
+  }
+
+  template <class U>
+  CheckedInt& operator=(const CheckedInt<U> other) {
+    *this = CheckedInt<T>(other.value_);
+    overflow_ |= other.overflow_;
+    return *this;
+  }
+
+  T Value() const noexcept { return value_; }
+
+  bool Overflow() const noexcept { return overflow_; }
+
+  TfLiteStatus Status() const noexcept {
+    return overflow_ ? kTfLiteError : kTfLiteOk;
+  }
+
+  template <class U>
+  CheckedInt& operator+=(const CheckedInt<U>& b) noexcept {
+    return *this = *this + b;
+  }
+
+  template <class U>
+  CheckedInt& operator-=(const CheckedInt<U>& b) noexcept {
+    return *this = *this - b;
+  }
+
+  template <class U>
+  CheckedInt& operator*=(const CheckedInt<U>& b) noexcept {
+    return *this = *this * b;
+  }
+
+  template <class U>
+  CheckedInt& operator/=(const CheckedInt<U>& b) noexcept {
+    return *this = *this / b;
+  }
+
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>>
+  CheckedInt& operator+=(U b) noexcept {
+    return *this += CheckedInt<U>(b);
+  }
+
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>>
+  CheckedInt& operator-=(U b) noexcept {
+    return *this -= CheckedInt<U>(b);
+  }
+
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>>
+  CheckedInt& operator*=(U b) noexcept {
+    return *this *= CheckedInt<U>(b);
+  }
+
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>>
+  CheckedInt& operator/=(U b) noexcept {
+    return *this /= CheckedInt<U>(b);
+  }
+
+ private:
+  // Helper constructor for operators.
+  CheckedInt(T val, bool overflow) : value_(val), overflow_(overflow) {}
+
+  template <class U>
+  friend class CheckedInt;
+
+  template <class U>
+  using CommonType = CheckedInt<std::common_type_t<T, U>>;
+
+  template <class U>
+  friend CommonType<U> operator+(const CheckedInt<T>& a,
+                                 const CheckedInt<U>& b) noexcept {
+    CommonType<U> res;
+#if defined(__GNUC__) || defined(__clang__)
+    res.overflow_ = __builtin_add_overflow(a.value_, b.value_, &res.value_) ||
+                    a.overflow_ || b.overflow_;
+#else
+    using limits = std::numeric_limits<typename CommonType<U>::type>;
+    res.overflow_ = a.overflow_ || b.overflow_ ||
+                    (b.value_ > 0 && a.value_ >= limits::max() - b.value_) ||
+                    (b.value_ < 0 && a.value_ <= limits::lowest() - b.value_);
+    res.value_ = a.value_ + b.value_;
+#endif
+    return res;
+  }
+
+  template <class U>
+  friend CommonType<U> operator-(const CheckedInt<T>& a,
+                                 const CheckedInt<U>& b) noexcept {
+    CommonType<U> res;
+#if defined(__GNUC__) || defined(__clang__)
+    res.overflow_ = __builtin_sub_overflow(a.value_, b.value_, &res.value_) ||
+                    a.overflow_ || b.overflow_;
+#else
+    using limits = std::numeric_limits<typename CommonType<U>::type>;
+    res.overflow_ = a.overflow_ || b.overflow_ ||
+                    (b.value_ > 0 && a.value_ < limits::lowest() + b.value_) ||
+                    (b.value_ < 0 && a.value_ > limits::max() + b.value_);
+    res.value_ = a.value_ - b.value_;
+#endif
+    return res;
+  }
+
+  template <class U>
+  friend CommonType<U> operator*(const CheckedInt<T>& a,
+                                 const CheckedInt<U>& b) noexcept {
+    CommonType<U> res;
+#if defined(__GNUC__) || defined(__clang__)
+    res.overflow_ = __builtin_mul_overflow(a.value_, b.value_, &res.value_) ||
+                    a.overflow_ || b.overflow_;
+#else
+    using limits = std::numeric_limits<typename CommonType<U>::type>;
+    res.overflow_ =
+        a.overflow_ || b.overflow_ ||
+        (a.value_ > 0 && b.value_ > 0 && a.value_ > limits::max() / b.value_) ||
+        (a.value_ < 0 && b.value_ < 0 && a.value_ < limits::max() / b.value_) ||
+        (a.value_ > 0 && b.value_ < 0 &&
+         b.value_ < limits::lowest() / a.value_) ||
+        (a.value_ < 0 && b.value_ > 0 &&
+         a.value_ < limits::lowest() / b.value_);
+    res.value_ = a.value_ * b.value_;
+#endif
+    return res;
+  }
+
+  template <class U>
+  friend CommonType<U> operator/(const CheckedInt<T>& a,
+                                 const CheckedInt<U>& b) noexcept {
+    using limits = std::numeric_limits<typename CommonType<U>::type>;
+    if constexpr (std::is_signed_v<T> && std::is_signed_v<U>) {
+      if (a.value_ == limits::lowest() && b.value_ == -1) {
+        return {/*value=*/limits::max(), /*overflow=*/true};
+      }
+    }
+    return {/*value=*/b.value_ != 0 ? a.value_ / b.value_ : limits::max(),
+            /*overflow=*/b.value_ == 0 || a.overflow_ || b.overflow_};
+  }
+
+  template <class U>
+  friend bool operator==(const CheckedInt<T>& a,
+                         const CheckedInt<U>& b) noexcept {
+    return a == b.Value();
+  }
+
+  template <class U>
+  friend bool operator!=(const CheckedInt<T>& a,
+                         const CheckedInt<U>& b) noexcept {
+    return !(a == b);
+  }
+
+  template <class U>
+  friend bool operator<(const CheckedInt<T>& a,
+                        const CheckedInt<U>& b) noexcept {
+    return a < b.Value();
+  }
+
+  template <class U>
+  friend bool operator<=(const CheckedInt<T>& a,
+                         const CheckedInt<U>& b) noexcept {
+    return a <= b.Value();
+  }
+
+  template <class U>
+  friend bool operator>(const CheckedInt<T>& a,
+                        const CheckedInt<U>& b) noexcept {
+    return b < a.Value();
+  }
+
+  template <class U>
+  friend bool operator>=(const CheckedInt<T>& a,
+                         const CheckedInt<U>& b) noexcept {
+    return b <= a.Value();
+  }
+
+#define TFLITE_OVERFLOW_AWARE_INT_MIXED_OP(OP)                           \
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>> \
+  friend auto operator OP(const CheckedInt<T>& a, U b) noexcept {        \
+    return a OP CheckedInt<U>(b);                                        \
+  }                                                                      \
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>> \
+  friend auto operator OP(U a, const CheckedInt<T>& b) noexcept {        \
+    return CheckedInt<U>(a) OP b;                                        \
+  }
+
+#define TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(OP)                            \
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>>      \
+  friend bool operator OP(const CheckedInt<T>& a, U b) noexcept {             \
+    if constexpr (std::is_signed_v<T> == std::is_signed_v<U>) {               \
+      return a.Value() OP b;                                                  \
+    } else if constexpr (std::is_signed_v<T>) {                               \
+      return a.Value() >= 0 ? static_cast<std::make_unsigned_t<T>>(a.Value()) \
+                                  OP b                                        \
+                            : (0 OP 1);                                       \
+    } else {                                                                  \
+      return b >= 0 ? a.Value() OP static_cast<std::make_unsigned_t<U>>(b)    \
+                    : (1 OP 0);                                               \
+    }                                                                         \
+  }                                                                           \
+  template <class U, typename = std::enable_if_t<std::is_integral_v<U>>>      \
+  friend bool operator OP(U a, const CheckedInt<T>& b) noexcept {             \
+    if constexpr (std::is_signed_v<U> == std::is_signed_v<T>) {               \
+      return a OP b.Value();                                                  \
+    } else if constexpr (std::is_signed_v<U>) {                               \
+      return a >= 0 ? static_cast<std::make_unsigned_t<U>>(a) OP b.Value()    \
+                    : (0 OP 1);                                               \
+    } else {                                                                  \
+      return b.Value() >= 0                                                   \
+                 ? a OP static_cast<std::make_unsigned_t<T>>(b.Value())       \
+                 : (1 OP 0);                                                  \
+    }                                                                         \
+  }
+
+  // NOLINTBEGIN(whitespace/operators)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_OP(+)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_OP(-)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_OP(*)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_OP(/)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(==)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(!=)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(<)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(<=)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(>)
+  TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP(>=)
+  // NOLINTEND(whitespace/operators)
+  //
+#undef TFLITE_OVERFLOW_AWARE_INT_MIXED_OP
+#undef TFLITE_OVERFLOW_AWARE_INT_MIXED_CMP_OP
+
+ private:
+  T value_{};
+  bool overflow_ = false;
+};
+
+template <class T>
+CheckedInt(T) -> CheckedInt<T>;
 
 }  // namespace tflite
 
