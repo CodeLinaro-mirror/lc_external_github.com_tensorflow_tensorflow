@@ -33,6 +33,7 @@ limitations under the License.
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/LLVM.h"
+#include "xla/backends/gpu/codegen/emitters/mlir_kernel_emitter.h"
 #include "xla/backends/gpu/codegen/fusion_emitter.h"
 #include "xla/backends/gpu/codegen/fusions.h"
 #include "xla/codegen/tiling/affine_map_evaluator.h"
@@ -463,7 +464,7 @@ bool IsIndexingCoalesced(IndexingMap& thread_x_to_linearized_input,
   // extended to sampling several warps.
   MLIRContext* mlir_context = thread_x_to_linearized_input.GetMLIRContext();
   AffineExpr thread_x_dim = mlir::getAffineDimExpr(
-      KernelFusionInterface::kIndexingMapThreadIdxDims[0], mlir_context);
+      MlirKernelFusion::kIndexingMapThreadIdxDims[0], mlir_context);
   AffineExpr c0 = getAffineConstantExpr(0, mlir_context);
   IndexingMap thread_x_first_32_elements{
       AffineMap::get(1, 0, {thread_x_dim, c0, c0, c0, c0, c0}, mlir_context),
@@ -508,7 +509,7 @@ std::optional<CoalescingMap> ComputeCoalescingForAllOperands(
   auto emitter = GetFusionEmitter(
       PreBufferAssignmentFusionInfo{fusion_analysis}, mlir_context);
   const auto* fusion_interface =
-      dynamic_cast<const KernelFusionInterface*>(emitter.get());
+      dynamic_cast<const MlirKernelFusion*>(emitter.get());
 
   if (fusion_interface == nullptr) {
     return std::nullopt;
