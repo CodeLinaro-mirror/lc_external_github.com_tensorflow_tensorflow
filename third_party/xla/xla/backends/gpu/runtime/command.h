@@ -25,6 +25,7 @@ limitations under the License.
 #include <variant>
 #include <vector>
 
+#include "absl/base/macros.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/functional/function_ref.h"
 #include "absl/log/check.h"
@@ -38,6 +39,7 @@ limitations under the License.
 #include "xla/service/buffer_assignment.h"
 #include "xla/stream_executor/command_buffer.h"
 #include "xla/stream_executor/platform.h"
+#include "tsl/platform/casts.h"
 #include "xla/tsl/platform/status_macros.h"
 
 namespace xla::gpu {
@@ -124,20 +126,18 @@ bool IsCollectiveCommand(CommandType type);
 // `CommandCommandStateManager` documentation for details and example. If
 // command want's to attach some mutable state to the command buffer, it must be
 // done with a state manager.
-class Command {
+class CommandThunk : public Thunk {
  public:
-  using BufferUses = Thunk::BufferUses;
-  using ResourceUses = Thunk::ResourceUses;
-
- public:
-  explicit Command(CommandType cmd_type,
-                   se::StreamPriority priority = se::StreamPriority::Default)
-      : cmd_type_(cmd_type), priority_(priority) {
+  explicit CommandThunk(CommandType cmd_type, se::StreamPriority priority =
+                                                  se::StreamPriority::Default)
+      : Thunk(Thunk::Kind::kCommand, ThunkInfo{}),
+        cmd_type_(cmd_type),
+        priority_(priority) {
     token_ = Resource::Create(Resource::kToken);
     resource_uses_.push_back(ResourceUse::Write(token_));
   }
 
-  virtual ~Command() = default;
+  virtual ~CommandThunk() = default;
 
   // Parameters for recording commands into the command buffer.
   struct RecordParams {
@@ -172,21 +172,11 @@ class Command {
   // to new buffer allocations).
   using RecordAction = std::variant<RecordCreate, RecordUpdate>;
 
-  // See Thunk documentation for XLA execution stages (prepare, initialize,
-  // execute). Commands mirror thunks as they are executed as CommandBufferThunk
-  // that is plugged into the Thunk execution cycle.
-
-  // Prepare command for execution by allowing command to request shared state
-  // required for recording (i.e. collective commands request cliques).
-  virtual absl::Status Prepare(const Thunk::PrepareParams& params) {
-    return absl::OkStatus();
-  }
-
-  // Initialize a command for recording on a given executor. We split it into a
-  // separate function to allow expensive initialization (e.g. device kernel
-  // loading) to happen before a command buffer thunk execution.
-  virtual absl::Status Initialize(const Thunk::InitializeParams& params) {
-    return absl::OkStatus();
+  // Commands are not executed directly as Thunks; they are recorded into
+  // command buffers via Record(). ExecuteOnStream is not supported.
+  absl::Status ExecuteOnStream(const ExecuteParams& params) override {
+    return absl::UnimplementedError(
+        "Command cannot be executed directly as a Thunk; use Record() instead");
   }
 
   // Records commands into the command buffer. Returned commands will be passed
@@ -221,11 +211,6 @@ class Command {
   // buffer allocation is the same, it still requires to do update.
   virtual bool force_update() const { return false; }
 
-  // Returns buffers used by this command. Buffer uses do not include buffers
-  // that might be used by nested commands, they must be collected separately
-  // by walking the nested commands using `Walk` API.
-  virtual BufferUses buffer_uses() const { return {}; }
-
   std::shared_ptr<Resource> token() const { return token_; }
 
   void add_resource_use(ResourceUse resource_use) {
@@ -240,38 +225,29 @@ class Command {
   // Returns true if command implemented as a nested command buffer.
   virtual bool IsNestedCommandBuffer() const { return false; }
 
-  absl::string_view profile_annotation() const { return profile_annotation_; }
-  void set_profile_annotation(absl::string_view profile_annotation) {
-    profile_annotation_ = profile_annotation;
-  }
-
   CommandType command_type() const { return cmd_type_; }
   se::StreamPriority priority() const { return priority_; }
   void set_priority(se::StreamPriority priority) { priority_ = priority; }
 
-  virtual std::string ToString() const { return CommandTypeString(cmd_type_); }
-
-  // Type predicate for `Walk` callback.
-  template <typename F, typename Arg>
-  using WalkCallback =
-      std::enable_if_t<std::is_invocable_v<F, Arg> ||
-                       std::is_invocable_r_v<absl::Status, F, Arg>>;
+  std::string ToString(int indent) const override {
+    return CommandTypeString(cmd_type_);
+  }
 
   // Recursively walks all the commands nested inside *this one and calls
   // the user-provided callback on every command. Always starts traversal with
-  // *this.
-  template <typename F, WalkCallback<F, Command*>* = nullptr>
-  std::invoke_result_t<F, Command*> Walk(F&& callback);
-  template <typename F, WalkCallback<F, const Command*>* = nullptr>
-  std::invoke_result_t<F, const Command*> Walk(F&& callback) const;
+  // *this. These overloads accept CommandThunk*-typed callbacks and complement
+  // the Thunk*-typed Walk overloads inherited from Thunk.
+  template <typename F, WalkCallback<F, CommandThunk*>* = nullptr>
+  std::invoke_result_t<F, CommandThunk*> Walk(F&& callback);
+  template <typename F, WalkCallback<F, const CommandThunk*>* = nullptr>
+  std::invoke_result_t<F, const CommandThunk*> Walk(F&& callback) const;
 
  protected:
-  // Walks all nested commands and calls `callback` for them.
-  using Walker = absl::FunctionRef<absl::Status(Command*)>;
-  virtual absl::Status WalkNested(Walker callback) { return absl::OkStatus(); }
+  // WalkNested uses Thunk::Walker = absl::FunctionRef<absl::Status(Thunk*)>.
+  // Subclasses that have nested commands must override this.
+  absl::Status WalkNested(Walker callback) override { return absl::OkStatus(); }
 
  private:
-  std::string profile_annotation_;
   CommandType cmd_type_;
 
   ResourceUses resource_uses_;
@@ -287,7 +263,7 @@ class Command {
 };
 
 // Returns true if command is a collective one.
-inline bool IsCollectiveCommand(const Command& cmd) {
+inline bool IsCollectiveCommand(const CommandThunk& cmd) {
   return IsCollectiveCommand(cmd.command_type());
 }
 
@@ -295,23 +271,31 @@ inline bool IsCollectiveCommand(const Command& cmd) {
 // Command templates implementation.
 //===----------------------------------------------------------------------===//
 
-template <typename F, Command::WalkCallback<F, Command*>*>
-std::invoke_result_t<F, Command*> Command::Walk(F&& callback) {
-  if constexpr (std::is_void_v<std::invoke_result_t<F, Command*>>) {
-    Walk([f = std::forward<F>(callback)](Command* command) {
+template <typename F, CommandThunk::WalkCallback<F, CommandThunk*>*>
+std::invoke_result_t<F, CommandThunk*> CommandThunk::Walk(F&& callback) {
+  if constexpr (std::is_void_v<std::invoke_result_t<F, CommandThunk*>>) {
+    Walk([f = std::forward<F>(callback)](CommandThunk* command) {
       return (f(command), absl::OkStatus());
     }).IgnoreError();  // Error can never happen here.
   } else {
     RETURN_IF_ERROR(callback(this));
-    return WalkNested(callback);
+    // Adapt CommandThunk*-typed callback to Thunk::Walker (Thunk*-typed) for
+    // WalkNested. The down_cast is safe because WalkNested only visits
+    // CommandThunks in a CommandThunk context.
+    return WalkNested([&callback](Thunk* thunk) -> absl::Status {
+      return callback(tsl::down_cast<CommandThunk*>(thunk));
+    });
   }
 }
 
-template <typename F, Command::WalkCallback<F, const Command*>*>
-std::invoke_result_t<F, const Command*> Command::Walk(F&& callback) const {
-  return const_cast<Command*>(this)->Walk(  // NOLINT
+template <typename F, CommandThunk::WalkCallback<F, const CommandThunk*>*>
+std::invoke_result_t<F, const CommandThunk*> CommandThunk::Walk(
+    F&& callback) const {
+  return const_cast<CommandThunk*>(this)->Walk(  // NOLINT
       std::forward<F>(callback));
 }
+
+using Command ABSL_DEPRECATE_AND_INLINE() = CommandThunk;
 
 //===----------------------------------------------------------------------===//
 // Asynchronous commands
@@ -358,7 +342,7 @@ class CommandSequence : public std::vector<std::unique_ptr<Command>> {
   std::string ToString() const {
     std::string result;
     for (const auto& cmd : *this) {
-      result += cmd->ToString() + "\n";
+      result += cmd->ToString(0) + "\n";
     }
     return result;
   }
