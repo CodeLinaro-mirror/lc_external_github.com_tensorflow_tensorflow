@@ -113,6 +113,7 @@ limitations under the License.
 #include "xla/backends/gpu/transforms/gemv_rewriter.h"
 #include "xla/backends/gpu/transforms/hoist_fused_bitcasts.h"
 #include "xla/backends/gpu/transforms/layout_assignment.h"
+#include "xla/backends/gpu/transforms/move_copy_to_operands.h"
 #include "xla/backends/gpu/transforms/move_copy_to_users.h"
 #include "xla/backends/gpu/transforms/onehot_rewriter.h"
 #include "xla/backends/gpu/transforms/ragged_all_to_all_canonicalizer.h"
@@ -1455,7 +1456,15 @@ absl::Status RunLayoutNormalizationPasses(
   HloPassPipeline layout_normalization_pipeline("layout normalization",
                                                 compilation_stats);
   layout_normalization_pipeline.AddPass<ReshapeDecomposer>();
-  layout_normalization_pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
+  if (hlo_module->config()
+          .debug_options()
+          .xla_pjrt_allow_auto_layout_in_hlo()) {
+    // With auto-layouts it makes more sense to move the copies towards the
+    // parameters.
+    layout_normalization_pipeline.AddPass<MoveCopyToOperands>();
+  } else {
+    layout_normalization_pipeline.AddPass<HloPassFix<MoveCopyToUsers>>();
+  }
   layout_normalization_pipeline.AddPass<LayoutNormalization>(
       &NormalizeLayoutForGpuCustomCalls);
   // The LayoutAssignment pass may leave behind kCopy instructions which are
