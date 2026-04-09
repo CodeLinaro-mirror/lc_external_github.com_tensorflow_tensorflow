@@ -2626,6 +2626,9 @@ absl::Status MsaAlgorithm::CreateNewBlockPrefetches(
       if (it == instruction_schedule.end()) {
         continue;
       }
+      if (!options_.is_use_allowed_in_alternate_mem_fn(use)) {
+        continue;
+      }
       use_interval.first_use_time =
           std::min(use_interval.first_use_time, it->second);
       use_interval.last_use_time =
@@ -2808,6 +2811,9 @@ absl::Status MsaAlgorithm::CreateNewBlockPrefetches(
               AsyncConversionResult::kSuccess) {
         // The use is a slice of the original value, so we don't need to add it
         // to the alternate memory map or to the uses of the copy allocation.
+        continue;
+      }
+      if (!options_.is_use_allowed_in_alternate_mem_fn(use)) {
         continue;
       }
       if (use.instruction->parent() ==

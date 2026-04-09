@@ -20,7 +20,10 @@ package(
 tf_proto_library(
     name = "batch_op_rewriter_proto",
     srcs = ["batch_op_rewriter.proto"],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//configs/production/uniserve:__subpackages__",
+        "//visibility:public",
+    ],
 )
 
 # copybara:uncomment_begin(google-only)
