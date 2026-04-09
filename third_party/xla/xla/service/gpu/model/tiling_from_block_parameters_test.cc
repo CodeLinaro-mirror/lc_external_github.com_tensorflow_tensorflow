@@ -24,6 +24,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status_matchers.h"
 #include "mlir/IR/MLIRContext.h"
+#include "xla/codegen/tiling/experimental/tiling_space.h"
 #include "xla/codegen/tiling/symbolic_tile_analysis.h"
 #include "xla/codegen/tiling/tiling_specification.h"
 #include "xla/hlo/analysis/symbolic_expr.h"
@@ -32,6 +33,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/hlo/testlib/hlo_hardware_independent_test_base.h"
 #include "xla/hlo/testlib/verified_hlo_module.h"
+#include "xla/hlo/utils/hlo_traversal.h"
 #include "xla/service/gpu/model/block_level_parameters.h"
 #include "xla/tsl/platform/statusor.h"
 #include "xla/tsl/platform/test.h"
@@ -139,6 +141,47 @@ ENTRY entry_computation {
 
   EXPECT_THAT(tiling.TileSizesForInstruction(dot),
               IsOkAndHolds(ElementsAre(32, 16, 16)));
+}
+
+class GetTileTilingSpaceConcreteSizesTest
+    : public HloHardwareIndependentTestBase {
+ public:
+  GetTileTilingSpaceConcreteSizesTest() {
+    RegisterSymbolicExprStorage(&mlir_context_);
+  }
+
+  mlir::MLIRContext mlir_context_;
+};
+
+TEST_F(GetTileTilingSpaceConcreteSizesTest, Dot) {
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                          ParseAndReturnVerifiedModule(R"hlo(
+HloModule m
+
+fused_computation {
+  p0 = f32[128,128] parameter(0)
+  p1 = f32[128,128] parameter(1)
+  ROOT dot = f32[128,128] dot(p0, p1),
+   lhs_contracting_dims={1}, rhs_contracting_dims={0},
+   backend_config={"sizes":["11"]}
+}
+
+ENTRY entry_computation {
+  param_0 = f32[128,128] parameter(0)
+  param_1 = f32[128,128] parameter(1)
+  ROOT fusion = f32[128,128] fusion(param_0, param_1), kind=kCustom, calls=fused_computation
+}
+)hlo"));
+  const HloInstruction* root = module->entry_computation()->root_instruction();
+  auto fusion_adaptor = HloFusionAdaptor::ForInstruction(root);
+  auto tiling_space =
+      experimental::TilingSpace::Create(*fusion_adaptor, &mlir_context_);
+  BlockLevelParameters block_level_parameters;
+  block_level_parameters.output_tile_sizes = {{3, 8}};
+  TF_ASSERT_OK_AND_ASSIGN(
+      auto tile_sizes,
+      GetTilingSpaceConcreteSizes(*tiling_space, block_level_parameters));
+  EXPECT_THAT(tile_sizes, ElementsAre(3, 8, 11));
 }
 
 }  // namespace
