@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  do:
     runs-on: ${{ inputs.runner }}
     env:
       PIP_NO_CACHE_DIR: 1
@@ -57,10 +57,14 @@ jobs:
           TFCI_GITHUB_ACTIONS: true
         run: ./ci/official/pycpp.sh
 
+      - name: Generate Unique ID
+        if: always()
+        run: echo "UNIQUE_ID=$(date +%s%N)-$RANDOM" >> $GITHUB_ENV
+
       - name: Upload Profile
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: profile-${{ inputs.runner }}-${{ github.run_id }}
+          name: profile-${{ env.UNIQUE_ID }}-${{ inputs.tfci }}
           path: build_output/profile.json.gz
           if-no-files-found: warn
