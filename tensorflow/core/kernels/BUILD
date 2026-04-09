@@ -5144,9 +5144,10 @@ tf_kernel_library(
     features = if_cuda(["-layering_check"]),
     prefix = "fill_empty_rows_functor",
     deps = [
+        ":gpu_prim_hdrs",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
-    ] + [":gpu_prim_hdrs"] + if_cuda_or_rocm([
+    ] + if_cuda_or_rocm([
         ":gpu_prim_helpers",
     ]) + if_cuda([
         "//tensorflow/core/util:cuda_solvers",

@@ -19,8 +19,12 @@ limitations under the License.
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 
 #include "absl/base/casts.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "Eigen/Core"  // from @eigen_archive
 #include "unsupported/Eigen/CXX11/Tensor"  // from @eigen_archive
 #include "tensorflow/core/framework/op_kernel.h"
@@ -126,6 +130,13 @@ struct GpuLaunchConfig {
 };
 CREATE_CUDA_TYPE_ALIAS(GpuLaunchConfig, CudaLaunchConfig);
 
+// GPU launch configuration for 64-bit work element counts.
+struct GpuLaunchConfig64 {
+  int64_t virtual_thread_count = -1;
+  int thread_per_block = -1;
+  int block_count = -1;
+};
+
 // Calculate the GPU launch config we should use for a kernel launch.
 // This is assuming the kernel is quite simple and will largely be
 // memory-limited.
@@ -154,6 +165,38 @@ inline CudaLaunchConfig GetCudaLaunchConfig(int work_element_count,
   return GetGpuLaunchConfig(work_element_count, d);
 }
 #endif
+
+// Calculate the GPU launch config for 64-bit work element counts.
+inline absl::StatusOr<GpuLaunchConfig64> GetGpuLaunchConfig64(
+    int64_t work_element_count, const Eigen::GpuDevice& d) {
+  if (work_element_count < 0) {
+    return absl::InvalidArgumentError("work_element_count must be >= 0");
+  }
+
+  const int64_t virtual_thread_count = work_element_count;
+  const int64_t physical_thread_count =
+      std::min(static_cast<int64_t>(d.getNumGpuMultiProcessors()) *
+                   d.maxGpuThreadsPerMultiProcessor(),
+               virtual_thread_count);
+  const int64_t thread_per_block =
+      std::min(1024L, static_cast<int64_t>(d.maxGpuThreadsPerBlock()));
+  const int64_t block_count =
+      std::min(div_ceil(physical_thread_count, thread_per_block),
+               static_cast<int64_t>(d.getNumGpuMultiProcessors()));
+
+  if (thread_per_block > std::numeric_limits<int>::max()) {
+    return absl::InternalError("thread_per_block exceeds int limit");
+  }
+  if (block_count > std::numeric_limits<int>::max()) {
+    return absl::InternalError("block_count exceeds int limit");
+  }
+
+  GpuLaunchConfig64 config;
+  config.virtual_thread_count = virtual_thread_count;
+  config.thread_per_block = static_cast<int>(thread_per_block);
+  config.block_count = static_cast<int>(block_count);
+  return config;
+}
 
 // Calculate the GPU launch config we should use for a kernel launch. This
 // variant takes the resource limits of func into account to maximize occupancy.
@@ -189,6 +232,48 @@ GpuLaunchConfig GetGpuLaunchConfig(int work_element_count,
   return config;
 }
 CREATE_CUDA_HOST_FUNCTION_ALIAS(GetGpuLaunchConfig, GetCudaLaunchConfig);
+
+// Calculate the GPU launch config for 64-bit work element counts using
+// occupancy API.
+template <typename DeviceFunc>
+absl::StatusOr<GpuLaunchConfig64> GetGpuLaunchConfig64(
+    int64_t work_element_count, const Eigen::GpuDevice& d, DeviceFunc func,
+    size_t dynamic_shared_memory_size, int block_size_limit) {
+  if (work_element_count < 0) {
+    return absl::InvalidArgumentError("work_element_count must be >= 0");
+  }
+  int block_count = 0;
+  int thread_per_block = 0;
+
+#if GOOGLE_CUDA
+  cudaError_t err = cudaOccupancyMaxPotentialBlockSize(
+      &block_count, &thread_per_block, func, dynamic_shared_memory_size,
+      block_size_limit);
+  if (err != cudaSuccess) {
+    return absl::InternalError("cudaOccupancyMaxPotentialBlockSize failed");
+  }
+#elif TENSORFLOW_USE_ROCM
+  hipError_t err = hipOccupancyMaxPotentialBlockSize(
+      &block_count, &thread_per_block, func, dynamic_shared_memory_size,
+      block_size_limit);
+  if (err != hipSuccess) {
+    return absl::InternalError("hipOccupancyMaxPotentialBlockSize failed");
+  }
+#endif
+
+  int64_t block_count_int64 = std::min(
+      static_cast<int64_t>(block_count),
+      div_ceil(work_element_count, static_cast<int64_t>(thread_per_block)));
+  if (block_count_int64 > std::numeric_limits<int>::max()) {
+    return absl::InternalError("block_count exceeds int limit");
+  }
+
+  GpuLaunchConfig64 config;
+  config.virtual_thread_count = work_element_count;
+  config.thread_per_block = thread_per_block;
+  config.block_count = static_cast<int>(block_count_int64);
+  return config;
+}
 
 // Calculate the GPU launch config we should use for a kernel launch. This
 // variant takes the resource limits of func into account to maximize occupancy.
