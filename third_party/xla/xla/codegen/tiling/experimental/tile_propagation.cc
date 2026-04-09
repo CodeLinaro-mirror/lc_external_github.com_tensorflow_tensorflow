@@ -22,6 +22,7 @@ limitations under the License.
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
@@ -31,6 +32,7 @@ limitations under the License.
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/MLIRContext.h"
+#include "xla/codegen/tiling/experimental/reshape_analysis.h"
 #include "xla/codegen/tiling/experimental/tile.h"
 #include "xla/codegen/tiling/experimental/tiling_space.h"
 #include "xla/hlo/analysis/symbolic_expr.h"
@@ -497,6 +499,78 @@ Tiles PropagateTileToOutputForReduceOp(const HloReduceInstruction& reduce,
   return {std::move(output_tile)};
 }
 
+bool IsSupportedReshape(const std::vector<MinimalReshape>& reshapes) {
+  return absl::c_all_of(reshapes, [](const MinimalReshape& minimal_reshape) {
+    return minimal_reshape.category == MinimalReshapeCategory::kIdentity ||
+           minimal_reshape.category == MinimalReshapeCategory::kIncreaseRank ||
+           minimal_reshape.category == MinimalReshapeCategory::kDecreaseRank;
+  });
+}
+
+// Returns the index of the first dimension with size > 1 in the given range.
+// Returns range.start if all dimensions in the range are size 1.
+// Returns -1 if the range is empty.
+int64_t GetNonOneDimId(const Shape& shape, const DimensionRange& range) {
+  for (int64_t id = range.start; id <= range.end(); ++id) {
+    if (shape.dimensions(id) > 1) {
+      return id;
+    }
+  }
+  return range.count == 0 ? -1 : range.start;
+}
+
+std::optional<Tiles> PropagateTileForReshapeOp(const HloInstruction& hlo,
+                                               const Tile& source_tile,
+                                               bool to_input) {
+  const Shape& input_shape = hlo.operand(0)->shape();
+  const Shape& output_shape = hlo.shape();
+  auto reshapes = GetMinimalReshapes(input_shape, output_shape);
+  if (!IsSupportedReshape(reshapes)) {
+    return std::nullopt;
+  }
+
+  const Shape& target_shape = to_input ? input_shape : output_shape;
+  SmallVector<DimTile> target_dim_tiles;
+  target_dim_tiles.reserve(target_shape.dimensions().size());
+  for (int64_t i = 0; i < target_shape.dimensions().size(); ++i) {
+    target_dim_tiles.push_back(
+        GetFullDimTile(target_shape.dimensions(i), source_tile.mlir_context()));
+  }
+
+  for (const auto& minimal_reshape : reshapes) {
+    switch (minimal_reshape.category) {
+      // 1-to-1 mapping of the "significant" dimensions (size > 1).
+      case MinimalReshapeCategory::kIdentity:
+      case MinimalReshapeCategory::kIncreaseRank:
+      case MinimalReshapeCategory::kDecreaseRank: {
+        int64_t in_id =
+            GetNonOneDimId(input_shape, minimal_reshape.input_dim_ids);
+        int64_t out_id =
+            GetNonOneDimId(output_shape, minimal_reshape.output_dim_ids);
+
+        if (in_id != -1 && out_id != -1) {
+          if (to_input) {
+            target_dim_tiles[in_id] = source_tile.dim_tiles()[out_id];
+          } else {
+            target_dim_tiles[out_id] = source_tile.dim_tiles()[in_id];
+          }
+        }
+        break;
+      }
+      // 1-to-n mapping of the "significant" dimensions.
+      case MinimalReshapeCategory::kExpandShape:
+      // n-to-1 mapping of the "significant" dimensions.
+      case MinimalReshapeCategory::kCollapseShape:
+      // m-to-n mapping of the "significant" dimensions.
+      case MinimalReshapeCategory::kGeneric:
+        LOG(FATAL) << "Unsupported minimal reshape "
+                   << static_cast<int>(minimal_reshape.category)
+                   << " should have been caught by IsSupportedReshape().";
+    }
+  }
+  return {Tiles{Tile(source_tile.tiling_space(), std::move(target_dim_tiles))}};
+}
+
 }  // namespace
 
 std::string ToString(const Tiles& tiles) {
@@ -549,6 +623,9 @@ std::optional<Tiles> PropagateTileToInput(const TilingSpace& tiling_space,
   if (hlo.opcode() == HloOpcode::kSlice) {
     return PropagateTileToInputForSliceOp(hlo, output_tile);
   }
+  if (hlo.opcode() == HloOpcode::kReshape) {
+    return PropagateTileForReshapeOp(hlo, output_tile, /*to_input=*/true);
+  }
   LOG(INFO) << "Output to input tile propagation not implemented for "
             << hlo.opcode();
   return std::nullopt;
@@ -582,9 +659,12 @@ std::optional<Tiles> PropagateTileToOutput(const TilingSpace& tiling_space,
     return PropagateTileToOutputForConcatenateOp(
         *Cast<HloConcatenateInstruction>(&hlo), input_tile, input_index);
   }
+  if (hlo.opcode() == HloOpcode::kReshape) {
+    return PropagateTileForReshapeOp(hlo, input_tile, /*to_input=*/false);
+  }
   LOG(INFO) << "Input to output tile propagation not implemented for "
             << hlo.opcode();
   return std::nullopt;
-};
+}
 
 }  // namespace xla::gpu::experimental
