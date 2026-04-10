@@ -547,6 +547,7 @@ xla_test(
         ":dynamic_slice_thunk",
         ":dynamic_slice_thunk_proto_cc",
         ":gemm_thunk",
+        ":scratch_memory_requests",
         ":thunk",
         ":thunk_proto_deserialization",
         "//xla:shape_util",
@@ -1140,8 +1141,11 @@ xla_test(
     srcs = ["custom_call_thunk_test.cc"],
     backends = ["gpu"],
     deps = [
+        ":collective_clique_requests",
         ":collective_memory_requests",
+        ":collective_params",
         ":custom_call_thunk",
+        ":scratch_memory_requests",
         ":thunk",
         "//xla:executable_run_options",
         "//xla:shape_util",
@@ -1748,6 +1752,7 @@ xla_test(
         ":collective_memory_requests",
         ":collective_params",
         ":collective_thunk",
+        ":scratch_memory_requests",
         ":thunk",
         "//xla:future",
         "//xla:shape_util",
@@ -2237,6 +2242,42 @@ xla_cc_test(
 )
 
 cc_library(
+    name = "scratch_memory_requests",
+    hdrs = ["scratch_memory_requests.h"],
+    # copybara:uncomment compatible_with = ["//buildenv/target:non_prod"],
+    deps = [
+        "//xla/backends/gpu/collectives:gpu_clique_key",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_library(
+    name = "scratch_memory",
+    srcs = ["scratch_memory.cc"],
+    hdrs = ["scratch_memory.h"],
+    # copybara:uncomment compatible_with = ["//buildenv/target:non_prod"],
+    deps = [
+        ":collective_cliques",
+        ":collective_memory_cache",
+        ":collective_params",
+        ":scratch_memory_requests",
+        "//xla:status_macros",
+        "//xla:util",
+        "//xla/backends/gpu/collectives:gpu_clique_key",
+        "//xla/core/collectives:rank_id",
+        "//xla/core/collectives:symmetric_memory",
+        "//xla/stream_executor:device_address",
+        "//xla/stream_executor:memory_allocation",
+        "//xla/stream_executor:memory_allocator",
+        "//xla/stream_executor:memory_space",
+        "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/platform:gloop_status_macros",
+        "//xla/tsl/util:tied_ref",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_library(
     name = "collective_memory",
     srcs = ["collective_memory.cc"],
     hdrs = ["collective_memory.h"],
@@ -2310,9 +2351,11 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         "//xla/core/collectives:symmetric_memory",
+        "//xla/stream_executor:memory_allocation",
         "//xla/stream_executor/gpu:multicast_memory",
         "//xla/tsl/util:tied_ref",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/synchronization",
     ],
 )
@@ -2404,6 +2447,7 @@ cc_library(
         "//xla/stream_executor:device_address",
         "//xla/stream_executor:stream",
         "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/platform:errors",
         "//xla/tsl/platform:status_macros",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -2880,6 +2924,8 @@ cc_library(
         ":collective_memory_requests",
         ":collective_params",
         ":execution_stream_id",
+        ":scratch_memory",
+        ":scratch_memory_requests",
         ":thunk_id",
         ":thunk_kind_proto_cc",
         ":thunk_proto_cc",
@@ -4369,6 +4415,7 @@ xla_test(
         ":collective_clique_requests",
         ":collective_memory_requests",
         ":collective_params",
+        ":scratch_memory_requests",
         ":thunk",
         ":thunk_id",
         "//xla/runtime:device_id",

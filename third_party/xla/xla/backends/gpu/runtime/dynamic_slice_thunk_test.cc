@@ -1979,9 +1979,11 @@ TEST_F(DynamicSliceThunkTest,
 
   CollectiveCliqueRequests clique_requests;
   CollectiveMemoryRequests memory_requests(allocations);
+  ScratchMemoryRequests scratch_memory_requests;
 
-  Thunk::PrepareParams prepare_params{&collective_params, &clique_requests,
-                                      &memory_requests, executor, &allocations};
+  Thunk::PrepareParams prepare_params{
+      &collective_params,       &clique_requests, &memory_requests,
+      &scratch_memory_requests, executor,         &allocations};
 
   Thunk::ExecuteParams params = Thunk::ExecuteParams::Create(
       run_options, /*buffer_allocations=*/allocations, stream.get(),
