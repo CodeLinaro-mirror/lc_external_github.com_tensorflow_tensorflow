@@ -92,15 +92,14 @@ class ThunkEmitter {
 
   absl::StatusOr<ThunkSequence> EmitAsyncStart(const HloInstruction* hlo);
 
+  absl::StatusOr<ThunkSequence> EmitCallComputation(const HloInstruction* hlo);
+
   absl::StatusOr<ThunkSequence> EmitAsyncComputation(const HloInstruction* hlo);
 
   absl::StatusOr<ThunkSequence> EmitAsyncCustomCallStart(
       const HloInstruction* hlo);
 
   absl::StatusOr<ThunkSequence> EmitAsyncDone(const HloInstruction* hlo);
-
-  absl::StatusOr<ThunkSequence> EmitCommandBufferThunk(
-      const HloInstruction* hlo);
 
   absl::StatusOr<ThunkSequence> EmitCollectiveAsyncDone(
       const HloInstruction* hlo);
