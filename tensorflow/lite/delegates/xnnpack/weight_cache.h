@@ -240,7 +240,8 @@ class CacheMissHandler {
   // new call to `Reserve` will be done and the data will be copied over.
   [[nodiscard /*The location to the appended data should be saved.*/]]
   BufferLocation Append(PackIdentifier pack_id, const void* data, uint64_t size,
-                        int fingerprint_id);
+                        int fingerprint_id,
+                        std::map<size_t, void*>& offset_to_addr);
 
   // Sets the reference offset from which all the cache miss offsets will be
   // derived from. This avoids overwriting an offset that's already in use.
