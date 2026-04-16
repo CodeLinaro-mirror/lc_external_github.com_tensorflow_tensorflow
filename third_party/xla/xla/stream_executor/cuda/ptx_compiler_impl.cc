@@ -168,6 +168,10 @@ absl::StatusOr<cuda::Assembly> CompileGpuAsmUsingLibNvPtxCompiler(
   if (!info_log.empty()) {
     if (absl::StrContains(info_log, "warning")) {
       LOG(INFO) << info_log;
+      if (VLOG_IS_ON(2)) {
+        VLOG(2) << "The following ptx produced a warning during compilation: \n"
+                << ptx_contents;
+      }
       if (cancel_if_reg_spill &&
           absl::StrContains(info_log, "Registers are spilled")) {
         return absl::CancelledError(
