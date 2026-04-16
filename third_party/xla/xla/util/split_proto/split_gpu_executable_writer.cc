@@ -26,6 +26,7 @@ limitations under the License.
 #include "riegeli/bytes/writer.h"
 #include "riegeli/records/record_writer.h"
 #include "xla/service/hlo.pb.h"
+#include "xla/service/hlo_proto_util.h"
 #include "xla/sort_json.h"
 #include "xla/tsl/platform/errors.h"
 #include "xla/util/split_proto/split_proto.pb.h"
@@ -76,12 +77,26 @@ void NormalizeBackendConfig(gpu::GpuExecutableProto& executable) {
             ->mutable_computations()) {
     for (HloInstructionProto& instruction :
          *computation.mutable_instructions()) {
-      absl::StatusOr<std::string> normalized_backend_config =
-          SortJson(instruction.backend_config());
-      if (normalized_backend_config.ok()) {
-        instruction.set_backend_config(*normalized_backend_config);
+      absl::StatusOr<std::string> backend_config_str = GetBackendConfigString(
+          instruction, &executable.hlo_module_with_config().hlo_module());
+      if (backend_config_str.ok()) {
+        absl::StatusOr<std::string> normalized = SortJson(*backend_config_str);
+        if (normalized.ok() && *normalized != *backend_config_str) {
+          if (instruction.has_backend_config_payload()) {
+            Payload* payload = instruction.mutable_backend_config_payload();
+            if (payload->has_id()) {
+              int id = static_cast<int>(payload->id());
+              auto* module = executable.mutable_hlo_module_with_config()
+                                 ->mutable_hlo_module();
+              *module->mutable_payloads(id) = *normalized;
+            } else {
+              payload->set_value(*normalized);
+            }
+          } else {
+            instruction.set_backend_config(*normalized);
+          }
+        }
       }
-      // If the backend config is not a json string, then do nothing.
     }
   }
 }
