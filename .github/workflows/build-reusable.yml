@@ -61,6 +61,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: "profile-${{ github.workflow }}-${{ github.run_number }}-${{ github.run_attempt }}"
+          name: "profile-${{ inputs.runner }}-${{ inputs.tfci }}-${{ github.run_number }}-${{ github.run_attempt }}"
           path: build_output/profile.json.gz
           if-no-files-found: warn
