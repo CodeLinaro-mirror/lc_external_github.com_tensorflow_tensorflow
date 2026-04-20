@@ -298,18 +298,26 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
           const auto quantization_zero_point = quantization_params->zero_point;
           if (quantization_scale->size == 1) {
             // Per-tensor quantization
-            if (tensor.type == kTfLiteInt8) {
-              if (!CheckZeroPointForPerTensorQuantization<int8_t>(
-                      context, tensor, t, *quantization_zero_point)) {
+            switch (tensor.type) {
+              case kTfLiteInt8:
+                if (!CheckZeroPointForPerTensorQuantization<int8_t>(
+                        context, tensor, t, *quantization_zero_point)) {
+                  return xnn_datatype_invalid;
+                }
+                return xnn_datatype_qint8;
+              case kTfLiteInt4:
+                if (!CheckZeroPointForPerTensorQuantization(
+                        context, tensor, t, -8, 7, *quantization_zero_point)) {
+                  return xnn_datatype_invalid;
+                }
+                return xnn_datatype_qint4;
+              default:
+                TF_LITE_KERNEL_LOG(
+                    context,
+                    "unsupported tensor type %d for tensorwise "
+                    "quantization of tensor %d in XNNPACK delegate",
+                    tensor.type, t);
                 return xnn_datatype_invalid;
-              }
-              return xnn_datatype_qint8;
-            } else if (tensor.type == kTfLiteInt4) {
-              if (!CheckZeroPointForPerTensorQuantization(
-                      context, tensor, t, -8, 7, *quantization_zero_point)) {
-                return xnn_datatype_invalid;
-              }
-              return xnn_datatype_qint4;
             }
           }
           if (NumDimensions(&tensor) >= 1 &&
@@ -4721,7 +4729,7 @@ class Subgraph {
         input_value_id = reshaped_id;
       }
       if (dynamically_quantized || supported_srq) {
-        TfLiteAffineQuantization* filter_params =
+        TfLiteAffineQuantization* filter_quant_params =
             reinterpret_cast<TfLiteAffineQuantization*>(
                 filter_tensor.quantization.params);
         xnn_datatype filter_datatype = GetXNNPackDatatype(
@@ -4731,10 +4739,14 @@ class Subgraph {
           filter_datatype = filter_datatype == xnn_datatype_qint8
                                 ? xnn_datatype_qcint8
                                 : xnn_datatype_qcint4;
-          TfLiteFloatArrayFree(filter_params->scale);
-          filter_params->scale = TfLiteFloatArrayCreate(output_channels);
-          std::fill_n(filter_params->scale->data, output_channels,
-                      filter_tensor.params.scale);
+          // Check whether we have already re-allocated the scale.
+          if (filter_quant_params->scale->size != output_channels) {
+            TfLiteFloatArrayFree(filter_quant_params->scale);
+            filter_quant_params->scale =
+                TfLiteFloatArrayCreate(output_channels);
+            std::fill_n(filter_quant_params->scale->data, output_channels,
+                        filter_tensor.params.scale);
+          }
         }
         if (dynamically_quantized) {
           std::vector<size_t> input_dims(
@@ -4770,10 +4782,10 @@ class Subgraph {
         uint32_t kernel_id = XNN_INVALID_VALUE_ID;
         switch (filter_datatype) {
           case xnn_datatype_qcint2: {
-            int32_t zero_point_value = filter_params->zero_point->data[0];
+            int32_t zero_point_value = filter_quant_params->zero_point->data[0];
             status = xnn_define_channelwise_quantized_tensor_value_v3(
                 subgraph, filter_datatype, zero_point_value,
-                filter_params->scale->data, filter_dims.size(),
+                filter_quant_params->scale->data, filter_dims.size(),
                 /*channel_dim=*/0, filter_dims.data(),
                 GetTensorData<int8_t>(&filter_tensor), XNN_INVALID_VALUE_ID,
                 /*flags=*/0, &kernel_id, /*channelwise_zero_point=*/nullptr);
@@ -4781,10 +4793,10 @@ class Subgraph {
           }
           case xnn_datatype_qcint4:
           case xnn_datatype_qcint8: {
-            int32_t zero_point_value = filter_params->zero_point->data[0];
+            int32_t zero_point_value = filter_quant_params->zero_point->data[0];
             status = xnn_define_channelwise_quantized_tensor_value_v2(
                 subgraph, filter_datatype, zero_point_value,
-                filter_params->scale->data, filter_dims.size(),
+                filter_quant_params->scale->data, filter_dims.size(),
                 /*channel_dim=*/0, filter_dims.data(),
                 GetTensorData<int8_t>(&filter_tensor), XNN_INVALID_VALUE_ID,
                 /*flags=*/0, &kernel_id);
