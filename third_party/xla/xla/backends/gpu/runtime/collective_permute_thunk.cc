@@ -95,11 +95,10 @@ CollectivePermuteThunk::CollectivePermuteThunk(
     int64_t replica_count, int64_t partition_count,
     const std::vector<Buffer>& buffers, bool p2p_memcpy_enabled,
     bool connected_components_enabled)
-    : CollectiveThunk(Thunk::kCollectivePermute, std::move(thunk_info),
+    : CollectiveThunk(Thunk::kCollectivePermute, std::move(thunk_info), buffers,
                       CommunicationId(1)),
       config_(GetP2PConfig(instr, replica_count, partition_count,
                            connected_components_enabled)),
-      buffers_(buffers),
       p2p_memcpy_enabled_(p2p_memcpy_enabled),
       connected_components_enabled_(connected_components_enabled) {}
 
@@ -107,10 +106,9 @@ CollectivePermuteThunk::CollectivePermuteThunk(
     ThunkInfo thunk_info, const P2PConfig& config,
     const std::vector<Buffer>& buffers, bool p2p_memcpy_enabled,
     bool connected_components_enabled)
-    : CollectiveThunk(Thunk::kCollectivePermute, std::move(thunk_info),
+    : CollectiveThunk(Thunk::kCollectivePermute, std::move(thunk_info), buffers,
                       CommunicationId(1)),
       config_(config),
-      buffers_(buffers),
       p2p_memcpy_enabled_(p2p_memcpy_enabled),
       connected_components_enabled_(connected_components_enabled) {}
 

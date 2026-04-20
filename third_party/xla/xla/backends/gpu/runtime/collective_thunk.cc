@@ -202,8 +202,11 @@ CollectiveConfig GetCollectiveConfig(
 }
 
 CollectiveThunk::CollectiveThunk(Kind kind, ThunkInfo thunk_info,
+                                 std::vector<Buffer> buffers,
                                  CommunicationId communication_id)
-    : Thunk(kind, thunk_info), communication_id_(communication_id) {}
+    : Thunk(kind, thunk_info),
+      buffers_(std::move(buffers)),
+      communication_id_(communication_id) {}
 
 absl::StatusOr<GpuCliqueKey> GetCollectiveGpuCliqueKey(
     const CollectiveParams& params, const CollectiveConfig& collective_config,

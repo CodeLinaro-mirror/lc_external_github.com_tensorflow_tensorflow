@@ -35,6 +35,7 @@ limitations under the License.
 #include "xla/core/collectives/communicator.h"
 #include "xla/hlo/ir/collective_op_group_mode.h"
 #include "xla/hlo/ir/hlo_instruction.h"
+#include "xla/runtime/buffer_use.h"
 #include "xla/runtime/device_id.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/buffer_allocations.h"
@@ -87,9 +88,6 @@ struct FirstCallRendezvousKey {
 // Thunk base class for XLA:GPU collective operations.
 class CollectiveThunk : public Thunk {
  public:
-  CollectiveThunk(Kind kind, ThunkInfo thunk_info,
-                  CommunicationId communication_id = CommunicationId(0));
-
   struct Buffer {
     int64_t element_count;
     ShapedSlice source_buffer;
@@ -102,6 +100,9 @@ class CollectiveThunk : public Thunk {
         const CollectiveBufferProto& buffer_proto,
         absl::Span<const BufferAllocation> buffer_allocations);
   };
+
+  CollectiveThunk(Kind kind, ThunkInfo thunk_info, std::vector<Buffer> buffers,
+                  CommunicationId communication_id = CommunicationId(0));
 
   // Logging support.
   static std::string GetDeviceString(const CollectiveParams& params);
@@ -117,6 +118,20 @@ class CollectiveThunk : public Thunk {
 
   absl::StatusOr<std::vector<Communicator*>> GetCommunicators(
       const ExecuteParams& params) const override;
+
+  absl::Span<const Buffer> buffers() const { return buffers_; }
+
+  BufferUses buffer_uses() const override {
+    BufferUses uses;
+    uses.reserve(buffers_.size() * 2);
+    for (const Buffer& buffer : buffers_) {
+      uses.push_back(BufferUse::Read(buffer.source_buffer.slice,
+                                     buffer.source_buffer.shape));
+      uses.push_back(BufferUse::Write(buffer.destination_buffer.slice,
+                                      buffer.destination_buffer.shape));
+    }
+    return uses;
+  }
 
   CommunicationId communication_id() const { return communication_id_; }
 
@@ -161,6 +176,8 @@ class CollectiveThunk : public Thunk {
                                      Communicator& comm) = 0;
 
   virtual const CollectiveConfig& config() const = 0;
+
+  const std::vector<Buffer> buffers_;
 
  private:
   // Before and after a first call to this particular instance of a collective
