@@ -3129,6 +3129,9 @@ GetMeshAxesPartitionGroupsForReplication(
     }
   }
   SortAndMergeAxes(axis_refs, *mesh);
+  if (axis_refs.empty()) {
+    return std::nullopt;
+  }
   return MeshAxesReplicaGroupList(*mesh, axis_refs);
 }
 
