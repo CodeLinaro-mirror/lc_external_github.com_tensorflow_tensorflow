@@ -133,6 +133,7 @@ class AsyncCollectiveOps : public CollectiveOpsWithFlagsBase,
   AsyncCollectiveOps()
       : CollectiveOpsWithFlagsBase(/*enable_async=*/GetParam(),
                                    /*enable_p2p_memcpy=*/false,
+                                   /*enable_symmetric_buffer=*/false,
                                    /*memory_size=*/8 * kGB,
                                    /*collectives_memory_size=*/0) {}
 };

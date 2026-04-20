@@ -89,11 +89,14 @@ void VerifyAllReduceType(const HloModule* module, PrimitiveType expected_type) {
 
 class AllReduceTestNoParams : public CollectiveOpsWithFlagsBase {
  public:
-  explicit AllReduceTestNoParams(bool is_async = false)
-      : CollectiveOpsWithFlagsBase(/*enable_async=*/is_async,
-                                   /*enable_p2p_memcpy=*/false,
-                                   /*memory_size=*/32 * kMB,
-                                   /*collectives_memory_size=*/0) {}
+  explicit AllReduceTestNoParams(bool is_async = false,
+                                 bool use_symmetric_buffer = false)
+      : CollectiveOpsWithFlagsBase(
+            /*enable_async=*/is_async,
+            /*enable_p2p_memcpy=*/false,
+            /*enable_symmetric_buffer=*/use_symmetric_buffer,
+            /*memory_size=*/32 * kMB,
+            /*collectives_memory_size=*/use_symmetric_buffer ? 32 * kMB : 0) {}
 
   void SetUp() override {
     CollectiveOpsE2ETestBase::SetUp();
@@ -135,6 +138,10 @@ class AllReduceTestNoParams : public CollectiveOpsWithFlagsBase {
 struct AllReduceTestParams {
   // If true uses the async stream for the collective.
   bool is_async;
+
+  // If true, nccl use user registered buffers for collectives.
+  bool use_symmetric_buffer;
+
   // If true, uses the XLA generated kernel for all-reduce.
   // If false, uses the NCCL kernel.
   bool use_all_reduce_one_shot_kernel;
@@ -181,11 +188,13 @@ struct AllReduceTestParams {
   static std::vector<AllReduceTestParams> Generate() {
     std::vector<AllReduceTestParams> params;
     for (bool is_async : {true, false}) {
-      for (bool use_all_reduce_one_shot_kernel : {true, false}) {
-        for (auto strategy :
-             {AllReduceStrategy::kOneShot, AllReduceStrategy::kTwoShot}) {
-          params.push_back(
-              {is_async, use_all_reduce_one_shot_kernel, strategy});
+      for (bool use_symmetric_buffer : {true, false}) {
+        for (bool use_all_reduce_one_shot_kernel : {true, false}) {
+          for (auto strategy :
+               {AllReduceStrategy::kOneShot, AllReduceStrategy::kTwoShot}) {
+            params.push_back({is_async, use_symmetric_buffer,
+                              use_all_reduce_one_shot_kernel, strategy});
+          }
         }
       }
     }
@@ -199,6 +208,7 @@ struct AllReduceTestParams {
   [[maybe_unused]] friend void PrintTo(const AllReduceTestParams& params,
                                        std::ostream* os) {
     *os << "{ .is_async=" << params.is_async
+        << ", .use_symmetric_buffer=" << params.use_symmetric_buffer
         << ", .use_all_reduce_one_shot_kernel="
         << params.use_all_reduce_one_shot_kernel
         << ", .strategy=" << absl::StrFormat("%v", params.strategy) << " }";
@@ -426,7 +436,9 @@ class AllReduceTest
     : public AllReduceTestNoParams,
       public ::testing::WithParamInterface<AllReduceTestParams> {
  public:
-  AllReduceTest() : AllReduceTestNoParams(/*is_async=*/GetParam().is_async) {}
+  AllReduceTest()
+      : AllReduceTestNoParams(/*is_async=*/GetParam().is_async,
+                              GetParam().use_symmetric_buffer) {}
 
  protected:
   DebugOptions GetDebugOptionsForTest() const override {
@@ -442,7 +454,8 @@ class AllReduceTypesTest
       public ::testing::WithParamInterface<AllReduceTypesTestParams> {
  public:
   AllReduceTypesTest()
-      : AllReduceTestNoParams(/*is_async=*/GetParam().is_async) {}
+      : AllReduceTestNoParams(GetParam().is_async,
+                              GetParam().use_symmetric_buffer) {}
 
  protected:
   DebugOptions GetDebugOptionsForTest() const override {
@@ -503,6 +516,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<AllReduceTestParams>& info) {
       return absl::StrCat(
           GetAsyncTestName(info.param.is_async), "_",
+          info.param.use_symmetric_buffer ? "symmetric" : "nonsymmetric", "_",
           info.param.use_all_reduce_one_shot_kernel ? "xla" : "nccl", "_",
           info.param.strategy);
     });
@@ -515,6 +529,7 @@ INSTANTIATE_TEST_SUITE_P(
           GetAsyncTestName(info.param.is_async) + "_",
           primitive_util::LowercasePrimitiveTypeName(info.param.element_type),
           "_", HloOpcodeString(info.param.hlo_opcode), "_",
+          info.param.use_symmetric_buffer ? "symmetric" : "nonsymmetric", "_",
           info.param.use_all_reduce_one_shot_kernel ? "xla" : "nccl", "_",
           info.param.strategy);
     });

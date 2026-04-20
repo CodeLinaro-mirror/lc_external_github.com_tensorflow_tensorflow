@@ -47,16 +47,16 @@ namespace xla::gpu {
 CollectiveBroadcastThunk::CollectiveBroadcastThunk(ThunkInfo thunk_info,
                                                    CollectiveConfig config,
                                                    std::vector<Buffer> buffers)
-    : CollectiveThunk(Thunk::kCollectiveBroadcast, thunk_info),
-      config_(config),
-      buffers_(std::move(buffers)) {}
+    : CollectiveThunk(Thunk::kCollectiveBroadcast, thunk_info,
+                      std::move(buffers)),
+      config_(config) {}
 
 CollectiveBroadcastThunk::CollectiveBroadcastThunk(
     ThunkInfo thunk_info, const HloCollectiveBroadcastInstruction* instr,
     std::vector<Buffer> buffers, bool p2p_memcpy_enabled)
-    : CollectiveThunk(Thunk::kCollectiveBroadcast, thunk_info),
-      config_(GetCollectiveConfig(instr, std::nullopt)),
-      buffers_(std::move(buffers)) {}
+    : CollectiveThunk(Thunk::kCollectiveBroadcast, thunk_info,
+                      std::move(buffers)),
+      config_(GetCollectiveConfig(instr, std::nullopt)) {}
 
 /*static*/ absl::Status CollectiveBroadcastThunk::CheckImplementable(
     const HloInstruction* instr, int64_t replica_count,

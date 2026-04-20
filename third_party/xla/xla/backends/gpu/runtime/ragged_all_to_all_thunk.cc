@@ -203,9 +203,8 @@ RaggedAllToAllThunk::RaggedAllToAllThunk(
 RaggedAllToAllThunk::RaggedAllToAllThunk(
     ThunkInfo thunk_info, const RaggedAllToAllConfig& config,
     std::vector<CollectiveThunk::Buffer> buffers)
-    : CollectiveThunk(Thunk::kRaggedAllToAll, thunk_info),
-      config_(config),
-      buffers_(std::move(buffers)) {
+    : CollectiveThunk(Thunk::kRaggedAllToAll, thunk_info, std::move(buffers)),
+      config_(config) {
   CHECK_EQ(config_.config.operand_element_type.size(), buffers_.size());
 }
 

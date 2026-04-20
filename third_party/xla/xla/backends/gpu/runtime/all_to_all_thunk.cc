@@ -81,9 +81,8 @@ struct BufferRendezvousValue {
 AllToAllThunk::AllToAllThunk(ThunkInfo thunk_info, const AllToAllConfig& config,
                              std::vector<CollectiveThunk::Buffer> buffers,
                              bool p2p_memcpy_enabled)
-    : CollectiveThunk(Thunk::kAllToAll, thunk_info),
+    : CollectiveThunk(Thunk::kAllToAll, thunk_info, std::move(buffers)),
       config_(config),
-      buffers_(std::move(buffers)),
       p2p_memcpy_enabled_(p2p_memcpy_enabled) {
   CHECK_EQ(config_.config.operand_element_type.size(), buffers_.size());
 }
@@ -92,9 +91,8 @@ AllToAllThunk::AllToAllThunk(ThunkInfo thunk_info,
                              const HloAllToAllInstruction* instr,
                              std::vector<CollectiveThunk::Buffer> buffers,
                              bool p2p_memcpy_enabled)
-    : CollectiveThunk(Thunk::kAllToAll, thunk_info),
+    : CollectiveThunk(Thunk::kAllToAll, thunk_info, std::move(buffers)),
       config_(GetAllToAllConfig(instr)),
-      buffers_(std::move(buffers)),
       p2p_memcpy_enabled_(p2p_memcpy_enabled) {
   CHECK_EQ(config_.config.operand_element_type.size(), buffers_.size());
 }
