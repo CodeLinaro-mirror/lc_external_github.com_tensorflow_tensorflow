@@ -73,6 +73,10 @@ class YnnMatcher : public LibraryMatcher {
       return IsConvolutionOpSupportedByYnn(instr);
     }
     if (instr->IsConstant()) {
+      // Don't fuse constants if we only want individual dot or convolution.
+      if (fuse_individual_dot_ || fuse_individual_conv_) {
+        return false;
+      }
       return IsConstantSupportedByYnn(instr);
     }
     // TODO(b/441837668): Need to get the reduction performance right before
@@ -90,6 +94,11 @@ class YnnMatcher : public LibraryMatcher {
       return false;
     }
     if (instr->IsElementwise()) {
+      // Don't fuse elementwise ops if we only want individual dot or
+      // convolution.
+      if (fuse_individual_dot_ || fuse_individual_conv_) {
+        return false;
+      }
       return IsElementwiseOpSupportedByYnn(instr);
     }
     return false;
@@ -100,6 +109,9 @@ class YnnMatcher : public LibraryMatcher {
   // `--xla_cpu_experimental_ynn_fusion_type` flag.
   bool ShouldCreateFusion(const HloInstruction* instr) override {
     if (fuse_dot_ && instr->opcode() == HloOpcode::kDot) {
+      return true;
+    }
+    if (fuse_conv_ && instr->opcode() == HloOpcode::kConvolution) {
       return true;
     }
     if (fuse_reduce_ && (instr->opcode() == HloOpcode::kReduce ||

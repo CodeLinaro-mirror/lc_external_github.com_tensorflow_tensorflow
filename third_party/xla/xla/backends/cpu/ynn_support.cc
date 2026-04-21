@@ -262,6 +262,12 @@ bool IsElementwiseOpSupportedByYnn(const HloInstruction* hlo) {
     return false;
   }
 
+  if (hlo->opcode() == HloOpcode::kConvert) {
+    PrimitiveType from = hlo->operand(0)->shape().element_type();
+    PrimitiveType to = hlo->shape().element_type();
+    return from != F64 && to != F64;
+  }
+
   switch (hlo->operand_count()) {
     case 1:
       return YnnUnaryOperator(hlo->opcode()).ok();
