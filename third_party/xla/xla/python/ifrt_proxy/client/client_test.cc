@@ -36,6 +36,7 @@
 #include "xla/python/ifrt/device_list.h"
 #include "xla/python/ifrt/dtype.h"
 #include "xla/python/ifrt/memory.h"
+#include "xla/python/ifrt/mock.h"
 #include "xla/python/ifrt/serdes_version.h"
 #include "xla/python/ifrt/shape.h"
 #include "xla/python/ifrt/sharding.h"
@@ -330,6 +331,24 @@ TEST_P(ClientTest, CopyArraysCustomLayoutSuccess) {
   TF_ASSERT_OK_AND_ASSIGN(std::shared_ptr<const xla::PjRtLayout> layout_2,
                           copied_arrays[1].get()->pjrt_layout());
   EXPECT_EQ(layout_2->ToString(), layout_2_->ToString());
+}
+
+TEST_P(ClientTest, CopyArraysFailsWithNonProxyArray) {
+  auto mock_array = tsl::MakeRef<xla::ifrt::MockArray>();
+  std::vector<tsl::RCReference<xla::ifrt::Array>> arrays = {mock_array};
+
+  TF_ASSERT_OK_AND_ASSIGN(DeviceListRef device_list,
+                          client_->MakeDeviceList({device_}));
+
+  auto status =
+      client_
+          ->CopyArrays(absl::MakeSpan(arrays), std::move(device_list),
+                       MemoryKind("mock"), ArrayCopySemantics::kAlwaysCopy)
+          .status();
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(std::string(status.message()),
+              testing::HasSubstr("only supports source arrays that are "
+                                 "instances of xla::ifrt::proxy::Array"));
 }
 
 TEST_P(ClientTest, GetDefaultDeviceAssignmentSuccess) {
