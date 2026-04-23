@@ -169,4 +169,6 @@ tf_wheel = rule(
 )
 
 def tf_wheel_dep():
-    return ["@pypi//{}".format(WHEEL_NAME)]
+    if WHEEL_NAME == "tensorflow":
+        return "//tensorflow/tools/pip_package:wheel"
+    return "@pypi_{}//:whl".format(WHEEL_NAME)
