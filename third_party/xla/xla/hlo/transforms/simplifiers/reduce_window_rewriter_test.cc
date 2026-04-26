@@ -382,5 +382,52 @@ ENTRY entry (arg: f32[128]) -> f32[128] {
   CheckReduceWindowRewrite(hlo, std::nullopt);
 }
 
+// ----------------------------------------------------------------------------
+// Coverage for the DecomposeAssociativeScan() hook. A subclass that returns
+// false skips the kScan -> tree-reduce decomposition (the path TPU uses with
+// the native ScanEmitter enabled).
+// ----------------------------------------------------------------------------
+
+class ScanPreservingReduceWindowRewriter : public ReduceWindowRewriter {
+ public:
+  explicit ScanPreservingReduceWindowRewriter(int64_t base_length)
+      : ReduceWindowRewriter(base_length) {}
+
+ protected:
+  bool DecomposeAssociativeScan() const override { return false; }
+};
+
+class ReduceWindowRewriterScanPreserveTest
+    : public HloHardwareIndependentTestBase {
+ public:
+  void CheckRewrite(absl::string_view hlo,
+                    std::optional<absl::string_view> expected) {
+    RunAndFilecheckHloRewrite(hlo, ScanPreservingReduceWindowRewriter{128},
+                              expected);
+  }
+};
+
+TEST_F(ReduceWindowRewriterScanPreserveTest, AssociativeScanLeftIntact) {
+  // With DecomposeAssociativeScan() == false the kScan must survive the pass.
+  const char* hlo = R"(
+HloModule m
+
+add_float {
+  lhs = f32[] parameter(0)
+  rhs = f32[] parameter(1)
+  add = f32[] add(lhs, rhs)
+  ROOT tuple = (f32[], f32[]) tuple(add, add)
+}
+
+ENTRY entry (arg: f32[46592]) -> f32[46592] {
+  arg = f32[46592]{0} parameter(0)
+  constant = f32[] constant(0)
+  scan = (f32[46592]{0}, f32[]) scan(f32[46592]{0} %arg, f32[] %constant), dimensions={0}, num_carries=1, to_apply=%add_float, is_associative=true
+  ROOT result = f32[46592]{0} get-tuple-element(scan), index=0
+})";
+  // No rewrite -> expect std::nullopt.
+  CheckRewrite(hlo, std::nullopt);
+}
+
 }  // namespace
 }  // namespace xla
