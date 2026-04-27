@@ -1,0 +1,45 @@
+diff --git a/third_party/llvm/workspace.bzl b/third_party/llvm/workspace.bzl
+index 6a7c609..8ee1b2c 100644
+--- a/third_party/llvm/workspace.bzl
++++ b/third_party/llvm/workspace.bzl
+@@ -4,8 +4,8 @@ load("//third_party:repo.bzl", "tf_http_archive")
+ 
+ def repo(name):
+     """Imports LLVM."""
+-    LLVM_COMMIT = "bb092120f1f031824def23311d8ceb0f39941f3b"
+-    LLVM_SHA256 = "1d7e43354b24a8278e664c323911545a9530744e4c89c15b6470b9cc3008bfcd"
++    LLVM_COMMIT = "7189c4bb83d90c383741a9480fceca9c7bf74b27"
++    LLVM_SHA256 = "dd652f7b4e46001614ea3c1e10cbb117a73199f2d8f7e95c66f233bd0111fbd4"
+ 
+     tf_http_archive(
+         name = name,
+diff --git a/third_party/stablehlo/temporary.patch b/third_party/stablehlo/temporary.patch
+index c42e012..21332e1 100644
+--- a/third_party/stablehlo/temporary.patch
++++ b/third_party/stablehlo/temporary.patch
+@@ -990,4 +990,25 @@ diff --ruN a/stablehlo/stablehlo/transforms/VhloToVersion.cpp b/stablehlo/stable
+  }
+  
+  bool isDefaultResultAccuracy(Attribute attr) {
++diff --ruN a/stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp b/stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp
++--- stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp
+++++ stablehlo/stablehlo/transforms/optimization/StablehloAggressiveFolder.cpp
++@@ -209,11 +209,13 @@
++ 
++   Attribute res;
++   if (isa<IntegerType>(elemTy))
++-    res = constFoldBinaryOp<IntegerAttr, IntegerAttr::ValueType, void,
++-                            IntResultType>(operands, resultType, folder);
+++    res = constFoldBinaryOp<IntegerAttr, IntegerAttr, IntegerAttr::ValueType,
+++                            IntegerAttr::ValueType, void, IntResultType>(
+++        operands, resultType, folder);
++   if (isa<FloatType>(elemTy))
++-    res = constFoldBinaryOp<FloatAttr, FloatAttr::ValueType, void,
++-                            FloatResultType>(operands, resultType, folder);
+++    res = constFoldBinaryOp<FloatAttr, FloatAttr, FloatAttr::ValueType,
+++                            FloatAttr::ValueType, void, FloatResultType>(
+++        operands, resultType, folder);
++   if (res) return cast<TypedAttr>(res);
++ 
++   return nullptr;
+ 
