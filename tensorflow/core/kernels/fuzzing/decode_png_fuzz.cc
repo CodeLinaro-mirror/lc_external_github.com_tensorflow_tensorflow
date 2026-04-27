@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/cc/ops/image_ops.h"
-#include "tensorflow/core/framework/types.pb.h"
+#include "tensorflow/cc/ops/standard_ops.h"  // IWYU pragma: keep, b/181318342
 #include "tensorflow/core/kernels/fuzzing/fuzz_session.h"
 
 namespace tensorflow {

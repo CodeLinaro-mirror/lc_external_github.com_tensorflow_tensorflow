@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/cc/framework/scope.h"
 #include "tensorflow/cc/ops/array_ops.h"
+#include "tensorflow/cc/ops/standard_ops.h"  // IWYU pragma: keep, b/181317800
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.pb.h"
