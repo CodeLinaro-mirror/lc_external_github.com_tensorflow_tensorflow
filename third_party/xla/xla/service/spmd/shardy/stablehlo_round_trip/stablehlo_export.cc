@@ -24,7 +24,6 @@ limitations under the License.
 #include "xla/service/spmd/shardy/stablehlo_round_trip/export_ops.h"
 #include "xla/service/spmd/shardy/stablehlo_round_trip/export_shardings.h"
 #include "xla/service/spmd/shardy/stablehlo_round_trip/shard_map_export.h"
-#include "xla/service/spmd/shardy/stablehlo_round_trip/unflatten_call_graph.h"
 
 namespace xla {
 namespace sdy {
@@ -32,10 +31,6 @@ namespace sdy {
 void addStablehloExportPipeline(mlir::OpPassManager& pm,
                                 const StablehloExportPipelineOptions& options) {
   pm.addPass(createStablehloExportManualReductionCollectivesPass());
-  if (!options.keepHloShardingConstraints) {
-    pm.addPass(createUnflattenCallGraphPass(options.dedupFunctionsFully));
-    pm.addPass(mlir::createSymbolDCEPass());
-  }
   // This pass converts `sdy.constant` (which isn't foldable) into
   // `stablehlo.constant` (which is foldable), therefore greedy pattern
   // rewriters shouldn't be applied before converting to HLO as they apply
