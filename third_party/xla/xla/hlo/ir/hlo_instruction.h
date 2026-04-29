@@ -2153,6 +2153,8 @@ class HloInstruction {
     mutable_metadata().set_scheduling_name(name);
   }
 
+  bool has_metadata() const { return metadata_ != nullptr; }
+
   const OpMetadata& metadata() const {
     OpMetadata* m = metadata_.get();
     return (m == nullptr) ? *kEmptyMetadata : *m;
