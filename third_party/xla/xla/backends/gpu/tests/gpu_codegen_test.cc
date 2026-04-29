@@ -20,6 +20,7 @@ limitations under the License.
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
@@ -57,12 +58,13 @@ void GpuCodegenTest::CompileAndOptionallyVerifyPtx(
   CHECK_NOTNULL(compiler);
 
   std::string ptx_str;
-  compiler->SetAsmHook([&](absl::string_view ptx) { ptx_str += ptx; });
 
-  TF_ASSERT_OK_AND_ASSIGN(
-      std::unique_ptr<Executable> executable,
-      CompileToExecutable(std::move(hlo_module), run_optimization_passes));
+  compiler->SetAsmHook([&](absl::string_view ptx) { ptx_str += ptx; });
+  absl::StatusOr<std::unique_ptr<Executable>> executable =
+      CompileToExecutable(std::move(hlo_module), run_optimization_passes);
   compiler->RemoveAsmHook();
+
+  ASSERT_OK(executable.status());
 
   // On the ROCM platform the "ptx" string is not populated for the compiled
   // executable, and hence the "ptx_str" will be empty. So disabling the
