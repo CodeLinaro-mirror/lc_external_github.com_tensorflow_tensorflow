@@ -420,13 +420,20 @@ class PriorityTaskQueue {
                        std::vector<std::unique_ptr<TaskType>>* output_tasks)>
           split_input_task_func,
       bool enable_large_batch_splitting, bool enable_task_resplit,
-      size_t max_execution_batch_size, int64_t batch_timeout_micros, Env* env)
+      size_t max_execution_batch_size, int64_t batch_timeout_micros,
+      std::vector<int32_t> allowed_batch_sizes, bool disable_padding,
+      std::string batch_padding_policy, ModelBatchStats* model_batch_stats,
+      Env* env)
       : max_queue_depth_(max_queue_depth),
         split_input_task_func_(split_input_task_func),
         enable_large_batch_splitting_(enable_large_batch_splitting),
         enable_task_resplit_(enable_task_resplit),
         max_execution_batch_size_(max_execution_batch_size),
         batch_timeout_micros_(batch_timeout_micros),
+        allowed_batch_sizes_(std::move(allowed_batch_sizes)),
+        disable_padding_(disable_padding),
+        batch_padding_policy_(std::move(batch_padding_policy)),
+        model_batch_stats_(model_batch_stats),
         env_(env) {}
 
   // If queue has capacity, adds task to queue and returns OK.
@@ -572,6 +579,9 @@ class PriorityTaskQueue {
     return tasks_.begin()->criticality;
   }
 
+  // Returns a batch of tasks from the queue if the batch is ready to be
+  // executed. Otherwise, returns nullptr.
+  // BatchPaddingPolicy is applied to determine the optimal batch size.
   std::unique_ptr<Batch<TaskType>> ScheduleBatch() {
     if (empty()) {
       return nullptr;
@@ -579,9 +589,12 @@ class PriorityTaskQueue {
     if (size() >= max_execution_batch_size_ ||
         env_->NowMicros() >=
             EarliestTaskStartTime().value() + batch_timeout_micros_) {
-      auto batch = std::make_unique<Batch<TaskType>>();
-      size_t tasks_to_schedule =
+      size_t candidate_size =
           std::min(static_cast<size_t>(size()), max_execution_batch_size_);
+      int32_t tasks_to_schedule = ApplyBatchPaddingPolicy(
+          candidate_size, allowed_batch_sizes_, disable_padding_,
+          batch_padding_policy_, model_batch_stats_);
+      auto batch = std::make_unique<Batch<TaskType>>();
       std::vector<std::unique_ptr<TaskType>> tasks =
           RemoveTask(tasks_to_schedule);
       for (auto& t : tasks) {
@@ -657,6 +670,10 @@ class PriorityTaskQueue {
   const bool enable_task_resplit_ = false;
   const size_t max_execution_batch_size_;
   const int64_t batch_timeout_micros_;
+  const std::vector<int32_t> allowed_batch_sizes_;
+  const bool disable_padding_;
+  const std::string batch_padding_policy_;
+  ModelBatchStats* const model_batch_stats_;
   Env* const env_;
 };
 
@@ -1079,21 +1096,6 @@ absl::Status SharedBatchScheduler<TaskType>::AddQueueAfterRewritingOptions(
   }
 
   if (options.enable_priority_aware_batch_scheduler) {
-    if (options.disable_padding) {
-      return absl::InvalidArgumentError(
-          "If enable_priority_aware_batch_scheduler is true, disable_padding "
-          "must be false.");
-    }
-    if (options.batch_padding_policy != kPadUpPolicy &&
-        options.allowed_batch_sizes.size() > 1) {
-      return absl::InvalidArgumentError(absl::StrFormat(
-          "If enable_priority_aware_batch_scheduler is true, "
-          "batch_padding_policy must be kPadUpPolicy for "
-          "more than one allowed batch sizes. The "
-          "batch_padding_policy is %s with "
-          "number of allowed batch sizes %d.",
-          options.batch_padding_policy, options.allowed_batch_sizes.size()));
-    }
     if (options.mixed_priority_batching_policy !=
         MixedPriorityBatchingPolicy::kLowPriorityPaddingWithMaxBatchSize) {
       return absl::InvalidArgumentError(
@@ -1302,7 +1304,9 @@ Queue<TaskType>::Queue(
           options.priority_aware_scheduler_options.max_queue_depth,
           options.split_input_task_func, options.enable_large_batch_splitting,
           options.priority_aware_scheduler_options.enable_task_resplit,
-          GetMaxExecutionBatchSize(options), options.batch_timeout_micros, env),
+          GetMaxExecutionBatchSize(options), options.batch_timeout_micros,
+          options.allowed_batch_sizes, options.disable_padding,
+          options.batch_padding_policy, options.model_batch_stats, env),
       options_(options),
       env_(env),
       enable_warmup_queue_(enable_warmup_queue),
