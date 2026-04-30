@@ -14,18 +14,36 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/kernels/data/tensor_slice_dataset_op.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include <gtest/gtest.h>
+#include "absl/status/status.h"
+#include "xla/tsl/lib/core/status_test_util.h"
 #include "tensorflow/core/data/dataset_test_base.h"
-#include "tensorflow/core/data/dataset_utils.h"
+#include "tensorflow/core/data/name_utils.h"
 #include "tensorflow/core/data/serialization_utils.h"
+#include "tensorflow/core/framework/dataset.h"
+#include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor_shape.h"
+#include "tensorflow/core/framework/variant.h"
+#include "tensorflow/core/framework/variant_tensor_data.h"
+#include "tensorflow/core/platform/tstring.h"
 
 namespace tensorflow {
 namespace data {
 namespace {
 
 constexpr char kNodeName[] = "tensor_slice_dataset";
+
+class TestDatasetBase : public DatasetBase {
+ public:
+  using DatasetBase::MakeIteratorInternal;
+};
 
 class TensorSliceDatasetOpTest : public DatasetOpsTestBase {};
 
@@ -216,6 +234,33 @@ TEST_F(TensorSliceDatasetOpTest, IteratorOutputPrefix) {
   TF_ASSERT_OK(Initialize(dataset_params));
   TF_ASSERT_OK(CheckIteratorPrefix(name_utils::IteratorPrefix(
       TensorSliceDatasetOp::kDatasetType, dataset_params.iterator_prefix())));
+}
+
+TEST_F(TensorSliceDatasetOpTest, UninitializedIteratorSaveAndRestore) {
+  auto dataset_params = PlainTensorSliceDatasetParams();
+  TF_ASSERT_OK(Initialize(dataset_params));
+  auto iterator =
+      static_cast<const TestDatasetBase*>(dataset_)->MakeIteratorInternal(
+          "test_prefix");
+  SerializationContext::Params params;
+  SerializationContext serialization_ctx(params);
+  VariantTensorDataWriter writer;
+  absl::Status s = iterator->Save(&serialization_ctx, &writer);
+  EXPECT_EQ(s.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(
+      s.message(),
+      "`Initialize` should be called before saving/restoring from tf.data "
+      "checkpoints.");
+
+  std::vector<const VariantTensorData*> data;
+  writer.GetData(&data);
+  VariantTensorDataReader reader(data);
+  s = iterator->Restore(iterator_ctx_.get(), &reader);
+  EXPECT_EQ(s.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(
+      s.message(),
+      "`Initialize` should be called before saving/restoring from tf.data "
+      "checkpoints.");
 }
 
 std::vector<IteratorSaveAndRestoreTestCase<TensorSliceDatasetParams>>

@@ -263,6 +263,11 @@ class ZipDatasetOp::Dataset : public DatasetBase {
     absl::Status SaveInternal(SerializationContext* ctx,
                               IteratorStateWriter* writer) override {
       mutex_lock l(mu_);
+      if (input_impls_.size() != dataset()->inputs_.size()) {
+        return absl::FailedPreconditionError(
+            "`Initialize` should be called before saving/restoring from "
+            "tf.data checkpoints.");
+      }
       TF_RETURN_IF_ERROR(
           writer->WriteScalar(prefix(), kInputImplsEmpty,
                               static_cast<int64_t>(input_impls_.empty())));
@@ -275,17 +280,17 @@ class ZipDatasetOp::Dataset : public DatasetBase {
     absl::Status RestoreInternal(IteratorContext* ctx,
                                  IteratorStateReader* reader) override {
       mutex_lock l(mu_);
+      if (input_impls_.size() != dataset()->inputs_.size()) {
+        return absl::FailedPreconditionError(
+            "`Initialize` should be called before saving/restoring from "
+            "tf.data checkpoints.");
+      }
       // Note: When restoring, `SaveInternal` would not be called
       // if there is a global_shuffle_dataset_op.cc above this op.
       int64_t inputs_empty;
       TF_RETURN_IF_ERROR(
           reader->ReadScalar(prefix(), kInputImplsEmpty, &inputs_empty));
       if (ctx->restored_element_count()) {
-        if (input_impls_.size() != dataset()->inputs_.size()) {
-          return absl::FailedPreconditionError(
-              "`Initialize` should be called before restoring from the "
-              "checkpoint.");
-        }
         if (ctx->index_mapper() == nullptr) {
           return absl::FailedPreconditionError(
               "ctx->index_mapper() should be provided along with "

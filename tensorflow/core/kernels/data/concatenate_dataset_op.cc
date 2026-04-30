@@ -212,6 +212,10 @@ class ConcatenateDatasetOp::Dataset : public DatasetBase {
                                  std::vector<Tensor>* out_tensors,
                                  bool* end_of_sequence) override {
       mutex_lock l(mu_);
+      if (input_impls_.size() != 2) {
+        return absl::FailedPreconditionError(
+            "`Initialize` should be called before `GetNextInternal`.");
+      }
       if (!input_impls_[0] && !input_impls_[1]) {
         *end_of_sequence = true;
         return absl::OkStatus();
@@ -336,6 +340,11 @@ class ConcatenateDatasetOp::Dataset : public DatasetBase {
     absl::Status SaveInternal(SerializationContext* ctx,
                               IteratorStateWriter* writer) override {
       mutex_lock l(mu_);
+      if (input_impls_.size() != 2) {
+        return absl::FailedPreconditionError(
+            "`Initialize` should be called before saving/restoring from "
+            "tf.data checkpoints.");
+      }
       TF_RETURN_IF_ERROR(writer->WriteScalar(prefix(), kIndex, i_));
       TF_RETURN_IF_ERROR(
           writer->WriteScalar(prefix(), kElementCount, element_count_));
@@ -359,8 +368,8 @@ class ConcatenateDatasetOp::Dataset : public DatasetBase {
       mutex_lock l(mu_);
       if (input_impls_.size() != 2) {
         return absl::FailedPreconditionError(
-            "`Initialize` should be called before restoring from tf.data "
-            "checkpoints.");
+            "`Initialize` should be called before saving/restoring from "
+            "tf.data checkpoints.");
       }
       int64_t input_uninitialized[2];
       TF_RETURN_IF_ERROR(reader->ReadScalar(
