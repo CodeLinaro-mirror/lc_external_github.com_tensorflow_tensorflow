@@ -550,6 +550,12 @@ absl::Status DataServiceDispatcherImpl::GetSplit(const GetSplitRequest* request,
           absl::StrCat("Cannot get split for iteration ", iteration_id,
                        ", since it is not a distributed_epoch iteration."));
     }
+    if (provider_index < 0 ||
+        provider_index >=
+            iteration->distributed_epoch_state.value().repetitions.size()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Invalid split provider index: ", provider_index));
+    }
     current_repetition =
         iteration->distributed_epoch_state.value().repetitions[provider_index];
     if (request->repetition() < current_repetition) {
