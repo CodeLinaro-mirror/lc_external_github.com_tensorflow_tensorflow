@@ -7654,6 +7654,18 @@ bool HloParserImpl::ParseOpcode(
         *opcode = async_opcode;
         std::string wrapped_opcode(wrapped_opcode_view);
         status_or_result = StringToHloOpcode(wrapped_opcode);
+        // these ops don't support async wrappping
+        if (status_or_result.ok() &&
+            (status_or_result.value() == HloOpcode::kAllGather ||
+             status_or_result.value() == HloOpcode::kAllReduce ||
+             status_or_result.value() == HloOpcode::kCollectivePermute ||
+             status_or_result.value() == HloOpcode::kCopy ||
+             status_or_result.value() == HloOpcode::kRecv ||
+             status_or_result.value() == HloOpcode::kSend)) {
+          status_or_result = InvalidArgument("Unknown opcode: %s", val);
+          return false;
+        }
+
         return true;
       }
       return false;
