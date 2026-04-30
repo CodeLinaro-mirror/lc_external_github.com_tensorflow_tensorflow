@@ -13,15 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/pjrt/cpu/tracked_cpu_device_buffer.h"
-
 #include <cstring>
 #include <string>
 
 #include <gtest/gtest.h>
-#include "absl/base/casts.h"
 #include "absl/log/check.h"
 #include "absl/status/status_matchers.h"
+#include "xla/pjrt/abstract_tracked_device_buffer.h"
 #include "xla/pjrt/cpu/cpu_client.h"
 #include "xla/pjrt/cpu/cpu_event.h"
 #include "xla/pjrt/cpu/raw_buffer.h"
@@ -59,7 +57,11 @@ TEST(TrackedCpuDeviceBufferTest, Basic) {
     definition_event.SetStateConcrete();
   });
 
-  TrackedCpuDeviceBuffer tracked_buffer(buffer, definition_event);
+  absl::InlinedVector<PjRtDeviceEventRef, 2> definition_events;
+  definition_events.push_back(PjRtDeviceEventRef(definition_event));
+  AbstractTrackedDeviceBuffer tracked_buffer(
+      buffer, std::move(definition_events),
+      std::make_unique<DefaultUsageEventSet>());
 
   ABSL_ASSERT_OK(tracked_buffer.BlockForOperationsToComplete(memory_space));
 
@@ -88,7 +90,11 @@ TEST(TrackedCpuDeviceBufferTest, BasicError) {
         Internal("tracked_cpu_device_buffer_test error."));
   });
 
-  TrackedCpuDeviceBuffer tracked_buffer(buffer, definition_event);
+  absl::InlinedVector<PjRtDeviceEventRef, 2> definition_events;
+  definition_events.push_back(PjRtDeviceEventRef(definition_event));
+  AbstractTrackedDeviceBuffer tracked_buffer(
+      buffer, std::move(definition_events),
+      std::make_unique<DefaultUsageEventSet>());
 
   EXPECT_FALSE(tracked_buffer.BlockForOperationsToComplete(memory_space).ok());
 
@@ -109,10 +115,13 @@ TEST(TrackedCpuDeviceBufferTest, DelayedAllocation) {
   });
 
   auto definition_event = MakeConstructedAsyncValueRef<CpuEvent>();
-  TrackedCpuDeviceBuffer tracked_buffer(
+  absl::InlinedVector<PjRtDeviceEventRef, 2> definition_events;
+  definition_events.push_back(PjRtDeviceEventRef(definition_event));
+  AbstractTrackedDeviceBuffer tracked_buffer(
       tsl::MakeRef<CpuRawBuffer>(memory_space, buffer, expected.size(),
                                  /*is_mutable=*/true),
-      definition_event);
+      std::move(definition_events), std::make_unique<DefaultUsageEventSet>());
+
   auto result =
       absl::down_cast<CpuRawBuffer*>(tracked_buffer.raw_buffer().get())
           ->buffer();

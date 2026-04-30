@@ -30,6 +30,7 @@ xla_cc_test(
         ":cpu_client",
         ":cpu_event",
         "//xla:util",
+        "//xla/pjrt:common_pjrt_client",
         "//xla/pjrt:pjrt_client",
         "//xla/tsl/concurrency:async_value",
         "//xla/tsl/concurrency:ref_count",
