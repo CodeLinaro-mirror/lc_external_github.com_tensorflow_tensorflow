@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -185,6 +186,27 @@ DispatcherConfig ApplyConfigDefaults(const DispatcherConfig& config) {
         kDefaultWorkerMaxConcurrentSnapshots);
   }
   return new_config;
+}
+
+// Validates that the dataset id is valid to use to construct a filepath.
+// It returns INVALID_ARGUMENT if the dataset_id is empty, '.', '..', or
+// contains path separators.
+absl::Status ValidateDatasetId(const std::string& dataset_id) {
+  if (dataset_id.empty()) {
+    return absl::InvalidArgumentError("Dataset ID must not be empty.");
+  }
+  if (dataset_id == "." || dataset_id == "..") {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Invalid dataset ID: ", dataset_id,
+                     ". Dataset IDs must not be '.' or '..'."));
+  }
+  if (dataset_id.find('/') != std::string::npos ||
+      dataset_id.find('\\') != std::string::npos) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Invalid dataset ID: ", dataset_id,
+                     ". Dataset IDs must not contain '/' or '\\'."));
+  }
+  return absl::OkStatus();
 }
 }  // namespace
 
@@ -520,6 +542,9 @@ absl::Status DataServiceDispatcherImpl::WorkerUpdate(
 absl::Status DataServiceDispatcherImpl::GetDatasetDef(
     const GetDatasetDefRequest* request, GetDatasetDefResponse* response) {
   TF_RETURN_IF_ERROR(CheckStarted());
+  if (!request->dataset_id().empty()) {
+    TF_RETURN_IF_ERROR(ValidateDatasetId(request->dataset_id()));
+  }
   mutex_lock l(mu_);
   std::shared_ptr<const Dataset> dataset;
   TF_RETURN_IF_ERROR(state_.DatasetFromId(request->dataset_id(), dataset));
@@ -607,6 +632,9 @@ absl::Status DataServiceDispatcherImpl::GetOrRegisterDataset(
     const GetOrRegisterDatasetRequest* request,
     GetOrRegisterDatasetResponse* response) {
   TF_RETURN_IF_ERROR(CheckStarted());
+  if (!request->dataset_id().empty()) {
+    TF_RETURN_IF_ERROR(ValidateDatasetId(request->dataset_id()));
+  }
   DatasetDef dataset_def = request->dataset();
   GraphDef* graph = dataset_def.mutable_graph();
   PrepareGraph(graph);
@@ -655,6 +683,8 @@ absl::Status DataServiceDispatcherImpl::RegisterDataset(
   dataset_id = requested_dataset_id;
   if (dataset_id.empty()) {
     dataset_id = state_.NextAvailableDatasetId();
+  } else {
+    TF_RETURN_IF_ERROR(ValidateDatasetId(dataset_id));
   }
   Update update;
   RegisterDatasetUpdate* register_dataset = update.mutable_register_dataset();
@@ -668,6 +698,9 @@ absl::Status DataServiceDispatcherImpl::GetDataServiceMetadata(
     const GetDataServiceMetadataRequest* request,
     GetDataServiceMetadataResponse* response) {
   TF_RETURN_IF_ERROR(CheckStarted());
+  if (!request->dataset_id().empty()) {
+    TF_RETURN_IF_ERROR(ValidateDatasetId(request->dataset_id()));
+  }
   std::string dataset_id = request->dataset_id();
   std::shared_ptr<const Dataset> dataset;
 
