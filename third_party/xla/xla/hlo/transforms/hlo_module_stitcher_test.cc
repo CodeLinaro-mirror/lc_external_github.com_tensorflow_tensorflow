@@ -21,6 +21,7 @@ limitations under the License.
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
@@ -143,6 +144,69 @@ ENTRY sub_entry {
   EXPECT_THAT(stitcher.Run(main_module.get()),
               absl_testing::StatusIs(absl::StatusCode::kInvalidArgument,
                                      HasSubstr("Operand count mismatch")));
+}
+
+TEST_F(HloModuleStitcherTest, NullSubModuleReturnsError) {
+  const char* main_hlo_string = R"(
+HloModule main
+
+ENTRY main {
+  param0 = f32[100] parameter(0)
+  ROOT custom-call = f32[100] custom-call(param0), custom_call_target="_xla_multi_module_call", backend_config="null_sub_module", api_version=API_VERSION_STATUS_RETURNING_UNIFIED
+}
+)";
+
+  ASSERT_OK_AND_ASSIGN(auto main_module,
+                       ParseAndReturnVerifiedModule(main_hlo_string));
+
+  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  optimized_modules["null_sub_module"] = nullptr;
+
+  HloModuleStitcher stitcher(optimized_modules);
+  EXPECT_THAT(stitcher.Run(main_module.get()),
+              StatusIs(absl::StatusCode::kInternal));
+}
+
+TEST_F(HloModuleStitcherTest, CachesClonedComputations) {
+  const char* main_hlo_string = R"(
+HloModule main
+
+ENTRY main {
+  param0 = f32[100] parameter(0)
+  call1 = f32[100] custom-call(param0), custom_call_target="_xla_multi_module_call", backend_config="optimized_sub_module", api_version=API_VERSION_STATUS_RETURNING_UNIFIED
+  ROOT call2 = f32[100] custom-call(call1), custom_call_target="_xla_multi_module_call", backend_config="optimized_sub_module", api_version=API_VERSION_STATUS_RETURNING_UNIFIED
+}
+)";
+
+  const char* sub_hlo_string = R"(
+HloModule optimized_sub_module
+
+ENTRY sub_entry {
+  param0 = f32[100] parameter(0)
+  ROOT add = f32[100] add(param0, param0)
+}
+)";
+
+  ASSERT_OK_AND_ASSIGN(auto main_module,
+                       ParseAndReturnVerifiedModule(main_hlo_string));
+  ASSERT_OK_AND_ASSIGN(auto sub_module,
+                       ParseAndReturnVerifiedModule(sub_hlo_string));
+
+  absl::flat_hash_map<std::string, const HloModule*> optimized_modules;
+  optimized_modules["optimized_sub_module"] = sub_module.get();
+
+  HloModuleStitcher stitcher(optimized_modules);
+  EXPECT_THAT(stitcher.Run(main_module.get()), IsOkAndHolds(true));
+
+  // Count occurrences of sub_entry. If cached, it should appear only once in
+  // the module.
+  int sub_entry_count = 0;
+  for (auto* comp : main_module->computations()) {
+    if (absl::StrContains(comp->name(), "sub_entry")) {
+      sub_entry_count++;
+    }
+  }
+  EXPECT_EQ(sub_entry_count, 1);
 }
 
 TEST_F(HloModuleStitcherTest, LayoutReconciliationAddsKCopy) {
