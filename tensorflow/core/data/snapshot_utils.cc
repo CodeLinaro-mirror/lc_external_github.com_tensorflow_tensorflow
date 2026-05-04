@@ -970,12 +970,16 @@ absl::Status CustomReader::SnappyUncompress(
       iov[index].iov_len = buffer->size();
       simple_tensors->push_back(std::move(simple_tensor));
     } else {
-      auto tensor_proto_str =
-          std::make_unique<char[]>(tensor_metadata.tensor_size_bytes());
+      int64_t tensor_size = tensor_metadata.tensor_size_bytes();
+      if (tensor_size < 0 || tensor_size > INT_MAX) {
+        return absl::DataLossError(absl::StrCat(
+            "Tensor size is negative or too large: ", tensor_size));
+      }
+      auto tensor_proto_str = std::make_unique<char[]>(tensor_size);
       iov[index].iov_base = tensor_proto_str.get();
-      iov[index].iov_len = tensor_metadata.tensor_size_bytes();
-      tensor_proto_strs->push_back(std::make_pair(
-          std::move(tensor_proto_str), tensor_metadata.tensor_size_bytes()));
+      iov[index].iov_len = tensor_size;
+      tensor_proto_strs->push_back(
+          std::make_pair(std::move(tensor_proto_str), tensor_size));
     }
     total_size += iov[index].iov_len;
     index++;
