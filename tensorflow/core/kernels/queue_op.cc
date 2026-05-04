@@ -17,6 +17,8 @@ limitations under the License.
 
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/queue_interface.h"
+#include "tensorflow/core/framework/resource_handle.h"
+#include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/types.h"
@@ -54,8 +56,9 @@ QueueOpKernel::QueueOpKernel(OpKernelConstruction* context)
 void QueueOpKernel::ComputeAsync(OpKernelContext* ctx, DoneCallback callback) {
   QueueInterface* queue;
   if (ctx->input_dtype(0) == DT_RESOURCE) {
-    OP_REQUIRES_OK_ASYNC(
-        ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &queue), callback);
+    ResourceHandle handle;
+    OP_REQUIRES_OK_ASYNC(ctx, HandleFromInput(ctx, 0, &handle), callback);
+    OP_REQUIRES_OK_ASYNC(ctx, LookupResource(ctx, handle, &queue), callback);
   } else {
     OP_REQUIRES_OK_ASYNC(ctx, GetResourceFromContext(ctx, "handle", &queue),
                          callback);

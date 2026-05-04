@@ -55,8 +55,10 @@ class CreateSummaryFileWriterOp : public OpKernel {
     const std::string filename_suffix = tmp->scalar<tstring>()();
 
     core::RefCountPtr<SummaryWriterInterface> s;
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
     OP_REQUIRES_OK(ctx, LookupOrCreateResource<SummaryWriterInterface>(
-                            ctx, HandleFromInput(ctx, 0), &s,
+                            ctx, handle, &s,
                             [max_queue, flush_millis, logdir, filename_suffix,
                              ctx](SummaryWriterInterface** s) {
                               return CreateSummaryFileWriter(
@@ -84,10 +86,12 @@ class CreateSummaryDbWriterOp : public OpKernel {
     const std::string user_name = tmp->scalar<tstring>()();
 
     core::RefCountPtr<SummaryWriterInterface> s;
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
     OP_REQUIRES_OK(
         ctx,
         LookupOrCreateResource<SummaryWriterInterface>(
-            ctx, HandleFromInput(ctx, 0), &s,
+            ctx, handle, &s,
             [db_uri, experiment_name, run_name, user_name,
              ctx](SummaryWriterInterface** s) {
               Sqlite* db;
@@ -110,7 +114,9 @@ class FlushSummaryWriterOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     OP_REQUIRES_OK(ctx, s->Flush());
   }
 };
@@ -122,8 +128,9 @@ class CloseSummaryWriterOp : public OpKernel {
   explicit CloseSummaryWriterOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
   void Compute(OpKernelContext* ctx) override {
-    OP_REQUIRES_OK(ctx, DeleteResource<SummaryWriterInterface>(
-                            ctx, HandleFromInput(ctx, 0)));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, DeleteResource<SummaryWriterInterface>(ctx, handle));
   }
 };
 REGISTER_KERNEL_BUILDER(Name("CloseSummaryWriter").Device(DEVICE_CPU),
@@ -135,7 +142,9 @@ class WriteSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("step", &tmp));
     const int64_t step = tmp->scalar<int64_t>()();
@@ -159,7 +168,9 @@ class WriteRawProtoSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("step", &tmp));
     OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(tmp->shape()),
@@ -195,7 +206,9 @@ class ImportEventOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* t;
     OP_REQUIRES_OK(ctx, ctx->input("event", &t));
     std::unique_ptr<Event> event{new Event};
@@ -215,7 +228,9 @@ class WriteScalarSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("step", &tmp));
     const int64_t step = tmp->scalar<int64_t>()();
@@ -237,7 +252,9 @@ class WriteHistogramSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("step", &tmp));
     const int64_t step = tmp->scalar<int64_t>()();
@@ -265,7 +282,9 @@ class WriteImageSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("step", &tmp));
     const int64_t step = tmp->scalar<int64_t>()();
@@ -300,7 +319,9 @@ class WriteAudioSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("step", &tmp));
     const int64_t step = tmp->scalar<int64_t>()();
@@ -328,7 +349,9 @@ class WriteGraphSummaryOp : public OpKernel {
 
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
+    ResourceHandle handle;
+    OP_REQUIRES_OK(ctx, HandleFromInput(ctx, 0, &handle));
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, handle, &s));
     const Tensor* t;
     OP_REQUIRES_OK(ctx, ctx->input("step", &t));
     const int64_t step = t->scalar<int64_t>()();
