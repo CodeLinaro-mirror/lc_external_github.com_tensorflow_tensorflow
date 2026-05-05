@@ -127,7 +127,13 @@ xla_test(
         "gb200": ["full"],
         "gb300": ["full"],
     },
-    backends = ["gpu"],
+    backends = [
+        "gpu",
+        # The gpu backend above might map to either v100 or p100,
+        # so make sure to generate data for both.
+        "v100",
+        "p100",
+    ],
     tags = [
         "cuda-only",
         "no_oss",  # Stop this test from being run in OSS presubmits
