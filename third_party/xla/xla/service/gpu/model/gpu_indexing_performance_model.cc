@@ -211,7 +211,7 @@ bool DoesComputationFitInRegisters(
     const TiledHloComputation& tiled_hlo_computation,
     const se::DeviceDescription& device_info) {
   // Check that output tiles fit in registers.
-  for (const TiledHloInstruction* root : tiled_hlo_computation.GetRoots()) {
+  for (const TiledHloInstruction* root : tiled_hlo_computation.roots()) {
     if (!DoesTileFitInRegisters(GetPaddedTileSize(root->tile_sizes()),
                                 device_info)) {
       return false;
@@ -400,6 +400,12 @@ GpuPerformanceModelWithIndexingAnalysis::EstimateRunTimeForTiledHloComputation(
   int64_t bytes_read = 0;
   int64_t num_blocks = launch_dimensions.num_blocks();
 
+  if (tiled_hlo_computation.num_output_tiles() != num_blocks) {
+    return absl::FailedPreconditionError(absl::StrCat(
+        "Number of output tiles does not match number of blocks. ",
+        tiled_hlo_computation.num_output_tiles(), " vs ", num_blocks));
+  }
+
   absl::Duration dot_compute_time = absl::ZeroDuration();
 
   // Check if the computation is too large to fit in registers and would result
@@ -506,7 +512,7 @@ GpuPerformanceModelWithIndexingAnalysis::EstimateRunTimeForTiledHloComputation(
         operand_read_info.read_bandwidth_utilization_rate);
   }
 
-  auto roots = tiled_hlo_computation.GetRoots();
+  auto roots = tiled_hlo_computation.roots();
   int64_t bytes_written = 0;
   absl::Duration write_time;
   for (auto* root : roots) {
@@ -658,7 +664,7 @@ GpuPerformanceModelWithIndexingAnalysis::TryFindTopKBestTilingsForFusion(
     }
 
     BlockLevelParameters block_level_parameters;
-    auto tiled_roots = tiled_hlo_computation.GetRoots();
+    auto tiled_roots = tiled_hlo_computation.roots();
     block_level_parameters.output_tile_sizes.reserve(tiled_roots.size());
     for (auto tiled_root : tiled_roots) {
       block_level_parameters.output_tile_sizes.emplace_back(
