@@ -2,7 +2,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_ml_toolchain//py/rules_pywrap:pywrap.default.bzl", "use_pywrap_rules")
-load("//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library")
+load("@xla//third_party/rules_python/python:py_library.bzl", "py_library")
 load("//tensorflow:tensorflow.bzl", "tf_custom_op_library", "tf_gen_op_wrapper_py")
 load("//tensorflow:tensorflow.default.bzl", "tf_custom_op_py_library")
 
@@ -74,7 +74,7 @@ def gen_op_libraries(
     tf_gen_op_wrapper_py(
         name = "gen_" + name,
         out = "gen_" + name + ".py",
-        py_lib_rule = py_strict_library,
+        py_lib_rule = py_library,
         deps = [
             ":%s_cc" % name,
         ],
@@ -91,7 +91,7 @@ def gen_op_libraries(
         dso = [":%s.so" % name],
         kernels = [":%s_cc" % name],
         srcs_version = "PY3",
-        # copybara:uncomment(OSS version passes this to py_library) lib_rule = py_strict_library,
+        # copybara:uncomment(OSS version passes this to py_library) lib_rule = py_library,
         deps = [
             ":gen_%s" % name,
         ],
@@ -118,7 +118,7 @@ def gen_op_libraries(
         tags = tags,
     )
 
-    py_strict_library(
+    py_library(
         name = name + "_py",
         srcs = [src],
         srcs_version = "PY3",
@@ -145,7 +145,7 @@ def gen_op_bindings(name):
     tf_gen_op_wrapper_py(
         name = "gen_" + name + "_ops",
         out = "gen_" + name + "_ops.py",
-        py_lib_rule = py_strict_library,
+        py_lib_rule = py_library,
         deps = [":" + name + "_ops_cc"],
         extra_py_deps = [
             "//tensorflow/python:pywrap_tfe",
@@ -159,6 +159,6 @@ def gen_op_bindings(name):
         name = name + "_ops",
         dso = [":" + name + "_ops.so"],
         kernels = [":" + name + "_ops_cc"],
-        # copybara:uncomment(OSS version passes this to py_library) lib_rule = py_strict_library,
+        # copybara:uncomment(OSS version passes this to py_library) lib_rule = py_library,
         deps = [":gen_" + name + "_ops"],
     )
