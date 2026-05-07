@@ -227,6 +227,31 @@ bool IsSliceOpSupportedByYnn(const HloInstruction* hlo) {
   return hlo->shape().element_type() == input->shape().element_type();
 }
 
+bool IsPadOpSupportedByYnn(const HloInstruction* hlo) {
+  CHECK_EQ(hlo->opcode(), HloOpcode::kPad);
+  if (!YnnType(hlo->shape().element_type()).ok()) {
+    return false;
+  }
+  const HloInstruction* input = hlo->operand(0);
+  const HloInstruction* padding_value = hlo->operand(1);
+  if (hlo->shape().element_type() != input->shape().element_type() ||
+      hlo->shape().element_type() != padding_value->shape().element_type()) {
+    return false;
+  }
+  if (!IsLayoutSupportedByYnn(hlo->shape()) ||
+      !IsLayoutSupportedByYnn(input->shape())) {
+    return false;
+  }
+  // YNNPACK's ynn_define_static_pad does not support interior padding.
+  const PaddingConfig& config = hlo->padding_config();
+  for (const auto& dim : config.dimensions()) {
+    if (dim.interior_padding() != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool IsIotaSupportedByYnn(const HloInstruction* hlo) {
   CHECK_EQ(hlo->opcode(), HloOpcode::kIota);
   PrimitiveType type = hlo->shape().element_type();
