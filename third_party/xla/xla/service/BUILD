@@ -1841,6 +1841,7 @@ cc_library(
         "//xla/hlo/transforms:hlo_module_splitter",
         "//xla/hlo/transforms:hlo_module_stitcher",
         "//xla/stream_executor:stream_executor_h",
+        "//xla/tsl/concurrency:executor",
         "//xla/tsl/platform:env",
         "//xla/tsl/platform:status_macros",
         "@com_google_absl//absl/container:flat_hash_map",
