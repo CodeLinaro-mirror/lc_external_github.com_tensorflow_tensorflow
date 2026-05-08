@@ -80,7 +80,9 @@ absl::StatusOr<uint64_t> MakeHostBuffer(
     HostBufferSemantics semantics,
     std::function<void()> on_done_with_host_buffer) {
   absl::string_view mem_region;
-  if (dtype.kind() != DType::kString) {
+  if (dtype.kind() == DType::kToken) {
+    mem_region = absl::string_view();
+  } else if (dtype.kind() != DType::kString) {
     TF_ASSIGN_OR_RETURN(
         auto array_mem_region,
         ArrayMemRegion::FromZerothElementPointer(
@@ -760,6 +762,11 @@ tsl::Future<> Array::CopyToHostBuffer(
     return CopyToStringHostBuffer(data, byte_strides, semantics);
   }
   tsl::profiler::TraceMe traceme("IfrtProxyEntrypointCopyToHostBuffer");
+
+  if (dtype_.kind() == DType::kToken) {
+    return GetReadyFuture();
+  }
+
   const auto mem_region = ArrayMemRegion::FromZerothElementPointer(
       /*zeroth_element=*/data, dtype_, shape_, byte_strides);
   if (!mem_region.ok()) {

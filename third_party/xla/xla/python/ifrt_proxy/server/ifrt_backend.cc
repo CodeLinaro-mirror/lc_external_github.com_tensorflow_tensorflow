@@ -163,6 +163,9 @@ ParseMakeArraysFromHostBufferShardsSpecHostBufferProto(
       string_host_buffer.clear();
       host_buffer.reset();
     };
+  } else if (dtype.kind() == DType::kToken) {
+    data = nullptr;
+    on_done_with_host_buffer = [hold = std::move(host_buffer)]() {};
   } else {
     TF_ASSIGN_OR_RETURN(const auto mem_region,
                         ArrayMemRegion::FromMinimalMemRegion(
@@ -911,14 +914,13 @@ IfrtBackend::HandleMakeArrayFromHostBufferRequest(
     TF_ASSIGN_OR_RETURN(const auto mem_region,
                         ArrayMemRegion::FromMinimalMemRegion(
                             *host_buffer, dtype, shape, byte_strides));
-    TF_ASSIGN_OR_RETURN(
-        array,
-        client_->MakeArrayFromHostBuffer(
-            mem_region.zeroth_element(), dtype, std::move(shape),
-            std::move(byte_strides), std::move(sharding), std::move(layout),
-            xla::ifrt::Client::HostBufferSemantics::
-                kImmutableUntilTransferCompletes,
-            [hold = std::move(host_buffer)]() mutable { hold.reset(); }));
+    TF_ASSIGN_OR_RETURN(array, client_->MakeArrayFromHostBuffer(
+                                   mem_region.zeroth_element(), dtype,
+                                   std::move(shape), std::move(byte_strides),
+                                   std::move(sharding), std::move(layout),
+                                   xla::ifrt::Client::HostBufferSemantics::
+                                       kImmutableUntilTransferCompletes,
+                                   [hold = std::move(host_buffer)]() {}));
   }
 
   std::unique_ptr<IfrtResponse> response =
