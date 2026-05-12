@@ -74,6 +74,18 @@ limitations under the License.
 
 namespace xla {
 namespace {
+std::string GetAlphaSmallestFunctionName(const llvm::Module& module) {
+  std::string name;
+  for (const llvm::Function& func : module.functions()) {
+    if (!func.isDeclaration() &&
+        func.getLinkage() == llvm::GlobalValue::LinkageTypes::ExternalLinkage) {
+      if (name.empty() || name > func.getName().str()) {
+        name = func.getName().str();
+      }
+    }
+  }
+  return name;
+}
 
 class GpuOptProvider : public CompiledOptProvider {
  public:
@@ -219,6 +231,13 @@ class GpuOptProvider : public CompiledOptProvider {
     ASSIGN_OR_RETURN(
         std::unique_ptr<Executable> executable,
         compiler->RunBackend(std::move(optimized_module), executor, opts));
+
+    std::sort(modules.begin(), modules.end(),
+              [](const std::unique_ptr<llvm::Module>& m1,
+                 const std::unique_ptr<llvm::Module>& m2) {
+                return GetAlphaSmallestFunctionName(*m1) >
+                       GetAlphaSmallestFunctionName(*m2);
+              });
 
     gpu::LinkLlvmModulesInPlace(modules);
 
