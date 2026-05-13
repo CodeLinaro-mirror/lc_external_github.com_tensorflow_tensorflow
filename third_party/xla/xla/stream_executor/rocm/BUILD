@@ -1338,11 +1338,13 @@ rocm_library(
     ],
     deps = [
         ":collective_signal_rocm",
+        ":collective_signal_rocm_build_cleaner",
         ":rocm_platform_id",
         "//xla/stream_executor:kernel_spec",
         "//xla/stream_executor/gpu:gpu_kernel_registry",
         "//xla/stream_executor/gpu:multi_gpu_barrier_kernel",
         "@com_google_absl//absl/base",
+        "@local_config_nccl//:nccl",
         "@local_config_rocm//rocm:rocm_headers",
     ],
     alwayslink = 1,
