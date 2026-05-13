@@ -57,7 +57,7 @@ class RaggedRangeOp : public OpKernel {
 
     // nrows (number of output rows) is the size of the non-broadcast inputs,
     // or 1 if all inputs are scalars.
-    std::vector<int> in_sizes;
+    std::vector<int64_t> in_sizes;
     if (!broadcast_starts) in_sizes.push_back(starts_in.shape().dim_size(0));
     if (!broadcast_limits) in_sizes.push_back(limits_in.shape().dim_size(0));
     if (!broadcast_deltas) in_sizes.push_back(deltas_in.shape().dim_size(0));
@@ -80,7 +80,7 @@ class RaggedRangeOp : public OpKernel {
                                             &rt_nested_splits_out));
     auto rt_nested_splits = rt_nested_splits_out->flat<SPLITS_TYPE>();
     rt_nested_splits(0) = 0;
-    for (int row = 0; row < nrows; ++row) {
+    for (SPLITS_TYPE row = 0; row < nrows; ++row) {
       T start = broadcast_starts ? starts(0) : starts(row);
       T limit = broadcast_limits ? limits(0) : limits(row);
       T delta = broadcast_deltas ? deltas(0) : deltas(row);
@@ -134,8 +134,8 @@ class RaggedRangeOp : public OpKernel {
     OP_REQUIRES_OK(context, context->allocate_output(1, TensorShape({nvals}),
                                                      &rt_dense_values_out));
     auto rt_dense_values = rt_dense_values_out->flat<T>();
-    int value_index = 0;
-    for (int row = 0; row < nrows; ++row) {
+    SPLITS_TYPE value_index = 0;
+    for (SPLITS_TYPE row = 0; row < nrows; ++row) {
       SPLITS_TYPE row_size = rt_nested_splits(row + 1) - rt_nested_splits(row);
       T value = broadcast_starts ? starts(0) : starts(row);
       T delta = broadcast_deltas ? deltas(0) : deltas(row);
