@@ -226,6 +226,7 @@ xla_test(
 
 xla_test(
     name = "fusion_emitter_parametrized_test",
+    size = "large",
     srcs = ["fusion_emitter_parametrized_test.cc"],
     backends = [
         "a100",
