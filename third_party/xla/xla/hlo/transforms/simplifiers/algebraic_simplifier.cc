@@ -5802,6 +5802,39 @@ absl::Status AlgebraicSimplifierVisitor::HandleConvert(
                               convert->mutable_operand(0)->mutable_operand(0));
   }
 
+  // Simplify convert(broadcast(constant)) to broadcast(convert(constant)).
+  // This pushes the convert through the broadcast, which is cheap for scalars,
+  // and exposes the broadcast directly to other optimizations (e.g.
+  // ReduceWindow).
+  if (!options_.is_layout_sensitive() &&
+      convert->operand(0)->opcode() == HloOpcode::kBroadcast &&
+      convert->operand(0)->operand(0)->IsConstant()) {
+    auto* bcast = convert->mutable_operand(0);
+    auto* constant = bcast->mutable_operand(0);
+    if (ShapeUtil::IsScalar(constant->shape())) {
+      TF_ASSIGN_OR_RETURN(Literal dest_literal,
+                          constant->literal().Convert(dest_type));
+      auto* new_constant = convert->AddInstruction(
+          HloInstruction::CreateConstant(std::move(dest_literal)));
+      return ReplaceWithNewInstruction(
+          convert, HloInstruction::CreateBroadcast(
+                       convert->shape(), new_constant, bcast->dimensions()));
+    }
+  }
+
+  // Simplify convert(reshape(X)) to reshape(convert(X)).
+  if (!options_.is_layout_sensitive() &&
+      convert->operand(0)->opcode() == HloOpcode::kReshape) {
+    auto* reshape = convert->mutable_operand(0);
+    auto* x = reshape->mutable_operand(0);
+    Shape new_convert_shape =
+        ShapeUtil::ChangeElementType(x->shape(), dest_type);
+    auto* new_convert = convert->AddInstruction(
+        HloInstruction::CreateConvert(new_convert_shape, x));
+    return ReplaceWithNewInstruction(
+        convert, HloInstruction::CreateReshape(convert->shape(), new_convert));
+  }
+
   // Try to replace convert(constant) with a constant of the right type to begin
   // with. Disallow moving sub-byte types since they may not be supported for
   // some ops.
@@ -8460,6 +8493,34 @@ absl::Status AlgebraicSimplifierVisitor::HandleReduce(HloInstruction* hlo) {
     return reduce->ReplaceUsesWith(users, negated_reduce);
   }
 
+  // Optimize ArgMinMax reductions on broadcasted scalar constants.
+  // If the operand is a broadcast of a scalar constant, all elements being
+  // reduced are identical. Thus, the result is trivial:
+  // - The value is the constant value.
+  // - The index is 0 (preferring the first occurrence).
+  if ((MatchArgMax(reduce) || MatchArgMin(reduce)) &&
+      arg->opcode() == HloOpcode::kBroadcast && arg->operand(0)->IsConstant() &&
+      ShapeUtil::IsScalar(arg->operand(0)->shape())) {
+    auto* iota = Cast<HloIotaInstruction>(reduce->operand(1));
+    if (absl::c_linear_search(reduce->dimensions(), iota->iota_dimension())) {
+      PrimitiveType idx_type = reduce->shape().tuple_shapes(1).element_type();
+      HloInstruction* val_const = arg->mutable_operand(0);
+      HloInstruction* idx_const = reduce->AddInstruction(
+          HloInstruction::CreateConstant(LiteralUtil::Zero(idx_type)));
+
+      HloInstruction* val_bcast = reduce->AddInstruction(
+          HloInstruction::CreateBroadcast(reduce_result_shape, val_const, {}));
+
+      Shape idx_shape =
+          ShapeUtil::ChangeElementType(reduce_result_shape, idx_type);
+      HloInstruction* idx_bcast = reduce->AddInstruction(
+          HloInstruction::CreateBroadcast(idx_shape, idx_const, {}));
+
+      return ReplaceWithNewInstruction(
+          reduce, HloInstruction::CreateTuple({val_bcast, idx_bcast}));
+    }
+  }
+
   // Try to reorder reduce(dot(A, B)) to dot(A, reduce(B))
   if (ReorderReduceDotToDotReduce(arg, init_value, function, reduce)) {
     return absl::OkStatus();
@@ -8973,6 +9034,99 @@ absl::Status AlgebraicSimplifierVisitor::HandleReduceWindow(
   auto init_value = reduce_window->mutable_operand(1);
   auto function = reduce_window->to_apply();
   const Window& window = reduce_window->window();
+
+  if (options_.is_layout_sensitive()) {
+    return absl::OkStatus();
+  }
+
+  // Optimize cumsum-like reduce-window on broadcasted constants.
+  HloInstruction* real_operand = operand;
+  while (real_operand->opcode() == HloOpcode::kReshape ||
+         real_operand->opcode() == HloOpcode::kBitcast) {
+    real_operand = real_operand->mutable_operand(0);
+  }
+
+  if (real_operand->opcode() == HloOpcode::kBroadcast &&
+      real_operand->operand(0)->IsConstant() &&
+      ShapeUtil::IsScalar(real_operand->operand(0)->shape()) &&
+      IsScalarConstantZero(init_value) &&
+      Match(function->root_instruction(),
+            m::AddAnyOrder(m::Parameter(0), m::Parameter(1)))) {
+    int64_t reduction_dim = -1;
+    bool valid_pattern = true;
+
+    for (int64_t i = 0; i < window.dimensions_size(); ++i) {
+      const auto& dim = window.dimensions(i);
+      if (dim.size() > 1) {
+        if (reduction_dim != -1) {
+          // More than one reduction dimension, not supported for now.
+          valid_pattern = false;
+          break;
+        }
+        reduction_dim = i;
+        // Check if it is a cumsum-like pattern:
+        // - Window size matches operand size in this dimension.
+        // - Stride is 1.
+        // - Padding low is size - 1 (so we start with 1 element).
+        // - Padding high is 0.
+        // - No dilations or reversals.
+        if (dim.size() != operand->shape().dimensions(i) || dim.stride() != 1 ||
+            dim.padding_low() != dim.size() - 1 || dim.padding_high() != 0 ||
+            dim.window_dilation() != 1 || dim.base_dilation() != 1 ||
+            dim.window_reversal()) {
+          valid_pattern = false;
+          break;
+        }
+      } else {
+        if (dim.padding_low() != 0 || dim.padding_high() != 0 ||
+            dim.base_dilation() != 1) {
+          valid_pattern = false;
+          break;
+        }
+      }
+    }
+
+    if (valid_pattern && reduction_dim != -1) {
+      HloInstruction* val_const = real_operand->mutable_operand(0);
+
+      // Create iota for the reduction dimension.
+      PrimitiveType iota_type = S32;
+      if (val_const->shape().element_type() == S64) {
+        iota_type = S64;
+      }
+      Shape iota_shape =
+          ShapeUtil::ChangeElementType(reduce_window->shape(), iota_type);
+      HloInstruction* iota = reduce_window->AddInstruction(
+          HloInstruction::CreateIota(iota_shape, reduction_dim));
+
+      // iota + 1
+      HloInstruction* one = reduce_window->AddInstruction(
+          HloInstruction::CreateConstant(LiteralUtil::One(iota_type)));
+      HloInstruction* one_bcast = reduce_window->AddInstruction(
+          HloInstruction::CreateBroadcast(iota_shape, one, {}));
+      HloInstruction* count =
+          reduce_window->AddInstruction(HloInstruction::CreateBinary(
+              iota_shape, HloOpcode::kAdd, iota, one_bcast));
+
+      // Cast count to operand type if necessary.
+      if (val_const->shape().element_type() != iota_type) {
+        count = reduce_window->AddInstruction(HloInstruction::CreateConvert(
+            ShapeUtil::ChangeElementType(iota_shape,
+                                         val_const->shape().element_type()),
+            count));
+      }
+
+      // Result = val_const * count
+      HloInstruction* val_bcast =
+          reduce_window->AddInstruction(HloInstruction::CreateBroadcast(
+              reduce_window->shape(), val_const, {}));
+
+      return ReplaceWithNewInstruction(
+          reduce_window,
+          HloInstruction::CreateBinary(reduce_window->shape(),
+                                       HloOpcode::kMultiply, val_bcast, count));
+    }
+  }
 
   // reduce-window with a 1x1x..x1 window and no dilation etc can be replaced
   // with a trivial elementwise operation, plus a pad op if necessary.
