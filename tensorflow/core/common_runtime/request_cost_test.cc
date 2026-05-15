@@ -140,5 +140,33 @@ TEST(RequestCostTest, RecordStructuredMetrics) {
               ElementsAre("c"));
 }
 
+TEST(RequestCostTest, RecordStructuredCosts) {
+  RequestCost request_cost;
+
+  request_cost.RecordStructuredCosts(
+      {{"cost_a",
+        {{"dim1", absl::Milliseconds(10)}, {"dim2", absl::Milliseconds(5)}}}});
+  request_cost.RecordStructuredCosts(
+      {{"cost_a",
+        {{"dim1", absl::Milliseconds(20)}, {"dim2", absl::Milliseconds(10)}}},
+       {"cost_b", {{"dim1", absl::Milliseconds(3)}}}});
+
+  auto costs = request_cost.GetStructuredCosts();
+  ASSERT_EQ(costs.size(), 2);
+
+  // cost_a should be summed.
+  EXPECT_EQ(costs["cost_a"]["dim1"], absl::Milliseconds(30));
+  EXPECT_EQ(costs["cost_a"]["dim2"], absl::Milliseconds(15));
+
+  EXPECT_EQ(costs["cost_b"]["dim1"], absl::Milliseconds(3));
+
+  request_cost.ScaleStructuredCosts(2);
+  costs = request_cost.GetStructuredCosts();
+
+  EXPECT_EQ(costs["cost_a"]["dim1"], absl::Milliseconds(60));
+  EXPECT_EQ(costs["cost_a"]["dim2"], absl::Milliseconds(30));
+  EXPECT_EQ(costs["cost_b"]["dim1"], absl::Milliseconds(6));
+}
+
 }  // namespace
 }  // namespace tensorflow
