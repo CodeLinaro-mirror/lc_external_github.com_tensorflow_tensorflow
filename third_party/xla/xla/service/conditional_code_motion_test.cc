@@ -2570,6 +2570,66 @@ ENTRY main {
   EXPECT_FALSE(pass.Run(&*module).value());
 }
 
+TEST_F(ConditionalCodeMotionTest, DeterministicHoistingOrder) {
+  absl::string_view hlo_string =
+      R"(
+HloModule DeterministicHoisting
+
+on_true {
+  %arg_tuple.1 = (f32[2]{0}, f32[2]{0}) parameter(0)
+  %gte.1 = f32[2]{0} get-tuple-element(%arg_tuple.1), index=0
+  %gte.2 = f32[2]{0} get-tuple-element(%arg_tuple.1), index=1
+  %add.1 = f32[2]{0} add(%gte.1, %gte.1)
+  %add.2 = f32[2]{0} add(%gte.2, %gte.2)
+  %convert.1 = bf16[2]{0} convert(%add.1)
+  %convert.2 = bf16[2]{0} convert(%add.2)
+  ROOT %tuple.1 = (bf16[2]{0}, bf16[2]{0}) tuple(%convert.1, %convert.2)
+}
+
+on_false {
+  %arg_tuple.2 = (f32[2]{0}, f32[2]{0}) parameter(0)
+  %gte.3 = f32[2]{0} get-tuple-element(%arg_tuple.2), index=0
+  %gte.4 = f32[2]{0} get-tuple-element(%arg_tuple.2), index=1
+  %sub.1 = f32[2]{0} subtract(%gte.3, %gte.3)
+  %sub.2 = f32[2]{0} subtract(%gte.4, %gte.4)
+  %convert.3 = bf16[2]{0} convert(%sub.1)
+  %convert.4 = bf16[2]{0} convert(%sub.2)
+  ROOT %tuple.2 = (bf16[2]{0}, bf16[2]{0}) tuple(%convert.3, %convert.4)
+}
+
+ENTRY main {
+  pred.1 = pred[] parameter(0)
+  arg_tuple.11 = (f32[2]{0}, f32[2]{0}) parameter(1)
+  arg_tuple.22 = (f32[2]{0}, f32[2]{0}) parameter(2)
+  conditional = (bf16[2]{0}, bf16[2]{0}) conditional(pred.1, arg_tuple.11, arg_tuple.22), true_computation=on_true, false_computation=on_false
+  get-first-index = bf16[2]{0} get-tuple-element(conditional), index=0
+  get-second-index = bf16[2]{0} get-tuple-element(conditional), index=1
+  add.3 = bf16[2]{0} add(get-first-index, get-first-index)
+  add.4 = bf16[2]{0} add(get-second-index, get-second-index)
+  ROOT result = (bf16[2]{0}, bf16[2]{0}) tuple(add.3, add.4)
+}
+)";
+
+  auto module = ParseAndReturnVerifiedModule(hlo_string).value();
+  ConditionalCodeMotion pass(true, true);
+  ASSERT_TRUE(pass.Run(&*module).value());
+  std::string baseline_str = module->ToString();
+
+  // Parse all 10 modules first and store them concurrently in memory to force
+  // distinct virtual heap memory layouts and prevent TCMalloc address reuse.
+  std::vector<std::unique_ptr<HloModule>> other_modules;
+  other_modules.reserve(10);
+  for (int i = 0; i < 10; ++i) {
+    other_modules.push_back(ParseAndReturnVerifiedModule(hlo_string).value());
+  }
+
+  for (int i = 0; i < 10; ++i) {
+    ConditionalCodeMotion other_pass(true, true);
+    ASSERT_TRUE(other_pass.Run(other_modules[i].get()).value());
+    EXPECT_EQ(baseline_str, other_modules[i]->ToString());
+  }
+}
+
 }  // namespace conditional_opt
 
 }  // namespace xla
