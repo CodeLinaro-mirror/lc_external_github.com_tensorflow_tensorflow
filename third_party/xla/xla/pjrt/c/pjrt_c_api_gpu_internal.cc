@@ -73,6 +73,7 @@ limitations under the License.
 #include "xla/tsl/platform/statusor.h"
 
 #if GOOGLE_CUDA
+#include "xla/tsl/platform/status_macros.h"
 #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #endif  // GOOGLE_CUDA
 
@@ -284,9 +285,9 @@ absl::StatusOr<TargetConfigAndDevices> GetTargetConfigFromOptions(
   if (target_config_proto.has_value()) {
     return {{*target_config_proto, *host_target_machine_options, {}}};
   }
-  TF_ASSIGN_OR_RETURN(xla::LocalClient * xla_client,
-                      xla::GetGpuXlaClient(/*platform_name=*/std::nullopt,
-                                           /*allowed_devices=*/std::nullopt));
+  ASSIGN_OR_RETURN(xla::LocalClient * xla_client,
+                   xla::GetGpuXlaClient(/*platform_name=*/std::nullopt,
+                                        /*allowed_devices=*/std::nullopt));
   stream_executor::StreamExecutor* executor =
       xla_client->backend().default_stream_executor();
   std::vector<int> device_ids;
