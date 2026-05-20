@@ -441,8 +441,10 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
       DebugOptions::PGLE_STRICTNESS_LEVEL_WARN);
 
   opts.set_xla_gpu_executable_embed_debug_info(true);
-  opts.set_xla_gpu_executable_warn_stuck_timeout_seconds(10);
+  opts.set_xla_gpu_executable_num_compute_streams(0);
+  opts.set_xla_gpu_executable_num_communication_streams(0);
   opts.set_xla_gpu_executable_terminate_timeout_seconds(30);
+  opts.set_xla_gpu_executable_warn_stuck_timeout_seconds(10);
   opts.set_xla_gpu_execution_terminate_timeout("inf");
   opts.set_xla_gpu_execution_progress_tracking(0);
 
@@ -457,6 +459,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_dot_merger_threshold_mb(64);
   opts.set_xla_enable_fast_math(false);
   opts.set_xla_gpu_experimental_parallel_collective_overlap_limit(1);
+  opts.set_xla_gpu_experimental_collective_start_as_early_as_possible(false);
   opts.set_xla_gpu_experimental_parallel_async_compute_limit(2);
   opts.set_xla_pjrt_allow_auto_layout_in_hlo(false);
   opts.set_xla_gpu_enable_scatter_determinism_expander(false);
@@ -2664,18 +2667,32 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_executable_embed_debug_info(),
       "Add debug information to the executable such as HLO module, asm_text "
       "etc."));
+  flag_list->push_back(
+      tsl::Flag("xla_gpu_executable_num_compute_streams",
+                int32_setter_for(
+                    &DebugOptions::set_xla_gpu_executable_num_compute_streams),
+                debug_options->xla_gpu_executable_num_compute_streams(),
+                "Number of additional compute streams to allocate for a GPU "
+                "executable."));
   flag_list->push_back(tsl::Flag(
-      "xla_gpu_executable_warn_stuck_timeout",
+      "xla_gpu_executable_num_communication_streams",
       int32_setter_for(
-          &DebugOptions::set_xla_gpu_executable_warn_stuck_timeout_seconds),
-      debug_options->xla_gpu_executable_warn_stuck_timeout_seconds(),
-      "Set timeout for Rendezvous stuck warning"));
+          &DebugOptions::set_xla_gpu_executable_num_communication_streams),
+      debug_options->xla_gpu_executable_num_communication_streams(),
+      "Number of additional communication streams to allocate for a GPU "
+      "executable."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_executable_terminate_timeout",
       int32_setter_for(
           &DebugOptions::set_xla_gpu_executable_terminate_timeout_seconds),
       debug_options->xla_gpu_executable_terminate_timeout_seconds(),
       "Set timeout for Rendezvous termination"));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_executable_warn_stuck_timeout",
+      int32_setter_for(
+          &DebugOptions::set_xla_gpu_executable_warn_stuck_timeout_seconds),
+      debug_options->xla_gpu_executable_warn_stuck_timeout_seconds(),
+      "Set timeout for Rendezvous stuck warning"));
 
   flag_list->push_back(tsl::Flag(
       "xla_gpu_execution_terminate_timeout",
@@ -2745,6 +2762,14 @@ void MakeDebugOptionsFlags(std::vector<tsl::Flag>* flag_list,
       debug_options->xla_gpu_experimental_parallel_collective_overlap_limit(),
       "This controls how many in-flight collectives "
       "latency hiding scheduler can schedule."));
+  flag_list->push_back(tsl::Flag(
+      "xla_gpu_experimental_collective_start_as_early_as_possible",
+      bool_setter_for(
+          &DebugOptions::
+              set_xla_gpu_experimental_collective_start_as_early_as_possible),
+      debug_options
+          ->xla_gpu_experimental_collective_start_as_early_as_possible(),
+      "This controls whether collectives should start as early as possible."));
   flag_list->push_back(tsl::Flag(
       "xla_gpu_experimental_parallel_async_compute_limit",
       int32_setter_for(
