@@ -184,6 +184,36 @@ absl::StatusOr<bool> ConvertTritonGemmConfig::RunImpl(
   return changed;
 }
 
+absl::Status AssignTileSizesForGemmFusion(
+    experimental::TilingSpace* ts, const HloInstruction* dot,
+    const BlockLevelParameters& block_params, int64_t block_k) {
+  using TilingSpace = experimental::TilingSpace;
+  using DimensionSemantics = TilingSpace::DimensionSemantics;
+  using DimensionInfo = TilingSpace::DimensionInfo;
+
+  if (ts == nullptr) {
+    return absl::InvalidArgumentError("TilingSpace cannot be null");
+  }
+
+  if (block_params.output_tile_sizes.size() != 1) {
+    return absl::InternalError("Only single-result fusions are supported");
+  }
+  const auto& parallel_tile_sizes = block_params.output_tile_sizes[0];
+
+  llvm::SmallVector<int64_t> tile_sizes(ts->num_dimensions(), 1);
+  for (const DimensionInfo& dim : ts->dimensions()) {
+    if (dim.type == DimensionSemantics::kParallel) {
+      if (dim.dim_position >= parallel_tile_sizes.size()) {
+        return absl::InternalError("Parallel dimension position out of bounds");
+      }
+      tile_sizes[dim.id.value()] = parallel_tile_sizes[dim.dim_position];
+    } else if (dim.type == DimensionSemantics::kSequential && dim.hlo == dot) {
+      tile_sizes[dim.id.value()] = block_k;
+    }
+  }
+  return ts->AssignTileSizes(tile_sizes);
+}
+
 // Finds the block-level parameters using the experimental TilingSpace
 // propagation framework.
 absl::StatusOr<BlockLevelParameters> FindBlockLevelParametersWithTilingSpace(
@@ -227,20 +257,13 @@ absl::StatusOr<BlockLevelParameters> FindBlockLevelParametersWithTilingSpace(
   do {
     std::unique_ptr<experimental::TilingSpace> ts =
         experimental::TilingSpace::Create(*fusion_adaptor, mlir_context);
-    llvm::SmallVector<int64_t> tile_sizes(ts->num_dimensions(), 1);
-    for (const DimensionInfo& dim : ts->dimensions()) {
-      if (dim.type == DimensionSemantics::kParallel) {
-        if (dim.dim_position >= parallel_tile_sizes.size()) {
-          return absl::InternalError(
-              "Parallel dimension position out of bounds");
-        }
-        tile_sizes[dim.id.value()] = parallel_tile_sizes[dim.dim_position];
-      } else if (dim.type == DimensionSemantics::kSequential &&
-                 dim.hlo == dot) {
-        tile_sizes[dim.id.value()] = config.block_k;
-      }
-    }
-    absl::Status assign_status = ts->AssignTileSizes(tile_sizes);
+
+    BlockLevelParameters params;
+    params.output_tile_sizes = {std::vector<int64_t>(
+        parallel_tile_sizes.begin(), parallel_tile_sizes.end())};
+
+    absl::Status assign_status =
+        AssignTileSizesForGemmFusion(ts.get(), dot, params, config.block_k);
     if (!assign_status.ok()) {
       VLOG(8) << "Skipping output tile sizes "
               << absl::StrJoin(parallel_tile_sizes, ",")
@@ -280,9 +303,6 @@ absl::StatusOr<BlockLevelParameters> FindBlockLevelParametersWithTilingSpace(
       continue;
     }
 
-    BlockLevelParameters params;
-    params.output_tile_sizes = {std::vector<int64_t>(
-        parallel_tile_sizes.begin(), parallel_tile_sizes.end())};
     params.num_warps = config.num_warps;
     params.num_ctas = config.num_ctas;
     params.num_stages = config.num_stages;

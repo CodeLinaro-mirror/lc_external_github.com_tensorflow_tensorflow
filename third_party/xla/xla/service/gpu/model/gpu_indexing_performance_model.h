@@ -83,6 +83,11 @@ class GpuPerformanceModelWithIndexingAnalysis : public GpuPerformanceModelBase {
       const HloFusionAdaptor& fusion_adaptor,
       const TiledHloComputation& tiled_hlo_computation, int64_t num_warps);
 
+  absl::StatusOr<EstimateRunTimeData> EstimateRunTimeForTiledHloComputation(
+      const HloFusionAdaptor& fusion_adaptor,
+      const experimental::TiledHloComputation& tiled_hlo_computation,
+      int64_t num_warps);
+
   // Estimate the run time of the fusion with the given launch dimensions and
   // output tile sizes.
   //

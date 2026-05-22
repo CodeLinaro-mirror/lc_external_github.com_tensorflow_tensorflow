@@ -1,3 +1,5 @@
+
+
 /* Copyright 2025 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +18,10 @@ limitations under the License.
 #ifndef XLA_BACKENDS_GPU_TRANSFORMS_CONVERT_TRITON_GEMM_CONFIG_H_
 #define XLA_BACKENDS_GPU_TRANSFORMS_CONVERT_TRITON_GEMM_CONFIG_H_
 
+#include <cstdint>
+
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "mlir/IR/MLIRContext.h"
@@ -26,8 +31,10 @@ limitations under the License.
 #include "xla/service/gpu/matmul_utils.h"
 #include "xla/service/gpu/model/block_level_parameters.h"
 #include "xla/stream_executor/device_description.h"
-
 namespace xla::gpu {
+namespace experimental {
+class TilingSpace;
+}  // namespace experimental
 
 // Annotates instructions inside the triton_gemm fusions with the tiling
 // parameters from its backend config.
@@ -64,6 +71,13 @@ absl::StatusOr<BlockLevelParameters> FindBlockLevelParameters(
     const HloInstruction* dot, const TritonGemmConfig& config,
     mlir::MLIRContext* mlir_context,
     const se::DeviceDescription& device_description);
+
+// Assigns tile sizes to the tiling space based on the Gemm config.
+// Maps parallel tile sizes from BlockLevelParameters and sequential K tile
+// size.
+absl::Status AssignTileSizesForGemmFusion(
+    experimental::TilingSpace* ts, const HloInstruction* dot,
+    const BlockLevelParameters& block_params, int64_t block_k);
 
 }  // namespace xla::gpu
 

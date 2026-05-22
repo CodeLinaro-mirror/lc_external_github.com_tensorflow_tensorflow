@@ -589,6 +589,17 @@ GpuPerformanceModelWithIndexingAnalysis::EstimateRunTimeForTiledHloComputation(
 }
 
 absl::StatusOr<EstimateRunTimeData>
+GpuPerformanceModelWithIndexingAnalysis::EstimateRunTimeForTiledHloComputation(
+    const HloFusionAdaptor& fusion_adaptor,
+    const experimental::TiledHloComputation& tiled_hlo_computation,
+    int64_t num_warps) {
+  return EstimateRunTimeForTiledHloComputationImpl(
+      fusion_adaptor, tiled_hlo_computation, num_warps, *device_info_,
+      shape_size_,
+      [this](const HloInstruction* hlo) { return FlopsPerElement(hlo); });
+}
+
+absl::StatusOr<EstimateRunTimeData>
 GpuPerformanceModelWithIndexingAnalysis::EstimateRunTimeForTiledFusion(
     const HloFusionAdaptor& fusion_adaptor,
     const BlockLevelParameters& block_level_parameters) {
