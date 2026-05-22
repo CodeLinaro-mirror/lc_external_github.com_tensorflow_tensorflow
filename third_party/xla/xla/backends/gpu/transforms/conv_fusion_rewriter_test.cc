@@ -300,6 +300,46 @@ TEST_F(ConvFusionRewriterUnitTest, TestConvInt8ToFloatBiasSideInput) {
               /*run_algebraic_simplifier=*/true);
 }
 
+TEST_F(ConvFusionRewriterUnitTest, TestConvNCHWAddNotFused) {
+  RunAndMatch(R"(
+    HloModule Test
+
+    ENTRY Test {
+      input = f32[1,17,9,9] parameter(0)
+      filter = f32[3,3,17,32] parameter(1)
+      bias = f32[32] parameter(2)
+      bias_broadcast = f32[1,32,9,9] broadcast(bias), dimensions={1}
+
+      conv = f32[1,32,9,9] convolution(input, filter),
+               window={size=3x3 pad=1_1x1_1},
+               dim_labels=bf01_01io->bf01
+      ROOT sum = add(conv, bias_broadcast)
+    })",
+              m::Add(m::Fusion(m::Parameter(0), m::Parameter(1))
+                         .WithFusionKind(HloInstruction::FusionKind::kCustom),
+                     m::Broadcast()));
+}
+
+TEST_F(ConvFusionRewriterUnitTest, TestConvNHWCAddFused) {
+  RunAndMatch(R"(
+    HloModule Test
+
+    ENTRY Test {
+      input = f32[1,9,9,17] parameter(0)
+      filter = f32[32,3,3,17] parameter(1)
+      bias = f32[32] parameter(2)
+      bias_broadcast = f32[1,9,9,32] broadcast(bias), dimensions={3}
+
+      conv = f32[1,9,9,32] convolution(input, filter),
+               window={size=3x3 pad=1_1x1_1},
+               dim_labels=b01f_o01i->b01f
+      ROOT sum = add(conv, bias_broadcast)
+    })",
+              m::Fusion(m::Parameter(0), m::Parameter(1), m::Broadcast())
+                  .WithFusionKind(HloInstruction::FusionKind::kCustom)
+                  .WithShape(F32, {1, 9, 9, 32}));
+}
+
 TEST_F(ConvFusionRewriterUnitTest, FuseAlpha) {
   MAYBE_SKIP_TEST("I8");
   RunAndMatch(R"(
