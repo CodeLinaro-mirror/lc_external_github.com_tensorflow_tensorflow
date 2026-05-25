@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <cstdint>
 #include <memory>
+#include <new>
 #include <optional>
 #include <variant>
 
@@ -61,7 +62,10 @@ class HostExecutor : public StreamExecutorCommon {
 
   absl::StatusOr<std::unique_ptr<MemoryAllocation>> HostMemoryAllocate(
       uint64_t size) override {
-    void* ptr = new char[size];
+    void* ptr = new (std::nothrow) char[size];
+    if (ptr == nullptr) {
+      return absl::ResourceExhaustedError("Host memory allocation failed");
+    }
     return std::make_unique<GenericMemoryAllocation>(
         ptr, size,
         [](void* ptr, uint64_t size) { delete[] static_cast<char*>(ptr); });

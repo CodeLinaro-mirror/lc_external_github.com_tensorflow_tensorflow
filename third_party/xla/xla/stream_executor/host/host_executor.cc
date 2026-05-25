@@ -17,11 +17,10 @@ limitations under the License.
 // class declaration].
 #include "xla/stream_executor/host/host_executor.h"
 
-#include <stdint.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <new>
 #include <optional>
 #include <string>
 #include <utility>
@@ -48,6 +47,7 @@ limitations under the License.
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
+#include "xla/tsl/platform/env.h"
 #include "xla/tsl/platform/profile_utils/cpu_utils.h"
 #include "xla/tsl/platform/threadpool.h"
 #include "tsl/platform/cpu_info.h"
@@ -55,11 +55,6 @@ limitations under the License.
 
 namespace stream_executor {
 namespace host {
-
-HostStream* AsHostStream(Stream* stream) {
-  DCHECK(stream != nullptr);
-  return dynamic_cast<HostStream*>(stream);
-}
 
 absl::Status HostExecutor::Init() {
   thread_pool_ = std::make_shared<tsl::thread::ThreadPool>(
@@ -118,8 +113,8 @@ HostExecutor::CreateDeviceDescription(int device_ordinal) {
 
   desc.set_device_address_bits(64);
 
-  // TODO(rspringer): How to report a value that's based in reality but that
-  // doesn't result in thrashing or other badness? 4GiB chosen arbitrarily.
+  // TODO: b/511236711 - How to report a value that's based in reality but
+  // that doesn't result in thrashing or other badness? 4GiB chosen arbitrarily.
   desc.set_device_memory_size(static_cast<uint64_t>(4) * 1024 * 1024 * 1024);
 
   float cycle_counter_frequency = static_cast<float>(
@@ -133,8 +128,10 @@ HostExecutor::CreateDeviceDescription(int device_ordinal) {
 }
 
 absl::StatusOr<std::unique_ptr<Stream>> HostExecutor::CreateStream(
-    std::optional<std::variant<StreamPriority, int>> priority) {
-  const HostStreamFactory* factory = HostStreamFactory::GetFactory();
+    [[maybe_unused]] std::optional<std::variant<StreamPriority, int>>
+        priority) {
+  std::shared_ptr<const HostStreamFactory> factory =
+      HostStreamFactory::GetFactory();
   if (factory != nullptr) {
     return factory->CreateStream(this);
   }
@@ -146,7 +143,12 @@ HostExecutor::CreateMemoryAllocator(MemorySpace type) {
   if (type == MemorySpace::kHost) {
     return std::make_unique<GenericMemoryAllocator>(
         [](uint64_t size) -> absl::StatusOr<std::unique_ptr<MemoryAllocation>> {
-          void* ptr = new char[size];
+          // Use new (std::nothrow) to handle allocation failures gracefully.
+          void* ptr = new (std::nothrow) char[size];
+          if (ptr == nullptr) {
+            return absl::ResourceExhaustedError(
+                "Host memory allocation failed");
+          }
           return std::make_unique<GenericMemoryAllocation>(
               ptr, size, [](void* location, uint64_t size) {
                 delete[] static_cast<char*>(location);
