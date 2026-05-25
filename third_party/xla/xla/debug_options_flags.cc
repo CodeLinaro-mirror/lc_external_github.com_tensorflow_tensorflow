@@ -463,7 +463,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_experimental_collective_start_as_early_as_possible(false);
   opts.set_xla_gpu_experimental_parallel_async_compute_limit(2);
   opts.set_xla_pjrt_allow_auto_layout_in_hlo(false);
-  opts.set_xla_gpu_enable_scatter_determinism_expander(false);
+  opts.set_xla_gpu_enable_scatter_determinism_expander(true);
   opts.set_xla_gpu_unsupported_enable_all_reduce_decomposer(false);
   opts.set_xla_gpu_unsupported_enable_ragged_all_to_all_decomposer(false);
   opts.set_xla_gpu_unsupported_use_all_reduce_one_shot_kernel(true);

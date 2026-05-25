@@ -762,8 +762,7 @@ absl::Status RunOptimizationPasses(
   // Rewrite Cholesky.
   pipeline.AddPass<CholeskyExpander>();
 
-  if (RequireDeterminism(hlo_module->config()) ||
-      debug_options.xla_gpu_enable_scatter_determinism_expander()) {
+  if (RequireDeterminism(hlo_module->config())) {
     // Scatter can be indeterministic if indices are not unique or a non
     // associative combiner function is used. Eliminate these Scatter ops.
     if (debug_options.xla_gpu_enable_scatter_determinism_expander()) {
