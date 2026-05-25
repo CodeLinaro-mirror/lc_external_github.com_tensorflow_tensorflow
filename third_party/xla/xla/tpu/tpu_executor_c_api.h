@@ -180,23 +180,20 @@ void TpuTransferManager_TransferLiteralToInfeed(XLA_TransferManager* manager,
                                                 SE_StreamExecutor* executor,
                                                 XLA_Literal* c_literal,
                                                 TF_Status* status);
-void TpuTransferManager_TransferBuffersToInfeed(XLA_TransferManager* manager,
-                                                SE_StreamExecutor* executor,
-                                                uint32_t** buffers_array,
-                                                int64_t* buffers_size_in_uint32,
-                                                int64_t buffers_array_size,
-                                                TF_Status* status);
+void TpuTransferManager_TransferBuffersToInfeed(
+    XLA_TransferManager* manager, SE_StreamExecutor* executor,
+    const uint32_t* const* buffers_array, int64_t* buffers_size_in_uint32,
+    int64_t buffers_array_size, TF_Status* status);
 void TpuTransferManager_TransferLiteralFromOutfeed(
     XLA_TransferManager* manager, SE_StreamExecutor* executor,
     XLA_Shape* shape /*deprecated*/, XLA_Literal* c_literal, TF_Status* status);
 void TpuTransferManager_ResetDevices(XLA_TransferManager* manager,
                                      SE_StreamExecutor** executors,
                                      int64_t num_executors, TF_Status* status);
-void TpuTransferManager_ReadDynamicShapes(SE_Stream* stream,
-                                          XLA_ShapedBuffer* buffer,
-                                          const XLA_Shape& original_shape,
-                                          XLA_Shape* updated_shape,
-                                          TF_Status* status);
+void TpuTransferManager_ReadDynamicShapes(
+    SE_Stream* stream, XLA_ShapedBuffer* buffer,
+    const XLA_Shape* original_shape,  // NOLINT
+    XLA_Shape* updated_shape, TF_Status* status);
 
 XLA_ComputationPlacer* TpuComputationPlacer_New();
 void TpuComputationPlacer_Free(XLA_ComputationPlacer* placer);

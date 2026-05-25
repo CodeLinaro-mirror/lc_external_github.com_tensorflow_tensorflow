@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -81,7 +82,7 @@ xla::Shape TpuTransferManager::HostShapeToDeviceShape(
 absl::Status TpuTransferManager::TransferLiteralToDeviceAsync(
     stream_executor::Stream* stream, const xla::LiteralSlice& literal,
     const xla::ShapedBuffer& device_buffer,
-    const TransferMetadata* transfer_metadata) {
+    const TransferMetadata* /*transfer_metadata*/) {
   StatusHelper status;
 
   XLA_Literal c_literal;
@@ -106,7 +107,7 @@ absl::Status TpuTransferManager::TransferLiteralToInfeed(
   XLA_Literal c_literal;
   ApiConverter::ToC(literal, &c_literal);
   auto* tpu_executor =
-      static_cast<stream_executor::tpu::TpuExecutor*>(executor);
+      absl::down_cast<stream_executor::tpu::TpuExecutor*>(executor);
 
   stream_executor::tpu::ExecutorApiFn()
       ->TpuTransferManager_TransferLiteralToInfeedFn(
@@ -122,17 +123,17 @@ absl::Status TpuTransferManager::TransferBuffersToInfeed(
     const std::deque<tensorflow::tpu::NoncopyableBuffer>& buffers) {
   StatusHelper status;
   auto* tpu_executor =
-      static_cast<stream_executor::tpu::TpuExecutor*>(executor);
+      absl::down_cast<stream_executor::tpu::TpuExecutor*>(executor);
 
   std::vector<int64_t> buffers_size;
-  std::vector<uint32_t*> buffers_array;
+  std::vector<const uint32_t*> buffers_array;
 
   buffers_size.reserve(buffers.size());
   buffers_array.reserve(buffers.size());
 
-  for (int64_t i = 0; i < buffers.size(); ++i) {
+  for (size_t i = 0; i < buffers.size(); ++i) {
     absl::Span<const uint32_t> span = buffers[i].const_data<uint32_t>();
-    buffers_array.push_back(const_cast<uint32_t*>(span.data()));
+    buffers_array.push_back(span.data());
     buffers_size.push_back(span.size());
   }
 
@@ -150,7 +151,7 @@ absl::Status TpuTransferManager::TransferLiteralFromOutfeed(
   XLA_Shape c_shape;
   XLA_Literal c_literal;
   auto* tpu_executor =
-      static_cast<stream_executor::tpu::TpuExecutor*>(executor);
+      absl::down_cast<stream_executor::tpu::TpuExecutor*>(executor);
 
   ApiConverter::ToC(literal.shape(), &c_shape);
   ApiConverter::ToC(literal, &c_literal);
@@ -171,9 +172,10 @@ absl::Status TpuTransferManager::ResetDevices(
   StatusHelper status;
   std::vector<SE_StreamExecutor*> se;
   se.reserve(executor.size());
-  for (int64_t i = 0; i < executor.size(); ++i) {
-    se.push_back(static_cast<stream_executor::tpu::TpuExecutor*>(executor[i])
-                     ->se_executor());
+  for (size_t i = 0; i < executor.size(); ++i) {
+    se.push_back(
+        absl::down_cast<stream_executor::tpu::TpuExecutor*>(executor[i])
+            ->se_executor());
   }
 
   stream_executor::tpu::ExecutorApiFn()->TpuTransferManager_ResetDevicesFn(
@@ -210,8 +212,8 @@ void TpuTransferManager::TransferLiteralFromDevice(
     stream_executor::Stream* stream, const xla::ShapedBuffer& device_buffer,
     xla::MutableBorrowingLiteral literal,
     std::function<void(absl::Status)> done,
-    const TransferMetadata* transfer_metadata) {
-  TransferFromDeviceState* state = new TransferFromDeviceState;
+    const TransferMetadata* /*transfer_metadata*/) {
+  auto state = std::make_unique<TransferFromDeviceState>();
   state->remaining_transfers = 1;
   state->done = done;
   XLA_ShapedBuffer c_device_buffer;
@@ -223,7 +225,7 @@ void TpuTransferManager::TransferLiteralFromDevice(
       ->TpuTransferManager_TransferLiteralFromDeviceFn(
           manager_, TpuPlatform::GetRegisteredPlatform()->LookupStream(stream),
           &c_device_buffer, &c_literal, TransferLiteralFromDeviceTrampoline,
-          state);
+          state.release());
   ApiConverter::Destroy(&c_device_buffer);
   ApiConverter::Destroy(&c_literal);
 }
@@ -245,12 +247,12 @@ absl::StatusOr<xla::Shape> TpuTransferManager::ChooseCompactLayoutForShape(
     const xla::Shape& host_shape) const {
   XLA_Shape c_host_shape;
   ApiConverter::ToC(host_shape, &c_host_shape);
-  XLA_Shape c_output;
+  XLA_Shape c_output = {};
   StatusHelper status;
   stream_executor::tpu::ExecutorApiFn()
       ->TpuTransferManager_ChooseCompactLayoutForShapeFn(
           manager_, &c_host_shape, &c_output, status.c_status);
-  // TODO(skyewm): use a scoped version of XLA_Shape
+  // TODO: b/511236871 - use a scoped version of XLA_Shape
   ApiConverter::Destroy(&c_host_shape);
   if (!status.status().ok()) {
     ApiConverter::Destroy(&c_output);
@@ -293,13 +295,15 @@ absl::Status TpuTransferManager::WriteSingleTupleIndexTable(
     stream_executor::Stream* stream,
     absl::Span<const stream_executor::DeviceAddressBase> elements,
     const xla::Shape& shape, stream_executor::DeviceAddressBase* region) {
-  CHECK_GT(elements.size(), 0);
-  SE_DeviceAddressBase* elements_bases =
-      new SE_DeviceAddressBase[elements.size()];
-  for (int i = 0; i < elements.size(); i++) {
-    elements_bases[i] =
+  if (elements.empty()) {
+    return absl::OkStatus();
+  }
+  std::vector<SE_DeviceAddressBase> elements_bases;
+  elements_bases.reserve(elements.size());
+  for (size_t i = 0; i < elements.size(); i++) {
+    elements_bases.push_back(
         SE_DeviceAddressBase{const_cast<void*>(elements[i].opaque()),
-                             elements[i].size(), elements[i].payload()};
+                             elements[i].size(), elements[i].payload()});
   }
   XLA_Shape c_shape;
   ApiConverter::ToC(shape, &c_shape);
@@ -310,10 +314,9 @@ absl::Status TpuTransferManager::WriteSingleTupleIndexTable(
   stream_executor::tpu::ExecutorApiFn()
       ->TpuTransferManager_WriteSingleTupleIndexTableFn(
           manager_, TpuPlatform::GetRegisteredPlatform()->LookupStream(stream),
-          elements_bases, elements.size(), &c_shape, &region_base,
+          elements_bases.data(), elements.size(), &c_shape, &region_base,
           status.c_status);
 
-  delete[] elements_bases;
   ApiConverter::Destroy(&c_shape);
   return status.status();
 }
@@ -326,9 +329,9 @@ absl::Status TpuTransferManager::LinearizeToBuffers(
   XLA_Shape c_device_shape;
   ApiConverter::ToC(device_shape, &c_device_shape);
 
-  char** buffers_array;
-  int64_t* buffers_size;
-  int64_t buffers_array_size;
+  char** buffers_array = nullptr;
+  int64_t* buffers_size = nullptr;
+  int64_t buffers_array_size = 0;
   StatusHelper status;
 
   stream_executor::tpu::ExecutorApiFn()
@@ -336,15 +339,21 @@ absl::Status TpuTransferManager::LinearizeToBuffers(
           manager_, &c_literal, &c_device_shape, &buffers_array, &buffers_size,
           &buffers_array_size, status.c_status);
 
-  for (int64_t i = 0; i < buffers_array_size; ++i) {
-    tpu::NoncopyableBuffer buf(buffers_size[i]);
-    memcpy(buf.mutable_data<uint8_t>().data(), buffers_array[i],
-           buffers_size[i]);
-    buffers->push_back(std::move(buf));
+  if (status.ok()) {
+    if (buffers_array != nullptr && buffers_size != nullptr) {
+      for (int64_t i = 0; i < buffers_array_size; ++i) {
+        tpu::NoncopyableBuffer buf(buffers_size[i]);
+        memcpy(buf.mutable_data<uint8_t>().data(), buffers_array[i],
+               buffers_size[i]);
+        buffers->push_back(std::move(buf));
+      }
+    }
   }
 
-  stream_executor::tpu::ExecutorApiFn()->TpuTransferManager_FreeBuffersFn(
-      buffers_array, buffers_size, buffers_array_size);
+  if (buffers_array != nullptr || buffers_size != nullptr) {
+    stream_executor::tpu::ExecutorApiFn()->TpuTransferManager_FreeBuffersFn(
+        buffers_array, buffers_size, buffers_array_size);
+  }
 
   ApiConverter::Destroy(&c_device_shape);
   ApiConverter::Destroy(&c_literal);
@@ -358,11 +367,11 @@ absl::Status TpuTransferManager::ReadDynamicShapes(
   XLA_Shape c_device_shape;
   ApiConverter::ToC(*device_buffer, &c_device_buffer);
   ApiConverter::ToC(*device_shape, &c_device_shape);
-  XLA_Shape c_updated_shape;
+  XLA_Shape c_updated_shape = {};
   StatusHelper status;
   stream_executor::tpu::ExecutorApiFn()->TpuTransferManager_ReadDynamicShapesFn(
       TpuPlatform::GetRegisteredPlatform()->LookupStream(stream),
-      &c_device_buffer, c_device_shape, &c_updated_shape, status.c_status);
+      &c_device_buffer, &c_device_shape, &c_updated_shape, status.c_status);
   ApiConverter::Destroy(&c_device_buffer);
   ApiConverter::Destroy(&c_device_shape);
   if (!status.ok()) {
