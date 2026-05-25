@@ -13,26 +13,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-// Implementation of HostExecutor class [of those methods not defined in the
+/// Implementation of HostExecutor class [of those methods not defined in the
 // class declaration].
 #include "xla/stream_executor/host/host_executor.h"
 
-#include <stdint.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 #include <variant>
 
 #include "absl/log/check.h"
-#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
-#include "absl/strings/string_view.h"
 #include "xla/stream_executor/device_address.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/event.h"
@@ -45,30 +40,21 @@ limitations under the License.
 #include "xla/stream_executor/kernel_spec.h"
 #include "xla/stream_executor/memory_allocation.h"
 #include "xla/stream_executor/memory_allocator.h"
-#include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/tsl/platform/profile_utils/cpu_utils.h"
-#include "xla/tsl/platform/threadpool.h"
 #include "tsl/platform/cpu_info.h"
 #include "tsl/platform/mem.h"
 
 namespace stream_executor {
 namespace host {
 
-HostStream* AsHostStream(Stream* stream) {
-  DCHECK(stream != nullptr);
-  return dynamic_cast<HostStream*>(stream);
-}
-
 absl::Status HostExecutor::Init() {
-  thread_pool_ = std::make_shared<tsl::thread::ThreadPool>(
-      tsl::Env::Default(), "host-executor", tsl::port::MaxParallelism());
   return absl::OkStatus();
 }
 
 absl::StatusOr<std::unique_ptr<Kernel>> HostExecutor::LoadKernel(
-    const KernelLoaderSpec& spec) {
+    const KernelLoaderSpec& /*spec*/) {
   return absl::InternalError("No method of loading host kernel provided");
 }
 
@@ -95,18 +81,18 @@ void HostExecutor::Deallocate(DeviceAddressBase* mem) {
 absl::Status HostExecutor::SynchronousMemcpy(DeviceAddressBase* gpu_dst,
                                              const void* host_src,
                                              uint64_t size) {
-  memcpy(gpu_dst->opaque(), host_src, size);
+  std::memcpy(gpu_dst->opaque(), host_src, size);
   return absl::OkStatus();
 }
 
 absl::Status HostExecutor::SynchronousMemcpy(void* host_dst,
                                              const DeviceAddressBase& gpu_src,
                                              uint64_t size) {
-  memcpy(host_dst, gpu_src.opaque(), size);
+  std::memcpy(host_dst, gpu_src.opaque(), size);
   return absl::OkStatus();
 }
 
-void HostExecutor::DeallocateStream(Stream* stream) {}
+void HostExecutor::DeallocateStream(Stream* /*stream*/) {}
 
 absl::StatusOr<std::unique_ptr<Event>> HostExecutor::CreateEvent() {
   return std::make_unique<HostEvent>();
@@ -118,7 +104,7 @@ HostExecutor::CreateDeviceDescription(int device_ordinal) {
 
   desc.set_device_address_bits(64);
 
-  // TODO(rspringer): How to report a value that's based in reality but that
+  // TODO: b/511236321 - How to report a value that's based in reality but that
   // doesn't result in thrashing or other badness? 4GiB chosen arbitrarily.
   desc.set_device_memory_size(static_cast<uint64_t>(4) * 1024 * 1024 * 1024);
 
@@ -134,7 +120,7 @@ HostExecutor::CreateDeviceDescription(int device_ordinal) {
 
 absl::StatusOr<std::unique_ptr<Stream>> HostExecutor::CreateStream(
     std::optional<std::variant<StreamPriority, int>> priority) {
-  const HostStreamFactory* factory = HostStreamFactory::GetFactory();
+  std::shared_ptr<HostStreamFactory> factory = HostStreamFactory::GetFactory();
   if (factory != nullptr) {
     return factory->CreateStream(this);
   }
@@ -154,7 +140,7 @@ HostExecutor::CreateMemoryAllocator(MemorySpace type) {
         });
   }
   return absl::UnimplementedError(
-      absl::StrFormat("Unsupported memory type %d", type));
+      absl::StrFormat("Unsupported memory type %d", static_cast<int>(type)));
 }
 
 }  // namespace host

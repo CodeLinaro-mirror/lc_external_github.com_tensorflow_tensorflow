@@ -96,6 +96,7 @@ cc_library(
     deps = [
         ":host_stream",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/base:no_destructor",
         "@com_google_absl//absl/synchronization",
     ],
 )
@@ -125,13 +126,10 @@ cc_library(
         "//xla/stream_executor:stream",
         "//xla/stream_executor:stream_executor_common",
         "//xla/stream_executor:stream_executor_h",
-        "//xla/tsl/platform:env",
         "//xla/tsl/platform/profile_utils:profile_utils_cpu_utils",
-        "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@tsl//tsl/platform:platform_port",
     ],

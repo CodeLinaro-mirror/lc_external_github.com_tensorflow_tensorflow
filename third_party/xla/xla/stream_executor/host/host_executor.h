@@ -35,7 +35,6 @@ limitations under the License.
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/stream_executor/stream_executor_common.h"
-#include "xla/tsl/platform/threadpool.h"
 
 namespace stream_executor {
 namespace host {
@@ -103,7 +102,6 @@ class HostExecutor : public StreamExecutorCommon {
 
  private:
   int device_ordinal_;
-  std::shared_ptr<tsl::thread::ThreadPool> thread_pool_;
 };
 
 }  // namespace host
