@@ -112,7 +112,7 @@ PJRT_DEFINE_STRUCT_TRAITS(PJRT_Extension_Base, next);
 // Changes include:
 // * Adding a new field to the PJRT_Api or argument structs
 // * Renaming a method or argument (doesn't affect ABI)
-#define PJRT_API_MINOR 110
+#define PJRT_API_MINOR 111
 
 // The plugin should set the major_version and minor_version of
 // PJRT_Api.pjrt_api_version to be the `PJRT_API_MAJOR` and `PJRT_API_MINOR` in
@@ -2280,9 +2280,14 @@ struct PJRT_Executable_DeserializeAndLoad_Args {
   // from the serialized executable).
   const char* overridden_serialized_compile_options;
   size_t overridden_serialized_compile_options_size;
+
+  const int32_t* load_options_computation_origin;
+  size_t load_options_computation_origin_size;
+
+  PJRT_MultiSlice_Config* multi_slice_config;
 };
 PJRT_DEFINE_STRUCT_TRAITS(PJRT_Executable_DeserializeAndLoad_Args,
-                          overridden_serialized_compile_options_size);
+                          multi_slice_config);
 
 // Deserializes an executable serialized by `PJRT_Executable_Serialize`.
 // `serialized_executable` must have been produced by the same platform and

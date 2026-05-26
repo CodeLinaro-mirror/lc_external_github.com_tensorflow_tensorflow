@@ -1,5 +1,9 @@
 # PJRT C API changelog
 
+## 0.111
+
+* Added `load_options_computation_origin` and `multi_slice_config` to `PJRT_Executable_DeserializeAndLoad_Args`.
+
 ## 0.110
 
 * Added GetMemorySpaceKindIds() const to PJRT_TopologyDescription.
