@@ -47,10 +47,27 @@ TEST(PrimitiveUtilTest, StringToPrimitiveType) {
 }
 
 TEST(PrimitiveUtilTest, FloatTypes) {
-  EXPECT_EQ(primitive_util::SignificandWidth(F32), 24);
-  EXPECT_EQ(primitive_util::SignificandWidth(BF16), 8);
-  EXPECT_EQ(primitive_util::ExponentWidth(F32), 8);
-  EXPECT_EQ(primitive_util::ExponentWidth(BF16), 8);
+  struct FpTestData {
+    PrimitiveType type;
+    int significand_width;
+    int exponent_width;
+  };
+
+  const FpTestData kTestData[] = {
+      {F32, 24, 8},          {BF16, 8, 8},       {F4E2M1FN, 2, 2},
+      {F8E3M4, 5, 3},        {F8E4M3, 4, 4},     {F8E4M3FN, 4, 4},
+      {F8E4M3B11FNUZ, 4, 4}, {F8E4M3FNUZ, 4, 4}, {F8E5M2, 3, 5},
+      {F8E5M2FNUZ, 3, 5},    {F8E8M0FNU, 1, 8},  {F16, 11, 5},
+      {F64, 53, 11}};
+
+  for (const auto& data : kTestData) {
+    EXPECT_EQ(primitive_util::SignificandWidth(data.type),
+              data.significand_width)
+        << "Failed for " << PrimitiveType_Name(data.type);
+    EXPECT_EQ(primitive_util::ExponentWidth(data.type), data.exponent_width)
+        << "Failed for " << PrimitiveType_Name(data.type);
+  }
+
   EXPECT_EQ(primitive_util::UnderflowExponent(F32), -125);
   EXPECT_EQ(primitive_util::UnderflowExponent(BF16), -125);
   EXPECT_EQ(primitive_util::OverflowExponent(F32), 128);

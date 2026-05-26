@@ -23,6 +23,7 @@ limitations under the License.
 #include "absl/base/optimization.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
+#include "absl/numeric/bits.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/string_view.h"
@@ -43,16 +44,13 @@ int SignificandWidth(PrimitiveType type) {
 }
 
 int ExponentWidth(PrimitiveType type) {
-  // Per the IEEE-754 standard: a floating point type is stored as a sign bit, a
-  // biased exponent and a trailing significand field.
-  int total_bit_width = BitWidth(type);
-  // This field contains all bits in the significand other than the leading
-  // digit which is implied by the exponent.
-  int trailing_significand_field_width = SignificandWidth(type) - 1;
-  // The sign is encoded with a single bit.
-  int kSignBitWidth = 1;
-  // The remaining bits are used for encoding the biased exponent.
-  return total_bit_width - (trailing_significand_field_width + kSignBitWidth);
+  int max_exp = OverflowExponent(type);
+  int min_exp = UnderflowExponent(type);
+  int width = absl::bit_width(static_cast<unsigned>(max_exp - min_exp + 2));
+  if (!HasInfinity(type) || !HasNaN(type) || !HasNegativeZero(type)) {
+    --width;
+  }
+  return width;
 }
 
 int UnderflowExponent(PrimitiveType type) {
