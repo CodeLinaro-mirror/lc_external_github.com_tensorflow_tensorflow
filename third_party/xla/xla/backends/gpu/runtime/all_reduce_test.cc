@@ -142,7 +142,7 @@ class AllReduceKernelTest : public ::testing::Test,
           /*signal_buffer_size=*/aligned_signal_size;
       allocated_buffers.emplace_back(executor->AllocateArray<T>(
           total_size,
-          static_cast<int64_t>(stream_executor::MemorySpace::kP2P)));
+          static_cast<int64_t>(stream_executor::MemorySpace::kCollective)));
       input_buffers.emplace_back(
           allocated_buffers[i].GetByteSlice(0, aligned_input_size));
       TF_RET_CHECK(!input_buffers[i].is_null());
