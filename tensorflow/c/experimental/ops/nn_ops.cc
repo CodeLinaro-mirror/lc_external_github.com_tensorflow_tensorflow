@@ -25,8 +25,8 @@ limitations under the License.
 #include "tensorflow/c/eager/abstract_operation.h"
 #include "tensorflow/c/eager/abstract_tensor_handle.h"
 #include "tensorflow/c/eager/tracing_utils.h"
-#include "xla/tsl/platform/errors.h"
-#include "tensorflow/core/platform/status.h"
+#include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/platform/errors.h"
 
 using tensorflow::tracing::MaybeSetOpName;
 
@@ -44,8 +44,8 @@ namespace ops {
 //
 //   Inputs are the logits, not probabilities.
 absl::Status SparseSoftmaxCrossEntropyWithLogits(
-    AbstractContext* ctx, AbstractTensorHandle* const features,
-    AbstractTensorHandle* const labels, AbstractTensorHandle** loss,
+    AbstractContext* ctx, AbstractTensorHandle* features,
+    AbstractTensorHandle* labels, AbstractTensorHandle** loss,
     AbstractTensorHandle** backprop, const char* name,
     const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -57,8 +57,10 @@ absl::Status SparseSoftmaxCrossEntropyWithLogits(
   int num_retvals = 2;
   AbstractTensorHandle* temp_outputs[2];
   absl::Status status = op_ptr->Execute(temp_outputs, &num_retvals);
-  *loss = temp_outputs[0];
-  *backprop = temp_outputs[1];
+  if (status.ok()) {
+    *loss = temp_outputs[0];
+    *backprop = temp_outputs[1];
+  }
   return status;
 }
 
@@ -66,9 +68,8 @@ absl::Status SparseSoftmaxCrossEntropyWithLogits(
 // Summary: Computes rectified linear gradients for a Relu operation.
 //
 // Description:
-absl::Status ReluGrad(AbstractContext* ctx,
-                      AbstractTensorHandle* const gradients,
-                      AbstractTensorHandle* const features,
+absl::Status ReluGrad(AbstractContext* ctx, AbstractTensorHandle* gradients,
+                      AbstractTensorHandle* features,
                       AbstractTensorHandle** backprops, const char* name,
                       const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -88,7 +89,7 @@ absl::Status ReluGrad(AbstractContext* ctx,
 //   Example usage:
 //   >>> tf.nn.relu([-2., 0., 3.]).numpy()
 //   array([0., 0., 3.], dtype=float32)
-absl::Status Relu(AbstractContext* ctx, AbstractTensorHandle* const features,
+absl::Status Relu(AbstractContext* ctx, AbstractTensorHandle* features,
                   AbstractTensorHandle** activations, const char* name,
                   const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -105,10 +106,10 @@ absl::Status Relu(AbstractContext* ctx, AbstractTensorHandle* const features,
 // Description:
 //   This is a special case of `tf.add` where `bias` is restricted to be 1-D.
 //   Broadcasting is supported, so `value` may have any number of dimensions.
-absl::Status BiasAdd(AbstractContext* ctx, AbstractTensorHandle* const value,
-                     AbstractTensorHandle* const bias,
-                     AbstractTensorHandle** output, const char* data_format,
-                     const char* name, const char* raw_device_name) {
+absl::Status BiasAdd(AbstractContext* ctx, AbstractTensorHandle* value,
+                     AbstractTensorHandle* bias, AbstractTensorHandle** output,
+                     const char* data_format, const char* name,
+                     const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
   TF_RETURN_IF_ERROR(op_ptr->Reset("BiasAdd", raw_device_name));
   TF_RETURN_IF_ERROR(MaybeSetOpName(op_ptr.get(), name));
@@ -128,7 +129,7 @@ absl::Status BiasAdd(AbstractContext* ctx, AbstractTensorHandle* const value,
 //   For NHWC data format, the feature dimension is the last. For NCHW data
 //   format, the feature dimension is the third-to-last.
 absl::Status BiasAddGrad(AbstractContext* ctx,
-                         AbstractTensorHandle* const out_backprop,
+                         AbstractTensorHandle* out_backprop,
                          AbstractTensorHandle** output, const char* data_format,
                          const char* name, const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());

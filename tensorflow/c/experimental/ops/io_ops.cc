@@ -17,7 +17,7 @@ limitations under the License.
 
 #include "tensorflow/c/experimental/ops/io_ops.h"
 
-#include <vector>
+#include <cstring>
 
 #include "absl/status/status.h"
 #include "absl/types/span.h"
@@ -25,9 +25,8 @@ limitations under the License.
 #include "tensorflow/c/eager/abstract_operation.h"
 #include "tensorflow/c/eager/abstract_tensor_handle.h"
 #include "tensorflow/c/eager/tracing_utils.h"
-#include "xla/tsl/platform/errors.h"
-#include "tensorflow/core/framework/types.pb.h"
-#include "tensorflow/core/platform/status.h"
+#include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/platform/errors.h"
 
 using tensorflow::tracing::MaybeSetOpName;
 
@@ -53,9 +52,9 @@ namespace ops {
 //
 //   Callers must ensure all the named tensors are indeed stored in the
 //   checkpoint.
-absl::Status RestoreV2(AbstractContext* ctx, AbstractTensorHandle* const prefix,
-                       AbstractTensorHandle* const tensor_names,
-                       AbstractTensorHandle* const shape_and_slices,
+absl::Status RestoreV2(AbstractContext* ctx, AbstractTensorHandle* prefix,
+                       AbstractTensorHandle* tensor_names,
+                       AbstractTensorHandle* shape_and_slices,
                        absl::Span<AbstractTensorHandle*> tensors,
                        absl::Span<DataType> dtypes, const char* name,
                        const char* raw_device_name) {
@@ -78,9 +77,9 @@ absl::Status RestoreV2(AbstractContext* ctx, AbstractTensorHandle* const prefix,
 //   By default, saves the named tensors in full.  If the caller wishes to save
 //   specific slices of full tensors, "shape_and_slices" should be non-empty
 //   strings and correspondingly well-formed.
-absl::Status SaveV2(AbstractContext* ctx, AbstractTensorHandle* const prefix,
-                    AbstractTensorHandle* const tensor_names,
-                    AbstractTensorHandle* const shape_and_slices,
+absl::Status SaveV2(AbstractContext* ctx, AbstractTensorHandle* prefix,
+                    AbstractTensorHandle* tensor_names,
+                    AbstractTensorHandle* shape_and_slices,
                     absl::Span<AbstractTensorHandle* const> tensors,
                     const char* name, const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());

@@ -17,15 +17,16 @@ limitations under the License.
 
 #include "tensorflow/c/experimental/ops/array_ops.h"
 
+#include <cstring>
+
 #include "absl/status/status.h"
 #include "absl/types/span.h"
 #include "tensorflow/c/eager/abstract_context.h"
 #include "tensorflow/c/eager/abstract_operation.h"
 #include "tensorflow/c/eager/abstract_tensor_handle.h"
 #include "tensorflow/c/eager/tracing_utils.h"
-#include "xla/tsl/platform/errors.h"
-#include "tensorflow/core/framework/types.pb.h"
-#include "tensorflow/core/platform/status.h"
+#include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/platform/errors.h"
 
 using tensorflow::tracing::MaybeSetOpName;
 
@@ -37,7 +38,7 @@ namespace ops {
 // or value.
 //
 // Description:
-absl::Status Identity(AbstractContext* ctx, AbstractTensorHandle* const input,
+absl::Status Identity(AbstractContext* ctx, AbstractTensorHandle* input,
                       AbstractTensorHandle** output, const char* name,
                       const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -84,7 +85,7 @@ absl::Status IdentityN(AbstractContext* ctx,
 // Summary: Returns a tensor of zeros with the same shape and type as x.
 //
 // Description:
-absl::Status ZerosLike(AbstractContext* ctx, AbstractTensorHandle* const x,
+absl::Status ZerosLike(AbstractContext* ctx, AbstractTensorHandle* x,
                        AbstractTensorHandle** y, const char* name,
                        const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -108,7 +109,7 @@ absl::Status ZerosLike(AbstractContext* ctx, AbstractTensorHandle* const x,
 //   # 't' is [[[1, 1, 1], [2, 2, 2]], [[3, 3, 3], [4, 4, 4]]]
 //   shape(t) ==> [2, 2, 3]
 //   ```
-absl::Status Shape(AbstractContext* ctx, AbstractTensorHandle* const input,
+absl::Status Shape(AbstractContext* ctx, AbstractTensorHandle* input,
                    AbstractTensorHandle** output, DataType out_type,
                    const char* name, const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -154,8 +155,8 @@ absl::Status Shape(AbstractContext* ctx, AbstractTensorHandle* const input,
 //
 //   This operation is related to `squeeze()`, which removes dimensions of
 //   size 1.
-absl::Status ExpandDims(AbstractContext* ctx, AbstractTensorHandle* const input,
-                        AbstractTensorHandle* const dim,
+absl::Status ExpandDims(AbstractContext* ctx, AbstractTensorHandle* input,
+                        AbstractTensorHandle* dim,
                         AbstractTensorHandle** output, const char* name,
                         const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());
@@ -171,7 +172,7 @@ absl::Status ExpandDims(AbstractContext* ctx, AbstractTensorHandle* const input,
 // Summary: Returns a tensor of ones with the same shape and type as x.
 //
 // Description:
-absl::Status OnesLike(AbstractContext* ctx, AbstractTensorHandle* const x,
+absl::Status OnesLike(AbstractContext* ctx, AbstractTensorHandle* x,
                       AbstractTensorHandle** y, const char* name,
                       const char* raw_device_name) {
   AbstractOperationPtr op_ptr(ctx->CreateOperation());

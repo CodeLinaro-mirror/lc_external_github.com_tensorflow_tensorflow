@@ -16,20 +16,32 @@ limitations under the License.
 
 #include <string>
 
+#include "absl/strings/match.h"
 #include "absl/strings/substitute.h"
 #include "tensorflow/c/experimental/ops/gen/cpp/views/arg_type_view.h"
 #include "tensorflow/c/experimental/ops/gen/cpp/views/arg_view.h"
 #include "tensorflow/c/experimental/ops/gen/cpp/views/attr_view.h"
 #include "tensorflow/c/experimental/ops/gen/model/arg_spec.h"
 #include "tensorflow/c/experimental/ops/gen/model/attr_spec.h"
-#include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
 namespace generator {
 namespace cpp {
 
-std::string OpArgumentView::Declaration() const {
-  return absl::Substitute("$0 $1", type_name_, variable_name_);
+std::string OpArgumentView::Declaration(bool is_header) const {
+  std::string type_name = type_name_;
+  if (absl::EndsWith(type_name, "* const")) {
+    type_name.erase(type_name.size() - 7);
+    type_name += '*';
+  } else if (absl::EndsWith(type_name, "*const")) {
+    type_name.erase(type_name.size() - 6);
+    type_name += '*';
+  } else if ((absl::StartsWith(type_name, "const ") ||
+              absl::StartsWith(type_name, "const\n")) &&
+             !absl::StrContains(type_name, "*")) {
+    type_name.erase(0, 6);
+  }
+  return absl::Substitute("$0 $1", type_name, variable_name_);
 }
 
 std::string OpArgumentView::Initializer() const {
