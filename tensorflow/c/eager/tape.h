@@ -610,6 +610,12 @@ absl::Status InitialGradients(
     gtl::ArraySlice<Gradient*> output_gradients, const TensorTape& tensor_tape,
     const OpTape<BackwardFunction, TapeTensor>& op_tape,
     std::unordered_map<int64_t, std::vector<Gradient*>>* result) {
+  if (!output_gradients.empty() &&
+      output_gradients.size() != target_tensor_ids.size()) {
+    return absl::InvalidArgumentError(
+        "output_gradients, if provided, must have the same size as "
+        "target_tensor_ids");
+  }
   for (int i = 0, end = target_tensor_ids.size(); i < end; ++i) {
     const int64_t id = target_tensor_ids[i];
     if (output_gradients.empty() || output_gradients[i] == nullptr) {

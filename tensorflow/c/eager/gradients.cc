@@ -34,22 +34,6 @@ int64_t ToId(const AbstractTensorHandle* t) {
   return static_cast<int64_t>(reinterpret_cast<uintptr_t>(t));
 }
 
-absl::Status ZerosLike(AbstractContext* ctx, AbstractTensorHandle* t,
-                       AbstractTensorHandle** result) {
-  AbstractOperationPtr op(ctx->CreateOperation());
-  TF_RETURN_IF_ERROR(op->Reset("ZerosLike", /*raw_device_name=*/nullptr));
-  if (isa<tracing::TracingOperation>(op.get())) {
-    TF_RETURN_IF_ERROR(dyn_cast<tracing::TracingOperation>(op.get())->SetOpName(
-        absl::StrCat("ZerosLike", ToId(t)).c_str()));
-  }
-  TF_RETURN_IF_ERROR(op->AddInput(t));
-  int num_outputs = 1;
-  std::vector<AbstractTensorHandle*> outputs(num_outputs);
-  TF_RETURN_IF_ERROR(
-      op->Execute(absl::Span<AbstractTensorHandle*>(outputs), &num_outputs));
-  *result = outputs[0];
-  return absl::OkStatus();
-}
 }  // namespace
 
 absl::Status GradientRegistry::Register(
@@ -75,13 +59,46 @@ absl::Status GradientRegistry::Lookup(
 }
 
 TapeTensor::TapeTensor(AbstractTensorHandle* handle) : handle_(handle) {
-  handle_->Ref();
+  if (handle_) {
+    handle_->Ref();
+  }
 }
 TapeTensor::TapeTensor(const TapeTensor& other) {
   handle_ = other.handle_;
-  handle_->Ref();
+  if (handle_) {
+    handle_->Ref();
+  }
 }
-TapeTensor::~TapeTensor() { handle_->Unref(); }
+TapeTensor& TapeTensor::operator=(const TapeTensor& other) {
+  if (this != &other) {
+    if (other.handle_) {
+      other.handle_->Ref();
+    }
+    if (handle_) {
+      handle_->Unref();
+    }
+    handle_ = other.handle_;
+  }
+  return *this;
+}
+TapeTensor::TapeTensor(TapeTensor&& other) noexcept : handle_(other.handle_) {
+  other.handle_ = nullptr;
+}
+TapeTensor& TapeTensor::operator=(TapeTensor&& other) noexcept {
+  if (this != &other) {
+    if (handle_) {
+      handle_->Unref();
+    }
+    handle_ = other.handle_;
+    other.handle_ = nullptr;
+  }
+  return *this;
+}
+TapeTensor::~TapeTensor() {
+  if (handle_) {
+    handle_->Unref();
+  }
+}
 
 int64_t TapeTensor::GetID() const { return ToId(handle_); }
 
@@ -96,7 +113,7 @@ class TapeVSpace
     : public eager::VSpace<AbstractTensorHandle, GradientFunction, TapeTensor> {
  public:
   explicit TapeVSpace(AbstractContext* ctx) : ctx_(ctx) {}
-  ~TapeVSpace() override {}
+  ~TapeVSpace() override = default;
 
   // Returns the number of elements in the gradient tensor.
   int64_t NumElements(AbstractTensorHandle* tensor) const override;
