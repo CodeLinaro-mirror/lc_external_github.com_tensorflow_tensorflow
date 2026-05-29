@@ -675,10 +675,33 @@ class BufferAssignment {
   // Returns the HloModule used to construct this assignment.
   const HloModule& module() const { return *module_; }
 
+  void ResetAllocationsForTest() {
+    allocations_.clear();
+    allocation_index_for_value_.clear();
+  }
+
+  // Creates and returns a new BufferAllocation, with no assigned
+  // LogicalBuffers. Ownership is maintained internally.
+  BufferAllocation* NewEmptyAllocation(int64_t size,
+                                       LogicalBuffer::Color color);
+
+  int64_t HloBufferSize(const HloBuffer& buffer) {
+    auto [it, inserted] = cached_buffer_sizes_.try_emplace(buffer.id());
+    if (inserted) {
+      int64_t result = 0;
+      for (const HloValue* value : buffer.values()) {
+        result = std::max(result, buffer_size_(*value));
+      }
+      it->second = result;
+    }
+    return it->second;
+  }
+
  private:
   // Only BufferAssigner can build or modify BufferAssignments.
   friend class BufferAssigner;
   friend class DefaultBufferAllocationsManagerForComputationsWithoutOrdering;
+  friend class FastMergeBufferAllocationsManagerForComputationsWithoutOrdering;
 
   BufferAssignment(const HloModule* module,
                    std::unique_ptr<HloOrdering> hlo_ordering,
@@ -700,11 +723,6 @@ class BufferAssignment {
         (raw_value == -1) ? UINT64_MAX : raw_value;
   }
 
-  // Creates and returns a new BufferAllocation, with no assigned
-  // LogicalBuffers. Ownership is maintained internally.
-  BufferAllocation* NewEmptyAllocation(int64_t size,
-                                       LogicalBuffer::Color color);
-
   // Helper that calls NewEmptyAllocation and AddAssignment in one call,
   // creating an allocation containing a single LogicalBuffer.
   absl::StatusOr<BufferAllocation*> NewAllocation(const HloBuffer& buffer,
@@ -722,19 +740,6 @@ class BufferAssignment {
   // Mutable accessors for allocations.
   BufferAllocation* GetMutableAssignedAllocation(const HloBuffer& buffer);
   BufferAllocation* GetMutableAllocation(BufferAllocation::Index index);
-
-  int64_t HloBufferSize(const HloBuffer& buffer) {
-    auto iter = cached_buffer_sizes_.find(buffer.id());
-    if (iter != cached_buffer_sizes_.end()) {
-      return iter->second;
-    }
-    int64_t result = 0;
-    for (const HloValue* value : buffer.values()) {
-      result = std::max(result, buffer_size_(*value));
-    }
-    cached_buffer_sizes_.insert({buffer.id(), result});
-    return result;
-  }
 
   // Combines allocations of temporary buffers into one big BufferAllocation.
   absl::Status CombineTempAllocations(
@@ -838,6 +843,10 @@ class BufferAllocationsManagerForComputationsWithoutOrdering {
 // A class which constructs a buffer assignment.
 class BufferAssigner {
  public:
+  friend class BufferAssignmentTest;
+  static std::unique_ptr<BufferAllocationsManagerForComputationsWithoutOrdering>
+  CreateFastMergeManagerForTest(BufferAssignment* assignment,
+                                BufferAssigner* assigner);
   using Colorer =
       std::function<absl::Status(HloAliasAnalysis*, const HloOrdering&)>;
 
@@ -861,8 +870,9 @@ class BufferAssigner {
 
   // The order in which to process buffers during buffer assignment.
   enum class BufferOrder {
-    kBiggestFirst,  // Process the biggest buffers first.
-    kTopological,   // Process buffers in topological order.
+    kBiggestFirst,    // Process the biggest buffers first.
+    kTopological,     // Process buffers in topological order.
+    kLiveRangeStart,  // Process buffers sorted by live range start.
   };
 
   // Options for BufferAssigner::Run.
@@ -960,11 +970,15 @@ class BufferAssigner {
       BufferValue::SizeFunction buffer_size, const AliasInfo* alias_info,
       LogicalBuffer::AlignmentFunction color_alignment, Options options);
 
- private:
-  friend class DefaultBufferAllocationsManagerForComputationsWithoutOrdering;
-
   BufferAssigner(const AliasInfo* alias_info, Options opts)
-      : alias_info_(alias_info), opts_(std::move(opts)) {}
+      : alias_info_(alias_info), opts_(std::move(opts)) {
+    if (opts_.assignment_algorithm_for_computations_without_ordering ==
+        buffer_assignment::
+            AssignmentAlgorithmForComputationsWithoutOrderingProto::
+                FAST_MERGE) {
+      opts_.buffer_order = BufferOrder::kLiveRangeStart;
+    }
+  }
   virtual ~BufferAssigner() = default;
 
   // Create a buffer assignment.
@@ -972,6 +986,10 @@ class BufferAssigner {
       const HloModule* module, std::unique_ptr<HloOrdering> hlo_ordering,
       BufferValue::SizeFunction buffer_size,
       LogicalBuffer::AlignmentFunction color_alignment);
+
+ private:
+  friend class DefaultBufferAllocationsManagerForComputationsWithoutOrdering;
+  friend class FastMergeBufferAllocationsManagerForComputationsWithoutOrdering;
 
   // Assigns buffers to the instructions in the given computations. "assignment"
   // is modified to reflect the new buffer assignments. If is_thread_local is
