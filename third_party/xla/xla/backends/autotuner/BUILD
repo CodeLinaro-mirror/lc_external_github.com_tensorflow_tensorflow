@@ -37,6 +37,7 @@ cc_library(
         ":autotuner_cache_interface",
         ":backends_proto_cc",
         ":codegen_backend",
+        ":hlo_extractor",
         ":profiler",
         "//xla:autotune_results_proto_cc",
         "//xla:autotuning_proto_cc",
@@ -74,6 +75,18 @@ cc_library(
         "@com_google_protobuf//:protobuf",
         "@tsl//tsl/platform:fingerprint",
         "@tsl//tsl/platform:path",
+    ],
+)
+
+cc_library(
+    name = "hlo_extractor",
+    srcs = ["hlo_extractor.cc"],
+    hdrs = ["hlo_extractor.h"],
+    deps = [
+        "//xla/hlo/ir:hlo",
+        "//xla/tsl/util:sorted_range",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@tsl//tsl/platform:fingerprint",
     ],
 )
 
