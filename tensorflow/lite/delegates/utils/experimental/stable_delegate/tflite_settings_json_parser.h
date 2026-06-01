@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <string>
 
+#include "flatbuffers/base.h"  // from @flatbuffers
 #include "flatbuffers/idl.h"  // from @flatbuffers
 #include "tensorflow/lite/acceleration/configuration/configuration_generated.h"
 
@@ -33,6 +34,10 @@ namespace utils {
 class TfLiteSettingsJsonParser {
  public:
   TfLiteSettingsJsonParser();
+  TfLiteSettingsJsonParser(const TfLiteSettingsJsonParser&) = delete;
+  TfLiteSettingsJsonParser& operator=(const TfLiteSettingsJsonParser&) = delete;
+  TfLiteSettingsJsonParser(TfLiteSettingsJsonParser&&) = default;
+  TfLiteSettingsJsonParser& operator=(TfLiteSettingsJsonParser&&) = default;
 
   // Loads TFLiteSettings from a JSON file path. The lifetime of the
   // TFLiteSettings object is tied to the lifetime of the

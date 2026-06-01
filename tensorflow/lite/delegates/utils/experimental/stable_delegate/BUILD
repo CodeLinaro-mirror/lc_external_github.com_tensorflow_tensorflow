@@ -142,6 +142,7 @@ cc_library(
         "//tensorflow/lite/testing:util",
         "@com_google_googletest//:gtest",
     ],
+    alwayslink = 1,
 )
 
 cc_test(
