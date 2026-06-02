@@ -54,14 +54,15 @@ struct Tensor {
   static Tensor<T> iota(std::initializer_list<I> shape) {
     Tensor<T> tensor;
     tensor.shape.assign(shape.begin(), shape.end());
-    tensor.data.resize(absl::c_accumulate(shape, 1, std::multiplies<>()));
+    tensor.data.resize(
+        absl::c_accumulate(shape, int64_t{1}, std::multiplies<>()));
     absl::c_iota(tensor.data, 1);
     return tensor;
   }
 
   // Returns the number of values in the tensor.
   int64_t size() const {
-    return absl::c_accumulate(shape, 1, std::multiplies<>());
+    return absl::c_accumulate(shape, int64_t{1}, std::multiplies<>());
   }
 
   // Computes the strides for each valid dimension in the tensor.
