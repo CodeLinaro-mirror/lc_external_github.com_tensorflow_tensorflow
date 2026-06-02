@@ -237,6 +237,55 @@ TEST_P(SparseToDenseOpModelTest, UInt8ValueTest) {
   EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({3, 3, 3}));
 }
 
+TEST_P(SparseToDenseOpModelTest, OutOfBoundsIndexTest) {
+  SparseToDenseOpModel<float> m({3, 3}, {3}, {3}, 0, TensorType_INT32,
+                                TensorType_FLOAT32, {3, 3, 3}, GetParam());
+  m.PopulateTensor<int32_t>(m.indices(), {0, 0, 0, 1, 5, 1, 2, 0, 1});
+  if (GetParam() != TestType::kConstant) {
+    m.PopulateTensor<int32_t>(m.output_shape(), {3, 3, 3});
+  }
+  m.PopulateTensor<float>(m.values(), {2, 4, 6});
+  ASSERT_EQ(m.Invoke(), kTfLiteError);
+}
+
+TEST_P(SparseToDenseOpModelTest, NegativeIndexTest) {
+  SparseToDenseOpModel<float> m({3, 3}, {3}, {3}, 0, TensorType_INT32,
+                                TensorType_FLOAT32, {3, 3, 3}, GetParam());
+  m.PopulateTensor<int32_t>(m.indices(), {0, 0, 0, 1, -1, 1, 2, 0, 1});
+  if (GetParam() != TestType::kConstant) {
+    m.PopulateTensor<int32_t>(m.output_shape(), {3, 3, 3});
+  }
+  m.PopulateTensor<float>(m.values(), {2, 4, 6});
+  ASSERT_EQ(m.Invoke(), kTfLiteError);
+}
+
+TEST_P(SparseToDenseOpModelTest, ScalarValueOutOfBoundsIndexTest) {
+  SparseToDenseOpModel<float> m({3, 3}, {3}, {}, 0, TensorType_INT32,
+                                TensorType_FLOAT32, {3, 3, 3}, GetParam());
+  m.PopulateTensor<int32_t>(m.indices(), {0, 0, 0, 1, 5, 1, 2, 0, 1});
+  if (GetParam() != TestType::kConstant) {
+    m.PopulateTensor<int32_t>(m.output_shape(), {3, 3, 3});
+  }
+  m.PopulateTensor<float>(m.values(), {2});
+  ASSERT_EQ(m.Invoke(), kTfLiteError);
+}
+
+TEST_P(SparseToDenseOpModelTest, ScalarValueSuccessTest) {
+  SparseToDenseOpModel<float> m({3, 3}, {3}, {}, 0, TensorType_INT32,
+                                TensorType_FLOAT32, {3, 3, 3}, GetParam());
+  m.PopulateTensor<int32_t>(m.indices(), {0, 0, 0, 1, 2, 1, 2, 0, 1});
+  if (GetParam() != TestType::kConstant) {
+    m.PopulateTensor<int32_t>(m.output_shape(), {3, 3, 3});
+  }
+  m.PopulateTensor<float>(m.values(), {5});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  ASSERT_EQ(m.IsDynamicOutput(), GetParam() == TestType::kDynamic);
+  EXPECT_THAT(m.GetOutput(),
+              ElementsAreArray({5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 5, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0}));
+  EXPECT_THAT(m.GetOutputShape(), ElementsAreArray({3, 3, 3}));
+}
+
 INSTANTIATE_TEST_SUITE_P(SparseToDenseOpModelTest, SparseToDenseOpModelTest,
                          ::testing::Values(TestType::kPersistentRo,
                                            TestType::kConstant,
