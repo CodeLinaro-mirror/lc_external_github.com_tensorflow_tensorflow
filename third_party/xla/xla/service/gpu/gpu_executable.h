@@ -36,6 +36,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/types/optional_ref.h"
 #include "absl/types/span.h"
 #include "xla/backends/cpu/target_machine_options.h"
 #include "xla/backends/gpu/runtime/annotation.h"
@@ -45,6 +46,7 @@ limitations under the License.
 #include "xla/backends/gpu/runtime/thunk_executor.h"
 #include "xla/client/executable_build_options.h"
 #include "xla/hlo/ir/hlo_input_output_alias_config.h"
+#include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/computation_layout.h"
@@ -96,8 +98,11 @@ class GpuExecutable : public Executable {
 
     GpuExecutableProto::ConstantInfoProto ToProto() const;
 
-    static ConstantInfo FromProto(
-        const GpuExecutableProto::ConstantInfoProto& proto);
+    static absl::StatusOr<ConstantInfo> FromProto(
+        const GpuExecutableProto::ConstantInfoProto& proto,
+        absl::optional_ref<
+            const absl::flat_hash_map<std::string, const HloInstruction*>>
+            content_overrides = std::nullopt);
   };
 
   struct OutputInfo {
