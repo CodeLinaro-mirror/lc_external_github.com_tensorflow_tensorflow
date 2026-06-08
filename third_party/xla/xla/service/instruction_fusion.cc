@@ -640,6 +640,9 @@ absl::StatusOr<bool> InstructionFusion::RunImpl(
 
       std::vector<int64_t>& sorted_operand_numbers = next_entry.second;
 
+      FusionDecision mof_suitable =
+          IsConsumerSuitableForMultiOutputFusion(instruction);
+
       for (int64_t i : sorted_operand_numbers) {
         HloInstruction* operand = instruction->mutable_operand(i);
         VLOG(5) << "Considering fusion of: " << instruction->ToString()
@@ -684,9 +687,10 @@ absl::StatusOr<bool> InstructionFusion::RunImpl(
                   << use_regular_fusion.Explain();
         }
 
-        FusionDecision use_mof = FusionDecision::Allow();
-        if (!use_regular_fusion) {
-          use_mof = ShouldFuseIntoMultiOutput(instruction, i);
+        FusionDecision use_mof = mof_suitable;
+        if (!use_regular_fusion && use_mof) {
+          use_mof = use_mof.And(
+              ShouldFuseOperandIntoMultiOutputFusion(instruction, i));
           if (use_mof) {
             use_mof = use_mof.And(
                 FusionDecision{!MultiOutputFusionCreatesCycle(
