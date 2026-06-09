@@ -1013,9 +1013,11 @@ xla_cc_test(
     ],
     deps = [
         ":cuda_device_address_vmm_allocator",
+        ":cuda_memory_reservation",
         ":cuda_platform",
         "//xla/service:computation_placer_hdr",
         "//xla/stream_executor:device_address",
+        "//xla/stream_executor:memory_space",
         "//xla/stream_executor:platform",
         "//xla/stream_executor:platform_manager",
         "//xla/stream_executor:stream",
@@ -1565,10 +1567,10 @@ cc_library(
         "//xla/stream_executor/gpu:gpu_asm_opts",
         "//xla/tsl/platform:logging",
         "//xla/tsl/platform:status_macros",
-        "//xla/tsl/platform:statusor",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
         "@tsl//tsl/platform:path",
     ],
 )
