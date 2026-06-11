@@ -23,6 +23,7 @@ limitations under the License.
 
 #include "absl/log/log.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
@@ -169,8 +170,9 @@ CpuAotLoader::LoadAotCompilationResult(
                     expected_triple.getArchName(), host_triple.getArchName());
   }
 
-  llvm::StringMap<bool> host_machine_features = llvm::sys::getHostCPUFeatures();
-  std::vector<std::string> compile_machine_features =
+  const llvm::StringMap<bool> host_machine_features =
+      llvm::sys::getHostCPUFeatures();
+  const std::vector<std::string> compile_machine_features =
       target_machine_options.GetTargetMachineFeaturesVector();
   // Convert the supported features to a vector of strings.
   std::vector<std::string> host_machine_features_vector;
@@ -186,9 +188,20 @@ CpuAotLoader::LoadAotCompilationResult(
           << absl::StrJoin(host_machine_features_vector, ",");
 
   for (const absl::string_view feature : compile_machine_features) {
-    if (feature[0] == '+' &&
-        (!host_machine_features.contains(feature.substr(1)) ||
-         !host_machine_features[feature.substr(1)])) {
+    if (!absl::StartsWith(feature, "+")) {
+      continue;
+    }
+    absl::string_view feature_name = feature.substr(1);
+    // LLVM tuning options (`prefer-*` and `fast-*`) guide internal
+    // microarchitectural performance decisions (cost models, combiners) rather
+    // than architectural hardware ISA features. Consequently,
+    // `llvm::sys::getHostCPUFeatures()` does not report them. We filter them
+    // out to prevent false-positive compatibility failures.
+    if (absl::StartsWith(feature_name, "prefer-") ||
+        absl::StartsWith(feature_name, "fast-")) {
+      continue;
+    }
+    if (!host_machine_features.lookup(feature_name)) {
       // TODO: b/477590953 - Turn this warning into an absl::Status Internal
       // error once a mechanism for passing CPU topology to host offloaded
       // programs is implemented.

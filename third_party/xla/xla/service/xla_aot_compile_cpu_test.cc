@@ -16,7 +16,9 @@ limitations under the License.
 #include <memory>
 #include <string>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/log/scoped_mock_log.h"
 #include "absl/types/span.h"
 #include "xla/client/client_library.h"
 #include "xla/client/executable_build_options.h"
@@ -29,6 +31,7 @@ limitations under the License.
 #include "xla/service/platform_util.h"
 #include "xla/service/shaped_buffer.h"
 #include "xla/tsl/lib/core/status_test_util.h"
+#include "xla/tsl/platform/status_matchers.h"
 #include "tsl/platform/env.h"
 #include "tsl/platform/path.h"
 #include "tsl/platform/statusor.h"
@@ -102,6 +105,33 @@ TEST(XlaCompileTest, LoadAotResultWithDefinedTargetFeatures) {
                          .target_machine_options();
 
   EXPECT_EQ(opts.features(), "+avx2,+fma");
+}
+
+TEST(XlaCompileTest, LoadAotResultWithTuningOptions) {
+  std::string path = tsl::io::JoinPath(
+      tsl::testing::XlaSrcRoot(), "service",
+      "xla_aot_compile_test_cpu_executable_with_target_config");
+  std::string serialized_aot_result;
+  ASSERT_OK(
+      tsl::ReadFileToString(tsl::Env::Default(), path, &serialized_aot_result));
+
+  xla::cpu::CompilationResultProto proto;
+  ASSERT_TRUE(proto.ParseFromString(serialized_aot_result));
+  std::string features = proto.target_machine_options().features();
+  proto.mutable_target_machine_options()->set_features(
+      features + ",+prefer-no-scatter,+fast-gather");
+
+  absl::ScopedMockLog log(absl::MockLogDefault::kIgnoreUnexpected);
+  EXPECT_CALL(log, Log(absl::LogSeverity::kError, ::testing::_,
+                       ::testing::HasSubstr("prefer-no-scatter")))
+      .Times(0);
+  EXPECT_CALL(log, Log(absl::LogSeverity::kError, ::testing::_,
+                       ::testing::HasSubstr("fast-gather")))
+      .Times(0);
+  log.StartCapturingLogs();
+
+  ASSERT_OK_AND_ASSIGN(auto result,
+                       cpu::CpuAotLoader::LoadAotCompilationResult(proto));
 }
 
 }  // namespace
