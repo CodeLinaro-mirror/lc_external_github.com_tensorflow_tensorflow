@@ -136,6 +136,7 @@ cc_library(
     srcs = ["converter.cc"],
     hdrs = ["converter.h"],
     deps = [
+        "//tensorflow/lite/delegates/gpu:api",
         "//tensorflow/lite/delegates/gpu:spi",
         "//tensorflow/lite/delegates/gpu/cl:buffer",
         "//tensorflow/lite/delegates/gpu/cl:cl_arguments",

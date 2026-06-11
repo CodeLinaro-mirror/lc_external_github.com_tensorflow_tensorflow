@@ -18,6 +18,8 @@ limitations under the License.
 #include <cstdint>
 #include <variant>
 
+#include "tensorflow/lite/delegates/gpu/common/util.h"
+
 namespace tflite {
 namespace gpu {
 namespace {
@@ -105,7 +107,7 @@ bool IsObjectInitialized(const TensorObject& obj) {
   return GetType(obj) != ObjectType::UNKNOWN;
 }
 
-uint32_t NumElements(const TensorObjectDef& def) {
+uint64_t NumElements(const TensorObjectDef& def) {
   const auto& d = def.dimensions;
   switch (def.object_def.data_layout) {
     case DataLayout::BHWC:
@@ -113,7 +115,7 @@ uint32_t NumElements(const TensorObjectDef& def) {
     case DataLayout::HWDC4:
     case DataLayout::HDWC4:
     case DataLayout::DHWC4:
-      return d.b * d.h * d.w * AlignByN(d.c, 4);
+      return static_cast<uint64_t>(d.b) * d.h * d.w * AlignByN(d.c, 4);
     case DataLayout::UNKNOWN:
       return 0;
   }
