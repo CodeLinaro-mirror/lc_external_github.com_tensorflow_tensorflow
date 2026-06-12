@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -32,17 +33,16 @@ limitations under the License.
 #include "xla/stream_executor/bit_pattern.h"
 #include "xla/stream_executor/command_buffer.h"
 #include "xla/stream_executor/cuda/cuda_context.h"
+#include "xla/stream_executor/cuda/version.h"
 #include "xla/stream_executor/device_address.h"
+#include "xla/stream_executor/dnn.h"
 #include "xla/stream_executor/gpu/gpu_command_buffer.h"
 #include "xla/stream_executor/kernel.h"
+#include "xla/stream_executor/kernel_args.h"
 #include "xla/stream_executor/launch_dim.h"
 #include "xla/stream_executor/platform.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
-
-#if CUDA_VERSION < 12030
-typedef cuuint64_t CUgraphConditionalHandle;
-#endif
 
 namespace stream_executor::gpu {
 
@@ -56,6 +56,15 @@ class CudaCommandBuffer final : public GpuCommandBuffer {
   std::string ToString() const override;
 
   ~CudaCommandBuffer() override;
+
+  static CUgraphNode ToCudaGraphHandle(GraphNodeHandle handle);
+  static cuda::CUgraphConditionalHandle ToCudaGraphHandle(
+      GraphConditionalHandle handle);
+  static std::vector<CUgraphNode> ToCudaGraphHandles(
+      absl::Span<const GraphNodeHandle> handles);
+  static GraphNodeHandle FromCudaGraphHandle(CUgraphNode handle);
+  static GraphConditionalHandle FromCudaGraphHandle(
+      cuda::CUgraphConditionalHandle handle);
 
  private:
   CudaCommandBuffer(Mode mode, StreamExecutor* executor,
@@ -156,8 +165,9 @@ class CudaCommandBuffer final : public GpuCommandBuffer {
   absl::StatusOr<GraphNodeHandle> CreateEmptyNode(
       absl::Span<const GraphNodeHandle> dependencies) override;
 
-  absl::Status Trace(Stream* stream,
-                     absl::AnyInvocable<absl::Status()> function) override;
+  absl::Status Trace(
+      Stream* stream,
+      absl::AnyInvocable<absl::Status(Stream* stream)> function) override;
 
   absl::Status LaunchGraph(Stream* stream) override;
 
@@ -181,16 +191,41 @@ class CudaCommandBuffer final : public GpuCommandBuffer {
 
   absl::Status CheckCanBeUpdated() override;
 
-  // A signature of a device kernels updating conditional handle(s).
-  using SetCaseConditionKernel =
-      TypedKernel<CUgraphConditionalHandle, CUgraphConditionalHandle,
-                  CUgraphConditionalHandle, CUgraphConditionalHandle,
-                  CUgraphConditionalHandle, CUgraphConditionalHandle,
-                  CUgraphConditionalHandle, CUgraphConditionalHandle,
-                  DeviceAddress<uint8_t>, bool, int32_t, int32_t, bool>;
+  using SetCaseConditionKernel = TypedKernel<
+      cuda::CUgraphConditionalHandle, cuda::CUgraphConditionalHandle,
+      cuda::CUgraphConditionalHandle, cuda::CUgraphConditionalHandle,
+      cuda::CUgraphConditionalHandle, cuda::CUgraphConditionalHandle,
+      cuda::CUgraphConditionalHandle, cuda::CUgraphConditionalHandle,
+      DeviceAddress<uint8_t>, bool, int32_t, int32_t, bool>;
 
   using SetWhileConditionKernel =
-      TypedKernel<CUgraphConditionalHandle, DeviceAddress<bool>>;
+      TypedKernel<cuda::CUgraphConditionalHandle, DeviceAddress<bool>>;
+
+  absl::Status GraphInstantiateImpl(CUgraphExec* exec);
+  absl::Status WriteGraphToDotFileImpl(absl::string_view path) const;
+
+  absl::StatusOr<GraphConditionalNodeHandle> CreateConditionalNodeImpl(
+      absl::Span<const GraphNodeHandle> dependencies,
+      GraphConditionalHandle conditional, ConditionType type);
+
+  absl::StatusOr<GraphNodeHandle> CreateKernelNodeImpl(
+      absl::Span<const GraphNodeHandle> dependencies, StreamPriority priority,
+      const ThreadDim& threads, const BlockDim& blocks, const Kernel& kernel,
+      const KernelArgsPackedArrayBase& args);
+
+  absl::Status TraceImpl(
+      Stream* stream,
+      absl::AnyInvocable<absl::Status(Stream* stream)> function);
+
+  absl::StatusOr<GraphConditionalHandle> CreateConditionalHandleImpl();
+
+  absl::StatusOr<GraphNodeHandle> CreateMovedChildNodeImpl(
+      absl::Span<const GraphNodeHandle> dependencies, CommandBuffer* nested);
+
+  static std::string FormatGraphNodeHandles(
+      absl::Span<const GraphNodeHandle> handles);
+  static std::string FormatGraphConditionalHandles(
+      absl::Span<const GraphConditionalHandle> handles);
 
   // Lazy loaded auxiliary kernels required for building CUDA graphs (no-op
   // barriers, updating conditional handles, etc.).
