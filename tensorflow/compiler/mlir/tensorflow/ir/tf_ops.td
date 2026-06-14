@@ -3220,7 +3220,9 @@ def TF_XlaSparseActivationsUnstackOp : TF_Op<"XlaSparseActivationsUnstack", [Pur
     ConfinedAttr<I64Attr, [IntMinValue<1>]>:$num_tables,
     ConfinedAttr<I64ArrayAttr, [ArrayMinCount<1>]>:$sample_counts,
     ConfinedAttr<I64ArrayAttr, [ArrayMinCount<1>]>:$features,
-    BoolAttr:$interleaved
+    BoolAttr:$interleaved,
+    TypeAttr:$input_dtype,
+    TypeAttr:$dtype
   );
 
   let results = (outs
@@ -3242,7 +3244,9 @@ def TF_XlaSparseGradientsStackOp : TF_Op<"XlaSparseGradientsStack", [Pure]> {
     Variadic<TF_Tensor>:$unstacked_gradients,
 
     ConfinedAttr<I64Attr, [IntMinValue<1>]>:$num_tables,
-    BoolAttr:$interleaved
+    BoolAttr:$interleaved,
+    TypeAttr:$input_dtype,
+    TypeAttr:$dtype
   );
 
   let results = (outs
@@ -3250,3 +3254,4 @@ def TF_XlaSparseGradientsStackOp : TF_Op<"XlaSparseGradientsStack", [Pure]> {
   );
 }
 #endif // TF_OPS
+
