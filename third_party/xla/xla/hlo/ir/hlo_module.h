@@ -829,6 +829,11 @@ class HloModule {
   const HloModuleMetadata& metadata() const { return metadata_; }
   HloModuleMetadata* metadata() { return &metadata_; }
 
+  std::optional<bool> hlo_passes_started() const { return hlo_passes_started_; }
+  void set_hlo_passes_started(std::optional<bool> started) {
+    hlo_passes_started_ = started;
+  }
+
   // Moves (not copies) metadata from this HloModule to `module`. To be used
   // when metadata should be transferred out of a module before it's destroyed.
   void MoveMetadataToModule(HloModule* module) {
@@ -1024,6 +1029,8 @@ class HloModule {
 
   // True if the module contains dynamic computation.
   bool is_dynamic_ = false;
+
+  std::optional<bool> hlo_passes_started_ = std::nullopt;
 
   // Optional compilation profile handle.
   int64_t profile_version_ = 0;

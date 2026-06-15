@@ -16,18 +16,52 @@ limitations under the License.
 #include "xla/hlo/pass/hlo_pass_interface.h"
 
 #include <memory>
+#include <string>
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "xla/hlo/ir/hlo_module.h"
 #include "xla/tsl/platform/env.h"
+#include "xla/tsl/platform/logging.h"
 
 namespace xla {
+
+namespace {
+bool ShouldSkipPass(HloModule* module, absl::string_view pass_name,
+                    bool is_pipeline) {
+  const DebugOptions& debug_options = module->config().debug_options();
+  const std::string& starting_pass =
+      debug_options.xla_run_hlo_passes_starting_from();
+  if (starting_pass.empty()) {
+    return false;
+  }
+
+  if (!module->hlo_passes_started().has_value()) {
+    module->set_hlo_passes_started(false);
+  }
+  if (*module->hlo_passes_started()) {
+    return false;
+  }
+  if (pass_name == starting_pass) {
+    module->set_hlo_passes_started(true);
+    LOG(INFO) << "Starting HLO passes from " << starting_pass;
+    return false;
+  }
+  // If the pass is a pipeline, we should go into the pipeline & skip individual
+  // passes within the pipeline.
+  return !is_pipeline;
+}
+}  // namespace
 
 absl::StatusOr<bool> HloPassInterface::Run(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  if (ShouldSkipPass(module, name(), IsPassPipeline())) {
+    return false;
+  }
+
   auto* env = tsl::Env::Default();
   std::unique_ptr<tsl::ThreadNote> thread_note;
   thread_note = env->AddThreadNote(absl::StrCat("Running HLO pass on module ",
@@ -38,6 +72,10 @@ absl::StatusOr<bool> HloPassInterface::Run(
 absl::StatusOr<bool> HloPassInterface::Run(
     std::unique_ptr<HloModule>& module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {
+  if (ShouldSkipPass(module.get(), name(), IsPassPipeline())) {
+    return false;
+  }
+
   auto* env = tsl::Env::Default();
   std::unique_ptr<tsl::ThreadNote> thread_note;
   thread_note = env->AddThreadNote(absl::StrCat("Running HLO pass on module ",
