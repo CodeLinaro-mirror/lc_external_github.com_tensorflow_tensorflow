@@ -2142,7 +2142,7 @@ class RequiresCollectiveSymmetricMemorySpaceTest
 
 TEST_P(RequiresCollectiveSymmetricMemorySpaceTest, DirectUsage) {
   constexpr absl::string_view kHloTemplate = R"(
-HloModule test$0
+HloModule test$0, replica_count=2
 
 ENTRY test_computation {
   p = u32[2] parameter(0)
@@ -2156,7 +2156,11 @@ ENTRY test_computation {
       {{"$0",
         use_input_output_alias ? ", input_output_alias={ {}: (0, {}) }" : ""}});
 
-  HloModuleConfig config = GetModuleConfigForTest();
+  DeviceAssignment device_assignment(2, 1);
+  for (int replica = 0; replica < 2; replica++) {
+    device_assignment(replica, 0) = 0;
+  }
+  HloModuleConfig config = GetModuleConfigForTest(2, 1, device_assignment);
   if (GetParam().is_sym_mem) {
     config.mutable_debug_options().set_xla_gpu_collective_permute_mode(
         DebugOptions::COLLECTIVES_SYMMETRIC_MEMORY);
@@ -2169,18 +2173,18 @@ ENTRY test_computation {
   const HloModule* optimized_module = optimized_module_and_executable.first;
 
   constexpr absl::string_view kS0NoCopy = R"(
-    // CHECK:  %collective-permute-start = (u32[2]{0}, u32[2]{0}) collective-permute-start(%p)
+    // CHECK:  %collective-permute-start = (u32[2]{0}, u32[2]{0}) collective-permute-start(%{{param|p}})
     // CHECK:  ROOT %collective-permute-done = u32[2]{0} collective-permute-done(%collective-permute-start)
   )";
 
   constexpr absl::string_view kS0OneResultCopy = R"(
-    // CHECK:  %collective-permute-start = (u32[2]{0}, u32[2]{0}) collective-permute-start(%p)
+    // CHECK:  %collective-permute-start = (u32[2]{0}, u32[2]{0}) collective-permute-start(%{{param|p}})
     // CHECK:  %collective-permute-done = u32[2]{0} collective-permute-done(%collective-permute-start)
     // CHECK:  ROOT %copy{{.*}} = u32[2]{0} copy(%collective-permute-done)
   )";
 
   constexpr absl::string_view kS1TwoCopies = R"(
-    // CHECK:  [[COPY0:%copy[0-9.]*]] = u32[2]{0:S(1)} copy(%p)
+    // CHECK:  [[COPY0:%copy[0-9.]*]] = u32[2]{0:S(1)} copy(%{{param|p}})
     // CHECK:  %collective-permute-start = (u32[2]{0:S(1)}, u32[2]{0:S(1)}) collective-permute-start([[COPY0]])
     // CHECK:  %collective-permute-done = u32[2]{0:S(1)} collective-permute-done(%collective-permute-start)
     // CHECK:  ROOT %copy{{.*}} = u32[2]{0} copy(%collective-permute-done)
