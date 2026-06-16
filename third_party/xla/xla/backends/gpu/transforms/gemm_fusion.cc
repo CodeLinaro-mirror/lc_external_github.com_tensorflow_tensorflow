@@ -87,6 +87,11 @@ using triton_fusion::FusionContext;
 using triton_fusion::GetPropagatedDimOrdersAndRequirementsIfProfitablyFusible;
 using triton_fusion::TransformDirection;
 
+// Heuristics that can be tuned.
+// The maximum number of operands we can fuse into the prologue of a dot
+// fusion.
+int MAX_PROLOGUE_OPERAND_COUNT = 8;
+
 // This represents a directed graph.
 class AdjacencyList {
  public:
@@ -1137,7 +1142,8 @@ void FuseOperandsBFS(mlir::MLIRContext& mlir_context,
   for (HloInstruction* operand : candidates) {
     queue.push(operand);
   }
-  while (!queue.empty()) {
+  while (!queue.empty() &&
+         fusion->operand_count() < MAX_PROLOGUE_OPERAND_COUNT) {
     HloInstruction* candidate = queue.front();
     queue.pop();
 
