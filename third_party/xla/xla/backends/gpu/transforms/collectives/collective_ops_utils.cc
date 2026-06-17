@@ -17,6 +17,7 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -24,6 +25,7 @@ limitations under the License.
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/container/inlined_vector.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
@@ -34,12 +36,13 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_module.h"
-#include "xla/hlo/ir/replica_group.h"
+#include "xla/runtime/device_id.h"
+#include "xla/service/collective_ops_utils.h"
+#include "xla/service/computation_placer.h"
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/hlo_module_config.h"
 #include "xla/side_effect_util.h"
 #include "xla/stream_executor/device_description.h"
-#include "xla/tsl/platform/statusor.h"
 #include "xla/xla_data.pb.h"
 
 namespace xla {
@@ -298,6 +301,46 @@ bool IsSpmdGenerated(const HloInstruction& instr) {
     return false;
   }
   return backend_config->collective_backend_config().is_spmd_generated();
+}
+
+bool IsAllReplicasLocal(int64_t gpus_per_host,
+                        absl::Span<const ReplicaGroup> replica_groups,
+                        CollectiveOpGroupMode group_mode,
+                        const DeviceAssignment* device_assignment) {
+  const auto is_local =
+      [gpus_per_host](absl::Span<const GlobalDeviceId> devices) -> bool {
+    if (devices.empty()) {
+      LOG(WARNING) << "Device list was empty to when verifying locality.";
+      return false;
+    }
+    const int64_t target_host = devices[0].value() / gpus_per_host;
+    for (GlobalDeviceId device : devices) {
+      if (device.value() / gpus_per_host != target_host) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  if (device_assignment != nullptr) {
+    auto status_or_groups = GetParticipatingDevicesGroups(
+        *device_assignment, replica_groups, group_mode);
+    if (!status_or_groups.ok()) {
+      LOG(WARNING) << "Failed to get participating devices groups: "
+                   << status_or_groups.status();
+      return false;
+    }
+    return absl::c_all_of(*status_or_groups,
+                          [&](const auto& group) { return is_local(group); });
+  }
+  // Fallback: Assume iota mapping
+  absl::InlinedVector<GlobalDeviceId, 8> devices;
+  return absl::c_all_of(replica_groups, [&](const auto& group) {
+    devices.clear();
+    absl::c_transform(group.replica_ids(), std::back_inserter(devices),
+                      [](int64_t id) { return GlobalDeviceId(id); });
+    return is_local(devices);
+  });
 }
 
 }  // namespace gpu
