@@ -558,7 +558,7 @@ absl::Status ConfigAssigner::DumpTuningLogs() {
   return absl::OkStatus();
 }
 
-std::string AutotuneConfig::ToString() const {
+std::string ConfigAssigner::Options::ToString() const {
   return absl::StrFormat(
       "{\n"
       "  \"check_buffers\": %s,\n"
@@ -567,19 +567,15 @@ std::string AutotuneConfig::ToString() const {
       "  \"scratch_bytes_window_size_us\": %d,\n"
       "  \"expect_all_instructions_in_cache\": %s,\n"
       "  \"dump_logs_to\": \"%s\",\n"
-      "  \"exclude_cublas_config\": %s,\n"
       "  \"select_first_config\": %s,\n"
       "  \"use_default_config\": %s,\n"
-      "  \"dump_hlos\": %s,\n"
-      "  \"allow_reg_spills\": %s\n"
+      "  \"dump_hlos\": %s\n"
       "}",
       check_buffers ? "true" : "false", relative_tolerance,
       crash_on_check_failure ? "true" : "false", scratch_bytes_window_size_us,
       expect_all_instructions_in_cache ? "true" : "false", dump_logs_to,
-      exclude_cublas_config ? "true" : "false",
       select_first_config ? "true" : "false",
-      use_default_config ? "true" : "false", dump_hlos ? "true" : "false",
-      allow_reg_spills_fn ? "dynamic" : "null");
+      use_default_config ? "true" : "false", dump_hlos ? "true" : "false");
 }
 
 AutotunerCacheInterface::CacheStats ConfigAssigner::GetCacheStats() const {
