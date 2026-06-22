@@ -193,10 +193,6 @@ LogicalResult MemRefSliceOp::verify() {
   auto target_memory_space = target_type.getMemorySpace();
   auto indices = getBaseIdx();
   auto slice_shape = getResult().getType().getShape();
-  if (!source_type.hasStaticShape()) {
-    return emitOpError(
-        "Only slicing of memrefs with static shapes is supported.");
-  }
   if (getDynamicSizes().size() != target_type.getNumDynamicDims()) {
     return emitOpError(
         "Number of provided dynamic dimensions sizes must match the number of "
@@ -920,6 +916,13 @@ LogicalResult ReinterpretCastOp::verify() {
            << num_dynamic_dims
            << " dynamic size(s) for the result type, but got "
            << getDynamicSizes().size();
+  }
+  if (auto tiled_layout = dyn_cast<TiledLayoutAttr>(source_type.getLayout())) {
+    if (tiled_layout.getNumDynamicStrides() != 0) {
+      return emitOpError(
+          "Not implemented: reinterpreting tiled memref with "
+          "dynamic strides");
+    }
   }
   return success();
 }

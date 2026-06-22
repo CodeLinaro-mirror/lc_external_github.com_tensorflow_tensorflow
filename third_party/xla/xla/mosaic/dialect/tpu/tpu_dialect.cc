@@ -257,7 +257,12 @@ void TiledLayoutAttr::print(AsmPrinter& printer) const {
     if (i > 0) {
       printer << ',';
     }
-    printer << getTileStrides()[i];
+    int64_t stride = getTileStrides()[i];
+    if (ShapedType::isDynamic(stride)) {
+      printer << "?";
+    } else {
+      printer << stride;
+    }
   }
   printer << "]>";
 }
@@ -298,7 +303,9 @@ Attribute TiledLayoutAttr::parse(AsmParser& parser, Type type) {
         }
       }
       first = false;
-      if (failed(parser.parseInteger(stride))) {
+      if (succeeded(parser.parseOptionalQuestion())) {
+        stride = ShapedType::kDynamic;
+      } else if (failed(parser.parseInteger(stride))) {
         return {};
       }
       tile_strides.push_back(stride);
@@ -404,8 +411,11 @@ SmallVector<int64_t> TiledLayoutAttr::getDefaultTileStrides(
   const int64_t first_tile_rank =
       first_tile == nullptr ? 0 : first_tile->dimensions().size();
   for (int64_t d = shape.size() - 1; d >= 0; --d) {
-    assert(!ShapedType::isDynamic(shape[d]));
     strides[d] = stride;
+    if (ShapedType::isDynamic(shape[d])) {
+      stride = ShapedType::kDynamic;
+      continue;
+    }
     if (d >= shape.size() - first_tile_rank) {
       assert(first_tile != nullptr);
       const int64_t tile_d = d - (shape.size() - first_tile_rank);
@@ -515,13 +525,14 @@ SmallVector<int64_t> TiledLayoutAttr::getSubtileUnit(
   return subtile_unit;
 }
 
+int64_t TiledLayoutAttr::getNumDynamicStrides() const {
+  return absl::c_count_if(getTileStrides(), ShapedType::isDynamic);
+}
+
 LogicalResult TiledLayoutAttr::verify(
     function_ref<InFlightDiagnostic()> emitError,
     const llvm::ArrayRef<xla::Tile> tiles,
     const llvm::ArrayRef<int64_t> tile_strides) {
-  if (llvm::any_of(tile_strides, ShapedType::isDynamic)) {
-    return emitError() << "Not implemented: Dynamic tile strides";
-  }
   if (tiles.empty()) {
     return success();
   }
