@@ -58,6 +58,7 @@ limitations under the License.
 #include "xla/backends/gpu/codegen/triton/ir/triton_xla_ops.h"
 #include "xla/backends/gpu/codegen/triton/lowering_util.h"
 #include "xla/backends/gpu/runtime/all_reduce.h"
+#include "xla/backends/gpu/transforms/collectives/collective_ops_utils.h"
 #include "xla/codegen/emitters/ir/xla_ops.h"  // IWYU pragma: keep
 #include "xla/codegen/xtile/codegen/emitter_helpers.h"
 #include "xla/codegen/xtile/ir/xtile_ops.h"
@@ -214,8 +215,8 @@ GetBlockLevelFusionConfigForAllReduce(
     const DeviceAssignment* device_assignment) {
   ASSIGN_OR_RETURN(GpuBackendConfig gpu_config,
                    all_reduce->backend_config<GpuBackendConfig>());
-  if (gpu_config.collective_backend_config().kernel_strategy() ==
-      CollectiveBackendConfig::KERNEL_STRATEGY_DEFAULT) {
+  if (!IsTritonCollectiveKernel(
+          gpu_config.collective_backend_config().kernel_strategy())) {
     VLOG(3) << "All-reduce is not annotated with Triton strategy. Skipping.";
     return std::nullopt;
   }
@@ -1003,7 +1004,7 @@ GetCollectiveBlockLevelFusionConfig(const GpuTopology& gpu_topology,
                                     const DeviceAssignment* device_assignment) {
   const HloInstruction* root = fusion_instr->fused_expression_root();
   switch (root->opcode()) {
-    case HloOpcode::kAllReduceStart:
+    case HloOpcode::kAllReduce:
       return GetBlockLevelFusionConfigForAllReduce(
           gpu_topology, Cast<HloAllReduceInstruction>(root), device_assignment);
     default:
@@ -1039,7 +1040,7 @@ absl::StatusOr<std::vector<Shape>> GetCollectiveUnmanagedKernelArguments(
   const HloComputation* computation = fusion->fused_instructions_computation();
   const HloInstruction* root = computation->root_instruction();
   switch (root->opcode()) {
-    case HloOpcode::kAllReduceStart:
+    case HloOpcode::kAllReduce:
       return GetAllReduceUnmanagedKernelArguments(
           computation, Cast<HloAllReduceInstruction>(root));
     default:

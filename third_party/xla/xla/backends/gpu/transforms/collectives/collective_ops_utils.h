@@ -20,9 +20,11 @@ limitations under the License.
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "xla/backends/gpu/runtime/collective_params.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/service/computation_placer.h"
+#include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/hlo_module_config.h"
 #include "xla/stream_executor/device_description.h"
 
@@ -97,6 +99,17 @@ bool IsAllReplicasLocal(int64_t gpus_per_host,
 // is_spmd_generated field in CollectiveBackendConfig (set when collectives
 // that carried the attribute are combined).
 bool IsSpmdGenerated(const HloInstruction& instr);
+
+// Returns true if the instruction was annotated to use a Triton collective
+// kernel.
+bool IsTritonCollectiveKernel(
+    CollectiveBackendConfig::CollectiveKernelStrategy ks);
+
+// Converts an HloInstruction to a CollectiveOpSpec required as an argument to
+// the thunk that will launch the collective kernel.
+// This method is only used for Triton collective kernels as of now.
+absl::StatusOr<CollectiveOpSpec> ExtractCollectiveOpSpec(
+    const HloInstruction* inst);
 
 }  // namespace gpu
 }  // namespace xla

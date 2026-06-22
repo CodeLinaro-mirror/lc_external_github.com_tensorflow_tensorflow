@@ -31,10 +31,14 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "xla/tsl/platform/status_macros.h"
+#include "xla/backends/gpu/runtime/collective_params.h"
+#include "xla/core/collectives/reduction_kind.h"
 #include "xla/hlo/ir/hlo_casting_utils.h"
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_module.h"
+#include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/hlo/utils/hlo_query.h"
 #include "xla/runtime/device_id.h"
 #include "xla/service/collective_ops_utils.h"
 #include "xla/service/computation_placer.h"
@@ -342,6 +346,39 @@ bool IsAllReplicasLocal(int64_t gpus_per_host,
   return absl::c_all_of(replica_groups, [&](const auto& group) {
     return IsLocalReplicaGroup(gpus_per_host, group.replica_ids());
   });
+}
+
+bool IsTritonCollectiveKernel(
+    CollectiveBackendConfig::CollectiveKernelStrategy ks) {
+  return ks == CollectiveBackendConfig::KERNEL_STRATEGY_TRITON_ONE_SHOT ||
+         ks == CollectiveBackendConfig::KERNEL_STRATEGY_TRITON_TWO_SHOT;
+}
+
+absl::StatusOr<CollectiveOpSpec> ExtractCollectiveOpSpec(
+    const HloInstruction* inst) {
+  const HloInstruction* hero = inst;
+  if (inst->opcode() == HloOpcode::kFusion) {
+    if (const HloInstruction* maybe_hero =
+            hlo_query::GetFirstInstructionWithOpcode(
+                *inst->fused_instructions_computation(),
+                {HloOpcode::kAllReduce, HloOpcode::kAllReduceStart});
+        maybe_hero != nullptr) {
+      hero = maybe_hero;
+    }
+  }
+  if (auto* all_reduce = DynCast<HloAllReduceInstructionBase>(hero)) {
+    std::optional<ReductionKind> reduction_kind =
+        MatchReductionComputation(all_reduce->to_apply());
+    if (!reduction_kind.has_value()) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Could not match reduction computation for Triton all-reduce: ",
+          all_reduce->ToString()));
+    }
+    return AllReduceOpSpec{reduction_kind.value()};
+  }
+  return absl::InvalidArgumentError(absl::StrCat(
+      "Instruction is not a collective that can be emitted by Triton: ",
+      inst->ToString()));
 }
 
 }  // namespace gpu

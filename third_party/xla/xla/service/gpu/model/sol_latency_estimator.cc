@@ -49,8 +49,6 @@ limitations under the License.
 #include "xla/service/latency_hiding_scheduler.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/tsl/platform/env.h"
-#include "xla/tsl/platform/errors.h"
-#include "xla/tsl/platform/statusor.h"
 #include "xla/util.h"
 
 namespace xla {
@@ -58,12 +56,6 @@ namespace gpu {
 namespace {
 
 using ::mlir::MLIRContext;
-
-bool IsTritonCollectiveKernel(
-    CollectiveBackendConfig::CollectiveKernelStrategy ks) {
-  return ks == CollectiveBackendConfig::KERNEL_STRATEGY_TRITON_ONE_SHOT ||
-         ks == CollectiveBackendConfig::KERNEL_STRATEGY_TRITON_TWO_SHOT;
-}
 
 bool IsSupportedCollectiveOp(const HloInstruction& instr) {
   return HloPredicateIsOp<HloOpcode::kAllReduceStart, HloOpcode::kAllReduce,

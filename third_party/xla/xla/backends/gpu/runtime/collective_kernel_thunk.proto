@@ -24,14 +24,19 @@ import "xla/service/gpu/launch_dimensions.proto";
 option java_outer_classname = "CollectiveKernelThunk";
 option java_multiple_files = true;
 
+message AllReduceSpec {
+  // The reduction operator (e.g., Sum, Product, Min, Max) to apply in the
+  // collective operation.
+  xla.ReductionKindProto reduction_kind = 1;
+}
+
 message CollectiveKernelThunkProto {
   // Configuration parameters for the collective operation, including replica
   // groups, number of participants, and participant ranks.
   CollectiveConfigProto collective_config = 1;
 
-  // The reduction operator (e.g., Sum, Product, Min, Max) to apply in the
-  // collective operation.
-  xla.ReductionKindProto reduction_kind = 2;
+  // Deprecated. Use all_reduce_spec inside op_spec instead.
+  xla.ReductionKindProto reduction_kind = 2 [deprecated = true];
 
   // If true, execution runs asynchronously on a dedicated collective stream.
   bool is_async = 3;
@@ -65,4 +70,8 @@ message CollectiveKernelThunkProto {
   // If true, enables Programmatic Dependent Launch (PDL) to trigger dependent
   // kernels directly from the GPU.
   bool use_pdl = 11;
+
+  oneof op_spec {
+    AllReduceSpec all_reduce_spec = 12;
+  }
 }

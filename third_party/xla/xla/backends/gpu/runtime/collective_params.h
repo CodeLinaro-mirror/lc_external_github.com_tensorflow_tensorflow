@@ -19,12 +19,14 @@ limitations under the License.
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "xla/backends/gpu/collectives/gpu_collectives.h"
+#include "xla/core/collectives/reduction_kind.h"
 #include "xla/executable_run_options.h"
 #include "xla/runtime/device_id.h"
 #include "xla/service/gpu/gpu_executable_run_options.h"
@@ -88,6 +90,15 @@ struct CollectiveParams {
       int64_t collective_max_nchannels, int64_t p2p_max_nchannels,
       int local_device_count, bool collective_use_minimal_resource);
 };
+
+// Parameters capturing all the details required for collective execution of
+// XLA operations.
+struct AllReduceOpSpec {
+  ReductionKind reduction_kind;
+};
+
+// Specification for all operations handled by the collective kernel thunk.
+using CollectiveOpSpec = std::variant<std::monostate, AllReduceOpSpec>;
 
 }  // namespace xla::gpu
 

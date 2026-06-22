@@ -101,7 +101,10 @@ cc_library(
     deps = [
         "//xla:side_effect_util",
         "//xla:xla_data_proto_cc",
+        "//xla/backends/gpu/runtime:collective_params",
+        "//xla/core/collectives:reduction_kind",
         "//xla/hlo/ir:hlo",
+        "//xla/hlo/utils:hlo_query",
         "//xla/runtime:device_id",
         "//xla/service:collective_ops_utils",
         "//xla/service:computation_placer_hdr",

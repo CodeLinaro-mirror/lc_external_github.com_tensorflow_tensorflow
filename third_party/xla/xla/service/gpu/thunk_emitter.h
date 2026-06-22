@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "llvm/IR/Module.h"
 #include "xla/backends/gpu/runtime/async_execution.h"
+#include "xla/backends/gpu/runtime/collective_kernel_thunk.h"
 #include "xla/backends/gpu/runtime/collective_thunk.h"
 #include "xla/backends/gpu/runtime/host_send_recv_thunk.h"
 #include "xla/backends/gpu/runtime/sequential_thunk.h"
@@ -48,6 +49,9 @@ limitations under the License.
 #include "xla/shape_util.h"
 
 namespace xla::gpu {
+
+class CollectiveKernelThunk;
+struct AllReduceConfig;
 
 struct DynamicSliceCopyFusion;
 struct StaticSliceCopyFusion;
@@ -106,8 +110,16 @@ class ThunkEmitter {
 
   AsyncThunkSequence EmitCollectiveGroupStartThunk(const HloInstruction* instr);
 
+  AsyncThunkSequence EmitCollectiveKernelThunk(
+      Thunk::ThunkInfo thunk_info, std::vector<CollectiveThunk::Buffer> buffers,
+      const HloInstruction* instr, const CollectiveConfig& config,
+      CollectiveOpSpec op_spec);
+
+  // Async start is either an AsyncStart instruction or a
+  // CollectivePermuteStart.
   absl::StatusOr<ThunkSequence> EmitCollectivePermute(
-      const HloCollectivePermuteInstruction* instr);
+      const HloCollectivePermuteInstruction* instr,
+      const HloInstruction* absl_nonnull async_start);
 
   template <typename CollectiveThunkType, typename HloInstType>
   AsyncThunkSequence EmitCollectiveThunk(

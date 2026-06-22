@@ -36,8 +36,8 @@ limitations under the License.*/
 #include "xla/backends/gpu/runtime/collective_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/backends/gpu/runtime/thunk.pb.h"
+#include "xla/backends/gpu/runtime/traced_command.h"
 #include "xla/core/collectives/rank_id.h"
-#include "xla/core/collectives/reduction_kind.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/launch_dimensions.h"
 #include "xla/stream_executor/device_address.h"
@@ -60,14 +60,14 @@ namespace xla::gpu {
 // - Launch the kernel.
 // When codegen kernel is used, kernel_name, launch_dimensions, shmem_bytes
 // must be set.
-class CollectiveKernelThunk : public Thunk {
+class CollectiveKernelThunk : public TracedCommand {
  public:
   static constexpr auto kMaxNumExecutors =
       ::stream_executor::gpu::kMaxNumAllReduceInputPtrs;
 
   CollectiveKernelThunk(
       ThunkInfo info, CollectiveConfig collective_config,  //
-      ReductionKind reduction_kind,                        //
+      CollectiveOpSpec op_spec,                            //
       bool is_async,                                       //
       std::vector<CollectiveThunk::Buffer> buffers,        //
       bool is_collective_kernel_enabled,                   //
@@ -77,11 +77,11 @@ class CollectiveKernelThunk : public Thunk {
       bool is_multimem_enabled = false,
       std::optional<std::vector<uint8_t>> cubin = std::nullopt,
       bool use_pdl = false)
-      : Thunk{Thunk::kCollectiveKernel, info},
+      : TracedCommand{Thunk::kCollectiveKernel, info},
         collective_kernel_enabled_(is_collective_kernel_enabled),
         is_async_(is_async),
         collective_config_(std::move(collective_config)),
-        reduction_kind_(reduction_kind),
+        op_spec_(op_spec),
         launch_dimensions_(launch_dimensions),
         kernel_name_(kernel_name),
         cubin_(std::move(cubin)),
@@ -91,6 +91,8 @@ class CollectiveKernelThunk : public Thunk {
         use_pdl_(use_pdl) {
     per_stream_state_.reserve(kMaxNumExecutors);
   }
+
+  const CollectiveOpSpec& op_spec() const { return op_spec_; }
 
   bool is_multimem_enabled() const { return is_multimem_enabled_; }
 
@@ -126,6 +128,8 @@ class CollectiveKernelThunk : public Thunk {
       absl::Span<const BufferAllocation> buffer_allocations);
 
   absl::StatusOr<ThunkProto> ToProto() const override;
+
+  BufferUses buffer_uses() const override;
 
  private:
   // We use a double buffering strategy for the buffers.
@@ -195,8 +199,10 @@ class CollectiveKernelThunk : public Thunk {
   const bool is_async_;
   // Collective config being used. Copied over to avoid lifetime issues.
   const CollectiveConfig collective_config_;
-  // Reduction kind being to use for AllReduce collective.
-  const ReductionKind reduction_kind_;
+  // Operation specific parameters.
+  // This is also used to figure out which emitted kernel to use since arguments
+  // can change based on the operation.
+  const CollectiveOpSpec op_spec_;
   // Launch dimensions for the kernel. Only relevant when the codegen kernel
   // is used.
   LaunchDimensions launch_dimensions_;
