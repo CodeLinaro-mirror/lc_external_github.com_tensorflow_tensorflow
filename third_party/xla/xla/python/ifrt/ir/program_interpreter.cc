@@ -164,6 +164,9 @@ struct ProgramInterpreterState {
 
   std::vector<ArrayHandle> input_handles;
   absl::flat_hash_set<int> donated_input_indices;
+  // Mapping from input index of array that is returned from the program to its
+  // spec.
+  absl::flat_hash_map<int, ArraySpec> returned_input_index_to_spec;
 
   std::vector<absl::AnyInvocable<absl::Status(Environment& env) const>> op_fns;
 
@@ -224,20 +227,85 @@ struct ProgramInterpreterState {
                         !options.non_donatable_input_indices.contains(idx);
       const ArrayHandle handle = input_handles[idx];
       if (handle != kArrayNotUsed) {
-        env.AssociateArray(handle, ArrayState{
-                                       /*array=*/arrays[idx],
-                                       /*can_be_donated=*/is_donated,
-                                   });
-        if (is_donated) {
-          env.deletable_program_arguments.insert(handle);
+        if (!returned_input_index_to_spec.contains(idx)) {
+          env.AssociateArray(handle, ArrayState{
+                                         /*array=*/arrays[idx],
+                                         /*can_be_donated=*/is_donated,
+                                     });
+          if (is_donated) {
+            env.deletable_program_arguments.insert(handle);
+          }
         }
       } else if (is_donated) {
         // If the argument is donated but not used, it can be deleted.
         to_delete.push_back(arrays[idx]);
       }
     }
+
+    // Delete the arrays that are donated and not used nor returned from the
+    // program.
     if (!to_delete.empty()) {
       client->DeleteValues(absl::MakeSpan(to_delete));
+    }
+
+    // Remap the arrays that are returned from the program. This is necessary to
+    // ensure that: 1) donated arrays that are returned are deleted while the
+    // output arrays remain valid, and 2) calling `Delete()` on input arrays
+    // does not delete the returned arrays that are aliased.
+    std::vector<int> donated_returned_inputs;
+    std::vector<int> reused_returned_inputs;
+    for (const auto& [idx, spec] : returned_input_index_to_spec) {
+      bool is_donated = donated_input_indices.contains(idx) &&
+                        !options.non_donatable_input_indices.contains(idx);
+      if (is_donated) {
+        donated_returned_inputs.push_back(idx);
+      } else {
+        reused_returned_inputs.push_back(idx);
+      }
+    }
+    auto remap_returned_inputs =
+        [&](absl::Span<const int> input_indices,
+            ArrayCopySemantics semantics) -> absl::Status {
+      RemapPlan plan;
+      std::vector<ArrayRef> arrays_to_remap;
+      arrays_to_remap.reserve(input_indices.size());
+      auto mappings = std::make_shared<std::vector<RemapPlan::Mapping>>();
+      mappings->reserve(input_indices.size());
+      for (int idx = 0; idx < input_indices.size(); ++idx) {
+        arrays_to_remap.push_back(arrays[input_indices[idx]]);
+        const ArraySpec& spec =
+            returned_input_index_to_spec.at(input_indices[idx]);
+        plan.input_specs.push_back(spec);
+        plan.output_specs.push_back(spec);
+        int64_t num_shards = spec.sharding->devices()->size();
+        mappings->push_back(RemapPlan::Mapping{
+            /*in_array=*/idx,
+            /*out_array=*/idx,
+            /*from=*/{RemapPlan::Interval{0, num_shards, 1}},
+            /*to=*/{RemapPlan::Interval{0, num_shards, 1}},
+        });
+      }
+      plan.mappings = std::move(mappings);
+      ASSIGN_OR_RETURN(std::vector<ArrayRef> remapped,
+                       client->RemapArrays(
+                           plan, absl::MakeSpan(arrays_to_remap), semantics));
+      for (int idx = 0; idx < input_indices.size(); ++idx) {
+        env.AssociateArray(input_handles[input_indices[idx]],
+                           ArrayState{
+                               /*array=*/std::move(remapped[idx]),
+                               /*can_be_donated=*/semantics ==
+                                   ArrayCopySemantics::kDonateInput,
+                           });
+      }
+      return absl::OkStatus();
+    };
+    if (!donated_returned_inputs.empty()) {
+      RETURN_IF_ERROR(remap_returned_inputs(donated_returned_inputs,
+                                            ArrayCopySemantics::kDonateInput));
+    }
+    if (!reused_returned_inputs.empty()) {
+      RETURN_IF_ERROR(remap_returned_inputs(reused_returned_inputs,
+                                            ArrayCopySemantics::kReuseInput));
     }
 
     for (const auto& op_fn : op_fns) {
@@ -274,6 +342,16 @@ ProgramInterpreter::BuildExecuteFn() {
     state.input_handles.push_back(handle);
     if (main_func.getArgAttr(idx, kIfrtDonatedArgAttrName) != nullptr) {
       state.donated_input_indices.insert(idx);
+    }
+    // Populate `returned_input_index_to_spec` with the input arrays that are
+    // returned from the program as output.
+    if (handle != kArrayNotUsed &&
+        llvm::any_of(arg.getUsers(), [](mlir::Operation* user) {
+          return mlir::isa<mlir::func::ReturnOp>(user);
+        })) {
+      ASSIGN_OR_RETURN(ArraySpec spec,
+                       ArraySpecFromMlirType(arg.getType(), client_, devices_));
+      state.returned_input_index_to_spec.emplace(idx, std::move(spec));
     }
   }
 

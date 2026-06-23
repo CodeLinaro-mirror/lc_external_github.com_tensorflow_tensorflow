@@ -263,6 +263,60 @@ module {
       result.outputs[0], dtype, shard_shape, {{0, 1}, {2, 3}}, devices));
   ASSERT_NO_FATAL_FAILURE(AssertPerShardData<int>(
       result.outputs[1], dtype, shard_shape, {{0, 1}, {2, 3}}, devices));
+  // Check that deleting the input does not delete the outputs.
+  ASSERT_OK(input->Delete().Await());
+  ASSERT_TRUE(input->IsDeleted());
+  ASSERT_NO_FATAL_FAILURE(AssertPerShardData<int>(
+      result.outputs[0], dtype, shard_shape, {{0, 1}, {2, 3}}, devices));
+  ASSERT_NO_FATAL_FAILURE(AssertPerShardData<int>(
+      result.outputs[1], dtype, shard_shape, {{0, 1}, {2, 3}}, devices));
+}
+
+TEST_F(IfrtIrLoadedExecutableTest, DonatedInputsAreDeleted) {
+  std::string source = R"(
+!array = !ifrt.array<tensor<2x2xi32>, #ifrt.sharding_param<2x1 to [0] on 2>,
+                     [0,1]>
+module {
+  func.func @main(%arg0: !array {ifrt.donated}, %arg1: !array {ifrt.donated})
+      -> (!array) attributes {ifrt.function} {
+    return %arg0 : !array
+  }
+}
+  )";
+  ASSERT_OK_AND_ASSIGN(mlir::OwningOpRef<mlir::ModuleOp> mlir_module,
+                       LoadFromSource(source));
+  ASSERT_OK_AND_ASSIGN(DeviceListRef devices, PickDevices(2));
+  ASSERT_OK_AND_ASSIGN(
+      LoadedExecutableRef loaded_exec,
+      client_->GetDefaultCompiler()
+          ->CompileAndLoad(
+              std::make_unique<IfrtIRProgram>(*mlir_module),
+              std::make_unique<IfrtIRCompileOptions>(GetDeviceIds(devices)))
+          .Await());
+
+  std::vector<int> data0 = {0, 1};
+  std::vector<int> data1 = {2, 3};
+  Shape shard_shape({1, 2});
+  DType dtype(DType::kS32);
+  ASSERT_OK_AND_ASSIGN(ArrayRef input0,
+                       CreateArray({data0.data(), data1.data()}, Shape({2, 2}),
+                                   shard_shape, dtype, devices));
+  ASSERT_OK_AND_ASSIGN(ArrayRef input1,
+                       CreateArray({data0.data(), data1.data()}, Shape({2, 2}),
+                                   shard_shape, dtype, devices));
+  std::vector<ArrayRef> inputs = {input0, input1};
+  ASSERT_OK_AND_ASSIGN(LoadedExecutable::ExecuteResult result,
+                       loaded_exec->Execute(absl::MakeSpan(inputs),
+                                            ExecuteOptionsWithFillStatus(),
+                                            /*devices=*/std::nullopt));
+
+  ASSERT_OK(result.status.Await());
+  ASSERT_EQ(result.outputs.size(), 1);
+  ASSERT_TRUE(input0->IsDeleted());
+  ASSERT_TRUE(input1->IsDeleted());
+  // Check that the output is not deleted.
+  ASSERT_NO_FATAL_FAILURE(AssertPerShardData<int>(
+      result.outputs[0], dtype, shard_shape, {{0, 1}, {2, 3}}, devices));
 }
 
 TEST_F(IfrtIrLoadedExecutableTest, CopyArrays) {
