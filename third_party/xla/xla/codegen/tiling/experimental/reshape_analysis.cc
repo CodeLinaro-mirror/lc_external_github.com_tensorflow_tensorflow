@@ -22,6 +22,7 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "xla/shape.h"
@@ -157,6 +158,18 @@ std::vector<MinimalReshape> GetMinimalReshapes(const Shape& input_shape,
 std::string MinimalReshape::ToString() const {
   return absl::StrFormat("%v -> %v (%s)", input_dim_ids, output_dim_ids,
                          ReshapeCategoryToString(category));
+}
+
+llvm::SmallVector<int64_t> PositionsOfNonTrivialDims(
+    absl::Span<const int64_t> dimensions) {
+  llvm::SmallVector<int64_t> positions;
+  for (int64_t i = 0; i < dimensions.size(); ++i) {
+    if (dimensions[i] != 1) {
+      positions.push_back(i);
+    }
+  }
+
+  return positions;
 }
 
 }  // namespace xla::gpu::experimental
