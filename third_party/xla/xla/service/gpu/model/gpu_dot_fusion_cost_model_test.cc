@@ -274,6 +274,42 @@ ROOT r = bf16[1024,1024] transpose(d), dimensions={1,0}
               absl_testing::StatusIs(absl::StatusCode::kUnimplemented));
 }
 
+TEST_F(GpuDotFusionCostModelTest, CalculateKLoopIterations) {
+  EXPECT_EQ(
+      gpu_dot_fusion_cost_model::detail::CalculateKLoopIterations(1024, 32),
+      32);
+  EXPECT_EQ(
+      gpu_dot_fusion_cost_model::detail::CalculateKLoopIterations(1024, 64),
+      16);
+  EXPECT_EQ(
+      gpu_dot_fusion_cost_model::detail::CalculateKLoopIterations(1000, 32),
+      32);
+}
+
+TEST_F(GpuDotFusionCostModelTest, CalculateIterBytes) {
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                       ParseAndReturnVerifiedModule(R"(
+ENTRY e {
+p0 = bf16[1024,2048] parameter(0)
+p1 = bf16[2048,1024] parameter(1)
+ROOT r = bf16[1024,1024] dot(p0, p1),
+lhs_contracting_dims={1}, rhs_contracting_dims={0}, algorithm=dot_bf16_bf16_bf16
+})"));
+  auto* dot =
+      Cast<HloDotInstruction>(module->entry_computation()->root_instruction());
+  gpu_dot_fusion_cost_model::detail::DotProblemInfo dot_info(*dot);
+  gpu_dot_fusion_cost_model::detail::DotTileSize dot_tile{/*m=*/128, /*n=*/256,
+                                                          /*k=*/32, /*b=*/1};
+
+  // lhs_iter_bytes = ceil(1 * 128 * 32 * 2 (bf16 - 2 bytes)) = 8192
+  // rhs_iter_bytes = ceil(1 * 32 * 256 * 2 (bf16 - 2 bytes)) = 16384
+  // total = 8192 + 16384 = 24576
+  int64_t iter_bytes =
+      gpu_dot_fusion_cost_model::detail::CalculateLoopIterBytes(dot_info,
+                                                                dot_tile);
+  EXPECT_EQ(iter_bytes, 24576);
+}
+
 }  // namespace
 }  // namespace gpu
 }  // namespace xla

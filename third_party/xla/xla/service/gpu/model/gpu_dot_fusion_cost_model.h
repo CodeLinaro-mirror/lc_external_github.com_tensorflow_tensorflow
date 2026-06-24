@@ -85,6 +85,13 @@ struct HbmEstimates {
 HbmEstimates CalculateHbmTime(const DotProblemInfo& dot,
                               const se::DeviceDescription& device_info);
 
+// Calculates the number of inner loop iterations for a GPU DOT operation.
+int64_t CalculateKLoopIterations(int64_t dot_k, int64_t block_k);
+
+// Calculates the bytes read from HBM for one inner loop iteration.
+int64_t CalculateLoopIterBytes(const DotProblemInfo& dot,
+                               const DotTileSize& dot_tile);
+
 // Calculates the L2 time for a GPU DOT operation.
 absl::StatusOr<absl::Duration> CalculateL2Time(
     int64_t dot_k, int64_t tile_k, const se::DeviceDescription& device_info,
