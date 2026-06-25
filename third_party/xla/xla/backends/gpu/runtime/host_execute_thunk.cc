@@ -29,7 +29,6 @@ limitations under the License.
 #include "absl/container/inlined_vector.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
-#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -38,6 +37,7 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "xla/tsl/platform/status_macros.h"
 #include "xla/backends/gpu/host_offloading/gpu_host_offloading_allocator.h"
+#include "xla/backends/gpu/runtime/host_async_thunk.h"
 #include "xla/backends/gpu/runtime/thunk.h"
 #include "xla/core/host_offloading/host_offloading_allocator.h"
 #include "xla/core/host_offloading/host_offloading_buffer.h"
@@ -47,17 +47,18 @@ limitations under the License.
 #include "xla/executable_run_options.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/primitive_util.h"
+#include "xla/runtime/buffer_use.h"
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/gpu/buffer_allocations.h"
 #include "xla/service/shaped_slice.pb.h"
 #include "xla/shape.h"
 #include "xla/shape_tree.h"
 #include "xla/shape_util.h"
+#include "xla/stream_executor/memory_space.h"
 #include "xla/stream_executor/stream.h"
 #include "xla/stream_executor/stream_executor.h"
 #include "xla/tsl/concurrency/async_value_ref.h"
 #include "xla/tsl/platform/env.h"
-#include "xla/tsl/platform/errors.h"
 #include "xla/tsl/platform/threadpool.h"
 #include "xla/util.h"
 #include "tsl/platform/cpu_info.h"
@@ -613,6 +614,18 @@ absl::Status HostExecuteStartThunk::ExecuteOnStream(
       }));
 
   return absl::OkStatus();
+}
+
+Thunk::BufferUses HostExecuteStartThunk::buffer_uses() const {
+  BufferUses uses;
+  uses.reserve(args_.size() + results_.size());
+  for (const auto& [slice, shape] : args_) {
+    uses.push_back(BufferUse::Read(slice, shape));
+  }
+  for (const auto& [slice, shape] : results_) {
+    uses.push_back(BufferUse::Write(slice, shape));
+  }
+  return uses;
 }
 
 std::optional<AsyncEventsUniqueId>

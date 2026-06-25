@@ -112,6 +112,7 @@ class HostExecuteStartThunk : public HostAsyncThunk {
 
   absl::Status Initialize(const InitializeParams& params) override;
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
+  BufferUses buffer_uses() const override;
 
   // Returns the async events for the host offloading execution. This is
   // intended to be shared with the corresponding HostExecuteDoneThunk.
@@ -167,6 +168,7 @@ class HostExecuteDoneThunk : public HostAsyncThunk {
 
   absl::Status Initialize(const InitializeParams& params) override;
   absl::Status ExecuteOnStream(const ExecuteParams& params) override;
+  BufferUses buffer_uses() const override { return {}; }
 
   std::optional<AsyncEventsUniqueId> GetAsyncEventsUniqueId() const override;
 
