@@ -196,6 +196,7 @@ cc_library(
         "//tensorflow/compiler/jit:flags_headers",
         "//tensorflow/compiler/mlir/tensorflow:bridge_logger",
         "//tensorflow/compiler/mlir/tensorflow:dump_mlir_util",
+        "//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",  # buildcleaner: keep
         "//tensorflow/compiler/mlir/tensorflow/transforms:verify_no_outside_compilation_markers_pass",
         "//tensorflow/compiler/mlir/tf2xla/internal:logging_hooks",
         "//tensorflow/core:framework",
@@ -211,7 +212,6 @@ cc_library(
         "@llvm-project//mlir:Transforms",
         "@tsl//tsl/platform:error_logging",
         "@xla//xla/tsl/lib/monitoring:counter",
-        "@xla//xla/tsl/platform:errors",
         "@xla//xla/tsl/platform:status",
     ],
 )
@@ -226,6 +226,7 @@ tf_cc_test(
     ],
     deps = [
         ":tf_dialect_to_executor",
+        "//tensorflow/compiler/jit:flags",  # buildcleaner: keep
         "//tensorflow/compiler/mlir:register_common_dialects",
         "//tensorflow/compiler/mlir/tf2xla/api/v2/testing:utils",
         "//tensorflow/core/lib/monitoring:cell_reader",
@@ -337,7 +338,6 @@ cc_library(
         "//tensorflow/compiler/mlir/tensorflow:tensorflow_attributes",
         "//tensorflow/compiler/mlir/tensorflow:tensorflow_types",
         "//tensorflow/compiler/mlir/tensorflow:translate_utils",
-        "//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",
         "//tensorflow/compiler/mlir/tensorflow/translate:mlir_roundtrip_flags",
         "//tensorflow/compiler/mlir/tf2xla/internal:graph_to_tf_executor_util",
         "//tensorflow/compiler/mlir/tf2xla/internal:node_order",
