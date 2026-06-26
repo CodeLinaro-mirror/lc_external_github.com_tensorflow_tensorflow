@@ -33,6 +33,7 @@ cc_library(
         ":tf_pass_inc_gen",
         "//tensorflow/compiler/mlir/tensorflow",
         "//tensorflow/core:framework",
+        "//tensorflow/core/ir:Dialect",
         "//tensorflow/core/transforms/toposort:Pass",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncDialect",
