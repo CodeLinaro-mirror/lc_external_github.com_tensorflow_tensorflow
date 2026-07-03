@@ -545,7 +545,7 @@ TEST(ParseRepeatedEnumFlagsTest, AutotuneBackend) {
       debug_options.xla_gpu_experimental_autotune_backends();
 
   // Check that the default setting is populated.
-  ASSERT_THAT(enabled_backends, IsEmpty());
+  ASSERT_THAT(enabled_backends, ::testing::Not(IsEmpty()));
 
   // Overwriting the default setting.
   SetXlaFlagsEnvVar("--xla_gpu_experimental_autotune_backends=cudnn,triton");
@@ -561,6 +561,16 @@ TEST(ParseRepeatedEnumFlagsTest, AutotuneBackend) {
   EXPECT_EQ(enabled_backends.size(), 2);
   EXPECT_THAT(enabled_backends, ElementsAre(autotuner::Backend::CUDNN,
                                             autotuner::Backend::CUBLASLT));
+
+  // Test starting from defaults and applying modifiers.
+  debug_options = DefaultDebugOptionsIgnoringFlags();
+  SetXlaFlagsEnvVar("--xla_gpu_experimental_autotune_backends=-triton");
+  ParseFlagsFromEnvAndDieIfUnknown("XLA_FLAGS", flag_objects);
+  EXPECT_THAT(enabled_backends,
+              ::testing::Not(::testing::Contains(autotuner::Backend::TRITON)));
+  EXPECT_THAT(enabled_backends, ::testing::Not(IsEmpty()));
+  // It should still contain CUDNN (which was in defaults).
+  EXPECT_THAT(enabled_backends, ::testing::Contains(autotuner::Backend::CUDNN));
 }
 
 TEST(CollectivesModeParsingTest, CaseInsensitive) {

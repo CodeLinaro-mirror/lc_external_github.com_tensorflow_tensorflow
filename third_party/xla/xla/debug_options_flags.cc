@@ -530,6 +530,13 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
       DebugOptions::DEVICELESS_CUB_WITH_FALLBACK);
   opts.set_xla_gpu_cudnn_deviceless_compilation_mode(
       DebugOptions::CUDNN_DEVICELESS_COMPILATION_DISABLED);
+  for (int i = 0; i < autotuner::Backend_descriptor()->value_count(); ++i) {
+    const auto backend = static_cast<autotuner::Backend>(
+        autotuner::Backend_descriptor()->value(i)->number());
+    if (backend != autotuner::Backend::UNSPECIFIED_BACKEND) {
+      opts.add_xla_gpu_experimental_autotune_backends(backend);
+    }
+  }
   return opts;
 }
 
