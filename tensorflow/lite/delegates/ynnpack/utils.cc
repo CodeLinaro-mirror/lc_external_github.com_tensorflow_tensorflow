@@ -103,6 +103,12 @@ ynn_type GetYnnType(TfLiteType type) {
       return ynn_type_int8;
     case kTfLiteUInt8:
       return ynn_type_uint8;
+    case kTfLiteInt4:
+      return ynn_type_int4;
+    case kTfLiteUInt4:
+      return ynn_type_uint4;
+    case kTfLiteInt2:
+      return ynn_type_int2;
     default:
       return ynn_type_invalid;
   }
