@@ -161,6 +161,16 @@ absl::Status DynamicSliceFusionV2Thunk::Prepare(const PrepareParams& params) {
   if (command_executor_.has_value()) {
     RETURN_IF_ERROR(command_executor_->Prepare(params));
   }
+  if (params.buffer_allocations != nullptr) {
+    std::vector<se::DeviceAddressBase> buffers = BuildDynamicSliceBuffers(
+        *params.buffer_allocations, IsInsideWhileLoopNest());
+    BufferAllocations embedded_allocs(
+        buffers, params.buffer_allocations->device_ordinal(),
+        params.buffer_allocations->memory_allocator());
+    PrepareParams embedded_params = params;
+    embedded_params.buffer_allocations = &embedded_allocs;
+    return executor_.Prepare(embedded_params);
+  }
   return executor_.Prepare(params);
 }
 
@@ -168,6 +178,16 @@ absl::Status DynamicSliceFusionV2Thunk::Initialize(
     const InitializeParams& params) {
   if (command_executor_.has_value()) {
     RETURN_IF_ERROR(command_executor_->Initialize(params));
+  }
+  if (params.buffer_allocations != nullptr) {
+    std::vector<se::DeviceAddressBase> buffers = BuildDynamicSliceBuffers(
+        *params.buffer_allocations, IsInsideWhileLoopNest());
+    BufferAllocations embedded_allocs(
+        buffers, params.buffer_allocations->device_ordinal(),
+        params.buffer_allocations->memory_allocator());
+    InitializeParams embedded_params = params;
+    embedded_params.buffer_allocations = &embedded_allocs;
+    return executor_.Initialize(embedded_params);
   }
   return executor_.Initialize(params);
 }
