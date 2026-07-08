@@ -339,8 +339,8 @@ TEST_F(ArrayTest, RemapArraysSuccess) {
       xla::ifrt::ArraySpec{DType(DType::Kind::kBF16), Shape({}), sharding_});
   output_specs.push_back(
       xla::ifrt::ArraySpec{DType(DType::Kind::kBF16), Shape({}), sharding_});
-  RemapPlan plan{input_specs, output_specs,
-                 std::make_shared<std::vector<RemapPlan::Mapping>>(mappings)};
+  RemapPlan plan(std::move(input_specs), std::move(output_specs),
+                 std::move(mappings));
 
   absl::StatusOr<std::vector<tsl::RCReference<xla::ifrt::Array>>> result =
       Array::RemapArrays(mock_client_.get(), rpc_helper_, plan,
