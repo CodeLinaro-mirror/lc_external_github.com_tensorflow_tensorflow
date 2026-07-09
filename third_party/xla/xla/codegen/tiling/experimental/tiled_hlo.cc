@@ -33,6 +33,7 @@ limitations under the License.
 #include "absl/hash/hash.h"
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/log/vlog_is_on.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
@@ -417,14 +418,12 @@ static absl::StatusOr<RegionResult> CreateRegionImpl(
 }  // namespace
 
 /*static*/ absl::StatusOr<TiledHloRegion> TiledHloComputation::CreateHloRegion(
-    std::unique_ptr<TiledHloInstruction> tiled_root,
+    std::vector<std::unique_ptr<TiledHloInstruction>> roots,
     const HloFusionAdaptor& fusion, TilingSpace& tiling_space,
     absl::flat_hash_map<int64_t,
                         std::pair<const TiledHloInstruction*, Interval>>&
         rt_symbol_to_tiled_hlo) {
-  std::vector<std::unique_ptr<TiledHloInstruction>> roots;
-  roots.push_back(std::move(tiled_root));
-  ASSIGN_OR_RETURN(RegionResult res,
+  ASSIGN_OR_RETURN(auto res,
                    CreateRegionImpl(std::move(roots), fusion, tiling_space,
                                     rt_symbol_to_tiled_hlo));
   return std::move(res.region);
@@ -433,34 +432,23 @@ static absl::StatusOr<RegionResult> CreateRegionImpl(
 /*static*/ absl::StatusOr<TiledHloComputation> TiledHloComputation::Tile(
     const HloFusionAdaptor& fusion, std::unique_ptr<TilingSpace> tiling_space) {
   SmallVector<const TiledHloInstruction*> roots;
-  SmallVector<const TiledHloInstruction*> roots_with_no_users;
   OrderedTiledHloPtrSet tiled_hlo_instructions_set;
 
-  absl::flat_hash_map<int64_t, std::pair<const TiledHloInstruction*, Interval>>
-      rt_symbol_to_tiled_hlo;
+  std::vector<std::unique_ptr<TiledHloInstruction>> tiled_roots;
+  tiled_roots.reserve(fusion.GetRoots().size());
   for (const auto& [root, tile] :
        llvm::zip(fusion.GetRoots(), tiling_space->tiled_roots())) {
     auto root_tiled_hlo =
         std::make_unique<TiledHloInstruction>(&root.instruction(), tile);
     roots.push_back(root_tiled_hlo.get());
-    if (root.GetUsers().empty()) {
-      roots_with_no_users.push_back(root_tiled_hlo.get());
-    }
-
-    ASSIGN_OR_RETURN(TiledHloRegion region,
-                     CreateHloRegion(std::move(root_tiled_hlo), fusion,
-                                     *tiling_space, rt_symbol_to_tiled_hlo));
-    for (std::unique_ptr<TiledHloInstruction>& tiled_hlo : region) {
-      tiled_hlo_instructions_set.Insert(std::move(tiled_hlo));
-    }
+    tiled_roots.push_back(std::move(root_tiled_hlo));
   }
 
-  std::vector<std::unique_ptr<TiledHloInstruction>> tiled_hlo_instructions =
-      tiled_hlo_instructions_set.ExtractData();
-
-  // Order instructions in def-before-use order.
-  SortTiledHloInstructionsInPostOrder(tiled_hlo_instructions,
-                                      roots_with_no_users);
+  absl::flat_hash_map<int64_t, std::pair<const TiledHloInstruction*, Interval>>
+      rt_symbol_to_tiled_hlo;
+  ASSIGN_OR_RETURN(TiledHloRegion region,
+                   CreateHloRegion(std::move(tiled_roots), fusion,
+                                   *tiling_space, rt_symbol_to_tiled_hlo));
 
   std::function<void(TiledHloInstruction*)> simplify_instruction;
   simplify_instruction = [&](TiledHloInstruction* instruction) {
@@ -473,12 +461,11 @@ static absl::StatusOr<RegionResult> CreateRegionImpl(
       }
     }
   };
-  for (auto& instr : tiled_hlo_instructions) {
+  for (auto& instr : region) {
     simplify_instruction(instr.get());
   }
 
-  return TiledHloComputation(std::move(tiling_space),
-                             TiledHloRegion{std::move(tiled_hlo_instructions)},
+  return TiledHloComputation(std::move(tiling_space), std::move(region),
                              std::move(roots),
                              std::move(rt_symbol_to_tiled_hlo));
 }

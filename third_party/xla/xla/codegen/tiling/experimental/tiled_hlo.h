@@ -229,7 +229,7 @@ class TiledHloComputation {
         rt_symbol_to_tiled_hlo_(std::move(rt_symbol_to_tiled_hlo)) {}
 
   static absl::StatusOr<TiledHloRegion> CreateHloRegion(
-      std::unique_ptr<TiledHloInstruction> tiled_root,
+      std::vector<std::unique_ptr<TiledHloInstruction>> roots,
       const HloFusionAdaptor& fusion, TilingSpace& tiling_space,
       absl::flat_hash_map<int64_t,
                           std::pair<const TiledHloInstruction*, Interval>>&
