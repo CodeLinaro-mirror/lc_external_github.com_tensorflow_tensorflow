@@ -354,7 +354,22 @@ void PluggableDevice::Compute(OpKernel* op_kernel, OpKernelContext* context) {
 // Based on the semantics of Device::Sync, this call should wait for
 // all streams not just the current one.
 absl::Status PluggableDevice::Sync() {
-  return PluggableDeviceUtil::SyncAll(this);
+  if (stream_ == nullptr) return absl::OkStatus();
+  if (stream_->compute != nullptr) {
+    TF_RETURN_IF_ERROR(stream_->compute->BlockHostUntilDone());
+  }
+  if (stream_->host_to_device != nullptr) {
+    TF_RETURN_IF_ERROR(stream_->host_to_device->BlockHostUntilDone());
+  }
+  if (stream_->device_to_host != nullptr) {
+    TF_RETURN_IF_ERROR(stream_->device_to_host->BlockHostUntilDone());
+  }
+  for (se::Stream* d2d_stream : stream_->device_to_device) {
+    if (d2d_stream != nullptr) {
+      TF_RETURN_IF_ERROR(d2d_stream->BlockHostUntilDone());
+    }
+  }
+  return absl::OkStatus();
 }
 
 void PluggableDevice::ComputeAsync(AsyncOpKernel* op_kernel,
