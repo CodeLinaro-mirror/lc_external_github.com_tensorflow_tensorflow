@@ -30,6 +30,7 @@ limitations under the License.
 #include "llvm/ADT/STLExtras.h"
 #include "mlir/IR/MLIRContext.h"
 #include "xla/codegen/tiling/experimental/test_utils.h"
+#include "xla/codegen/tiling/experimental/tile.h"
 #include "xla/codegen/tiling/experimental/tile_propagation.h"
 #include "xla/codegen/tiling/experimental/tiling_space.h"
 #include "xla/hlo/analysis/symbolic_expr.h"
@@ -56,10 +57,10 @@ MATCHER_P(IsUniquePointerTo, ptr, "") { return arg.get() == ptr; }
 MATCHER(HasValidRoots, "") {
   for (const TiledHloInstruction* root : arg.roots()) {
     if (!absl::c_any_of(
-            arg.tiled_hlo_instructions(),
+            arg.tiled_root_region().instructions(),
             [root](const auto& instr) { return instr.get() == root; })) {
       *result_listener << "root " << root->ToString()
-                       << " is not in tiled_hlo_instructions()";
+                       << " is not in tiled_root_region()";
       return false;
     }
   }
@@ -108,6 +109,45 @@ TEST_F(TiledHloTest, TestPrinting) {
          strides [1, 3]
          upper bounds [10, 30]
   )"));
+}
+
+TEST_F(TiledHloTest, TiledHloRegionDefaultConstruction) {
+  TiledHloRegion region;
+  EXPECT_TRUE(region.instructions().empty());
+  EXPECT_TRUE(region.roots().empty());
+}
+
+TEST_F(TiledHloTest, TiledHloRegionMoveConstruction) {
+  TiledHloRegion region;
+  TiledHloRegion moved_region(std::move(region));
+  EXPECT_TRUE(moved_region.instructions().empty());
+  EXPECT_TRUE(moved_region.roots().empty());
+}
+
+TEST_F(TiledHloTest, TiledHloRegionInvalidRootFailsCheck) {
+  HloInstruction* root = ParseAndGetRoot(R"(
+    HloModule m
+    ENTRY e {
+      ROOT p0 = f32[10] parameter(0)
+    }
+  )");
+  auto fusion_adaptor = HloFusionAdaptor::ForInstruction(root);
+  ASSERT_OK_AND_ASSIGN(auto tiling_space,
+                       TilingSpace::Create(*fusion_adaptor, &mlir_context_));
+  auto instr =
+      std::make_unique<TiledHloInstruction>(root, Tile(*tiling_space, {}));
+  const TiledHloInstruction* raw_instr = instr.get();
+
+  auto unowned_instr =
+      std::make_unique<TiledHloInstruction>(root, Tile(*tiling_space, {}));
+  const TiledHloInstruction* unowned_raw = unowned_instr.get();
+
+  std::vector<std::unique_ptr<TiledHloInstruction>> instructions;
+  instructions.push_back(std::move(instr));
+
+  EXPECT_DEATH(
+      TiledHloRegion(std::move(instructions), {raw_instr, unowned_raw}),
+      "must be owned by the region");
 }
 
 MATCHER_P2(IsHloWithOperands, opcode, operand_opcodes,
@@ -184,7 +224,7 @@ Tiled HLO:
   )"));
 
   EXPECT_THAT(
-      tiled_computation.tiled_hlo_instructions(),
+      tiled_computation.tiled_root_region().instructions(),
       Contains(IsHloWithOperands(
           HloOpcode::kReduce, std::vector<HloOpcode>{HloOpcode::kParameter,
                                                      HloOpcode::kConstant})));
@@ -231,13 +271,13 @@ Tiled HLO:
   subtract.tile_0 = subtract(p0.2.tile_0, broadcast.tile_0)  offsets [tid_0 * 8, 0] sizes [8, 128] strides [1, 1] upper bounds [16, 97]
   )"));
 
-  EXPECT_THAT(tiled_computation.tiled_hlo_instructions(),
+  EXPECT_THAT(tiled_computation.tiled_root_region().instructions(),
               Contains(IsHloWithOperands(
                   HloOpcode::kSubtract,
                   std::vector<HloOpcode>{HloOpcode::kParameter,
                                          HloOpcode::kBroadcast})));
   EXPECT_THAT(
-      tiled_computation.tiled_hlo_instructions(),
+      tiled_computation.tiled_root_region().instructions(),
       Contains(IsHloWithOperands(HloOpcode::kBroadcast,
                                  std::vector<HloOpcode>{HloOpcode::kReduce})));
 
@@ -283,7 +323,7 @@ Tiled HLO:
   }
   )"));
 
-  EXPECT_THAT(tiled_computation.tiled_hlo_instructions(),
+  EXPECT_THAT(tiled_computation.tiled_root_region().instructions(),
               Contains(IsHloWithOperands(
                   HloOpcode::kConcatenate,
                   std::vector<HloOpcode>(3, HloOpcode::kParameter))));
@@ -354,7 +394,7 @@ TEST_F(TileAnalysisTest, Dot) {
   )"));
 
   EXPECT_THAT(
-      tiled_computation.tiled_hlo_instructions(),
+      tiled_computation.tiled_root_region().instructions(),
       Contains(IsHloWithOperands(
           HloOpcode::kDot, std::vector<HloOpcode>(2, HloOpcode::kParameter))));
 
@@ -396,7 +436,7 @@ Tiled HLO:
   )"));
 
   EXPECT_THAT(
-      tiled_computation.tiled_hlo_instructions(),
+      tiled_computation.tiled_root_region().instructions(),
       Contains(IsHloWithOperands(
           HloOpcode::kDot, std::vector<HloOpcode>(2, HloOpcode::kParameter))));
 
@@ -443,7 +483,7 @@ Tiled HLO:
   }
   )"));
 
-  EXPECT_THAT(tiled_computation.tiled_hlo_instructions(),
+  EXPECT_THAT(tiled_computation.tiled_root_region().instructions(),
               Contains(IsHloWithOperands(
                   HloOpcode::kScaledDot,
                   std::vector<HloOpcode>(4, HloOpcode::kParameter))));
