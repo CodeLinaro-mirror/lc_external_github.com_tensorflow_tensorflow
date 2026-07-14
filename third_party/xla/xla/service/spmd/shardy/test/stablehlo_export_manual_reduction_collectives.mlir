@@ -444,3 +444,52 @@ func.func @unreduced_constant() -> tensor<2x2xf32> {
   %0 = sdy.constant {sdy.sharding = #sdy.sharding_per_value<[<@mesh, [{"x"}, {}], unreduced={"y"}>]>} dense<[[0.0, 1.0], [2.0, 3.0]]> : tensor<2x2xf32>
   return %0 : tensor<2x2xf32>
 }
+
+// -----
+
+sdy.mesh @mesh_x_2_y_2_max_min = <["x"=2, "y"=2]>
+
+// CHECK-LABEL: func @all_reduce_max
+func.func @all_reduce_max(%arg0: tensor<8x8xf32> {sdy.sharding = #sdy.sharding<@mesh_x_2_y_2_max_min, [{"y"}, {}], unreduced=max{"x"}>}) -> tensor<8x8xf32> {
+  // CHECK:            %[[ALL_REDUCE:.*]] = "stablehlo.all_reduce"(%arg1)
+  // CHECK-NEXT:            ^bb0(%arg2: tensor<f32>, %arg3: tensor<f32>):
+  // CHECK-NEXT:              %[[MAX:.*]] = stablehlo.maximum %arg2, %arg3 : tensor<f32>
+  // CHECK-NEXT:              stablehlo.return %[[MAX]] : tensor<f32>
+  %0 = sdy.all_reduce max {"x"} %arg0 out_sharding=<@mesh_x_2_y_2_max_min, [{"y"}, {}]> : tensor<8x8xf32>
+  return %0 : tensor<8x8xf32>
+}
+
+// CHECK-LABEL: func @all_reduce_min
+func.func @all_reduce_min(%arg0: tensor<8x8xf32> {sdy.sharding = #sdy.sharding<@mesh_x_2_y_2_max_min, [{"y"}, {}], unreduced=min{"x"}>}) -> tensor<8x8xf32> {
+  // CHECK:            %[[ALL_REDUCE:.*]] = "stablehlo.all_reduce"(%arg1)
+  // CHECK-NEXT:            ^bb0(%arg2: tensor<f32>, %arg3: tensor<f32>):
+  // CHECK-NEXT:              %[[MIN:.*]] = stablehlo.minimum %arg2, %arg3 : tensor<f32>
+  // CHECK-NEXT:              stablehlo.return %[[MIN]] : tensor<f32>
+  %0 = sdy.all_reduce min {"x"} %arg0 out_sharding=<@mesh_x_2_y_2_max_min, [{"y"}, {}]> : tensor<8x8xf32>
+  return %0 : tensor<8x8xf32>
+}
+
+// -----
+
+sdy.mesh @mesh_x_2_y_2_rs = <["x"=2, "y"=2]>
+
+// CHECK-LABEL: func @reduce_scatter_max
+func.func @reduce_scatter_max(%arg0: tensor<8x8xf32> {sdy.sharding = #sdy.sharding<@mesh_x_2_y_2_rs, [{"y"}, {}], unreduced=max{"x"}>}) -> tensor<8x8xf32> {
+  // CHECK:            %[[REDUCE_SCATTER:.*]] = "stablehlo.reduce_scatter"(%arg1)
+  // CHECK-NEXT:            ^bb0(%arg2: tensor<f32>, %arg3: tensor<f32>):
+  // CHECK-NEXT:              %[[MAX:.*]] = stablehlo.maximum %arg2, %arg3 : tensor<f32>
+  // CHECK-NEXT:              stablehlo.return %[[MAX]] : tensor<f32>
+  %0 = sdy.reduce_scatter max [{}, {"x"}] %arg0 out_sharding=<@mesh_x_2_y_2_rs, [{"y"}, {"x"}]> : tensor<8x8xf32>
+  return %0 : tensor<8x8xf32>
+}
+
+// CHECK-LABEL: func @reduce_scatter_min
+func.func @reduce_scatter_min(%arg0: tensor<8x8xf32> {sdy.sharding = #sdy.sharding<@mesh_x_2_y_2_rs, [{"y"}, {}], unreduced=min{"x"}>}) -> tensor<8x8xf32> {
+  // CHECK:            %[[REDUCE_SCATTER:.*]] = "stablehlo.reduce_scatter"(%arg1)
+  // CHECK-NEXT:            ^bb0(%arg2: tensor<f32>, %arg3: tensor<f32>):
+  // CHECK-NEXT:              %[[MIN:.*]] = stablehlo.minimum %arg2, %arg3 : tensor<f32>
+  // CHECK-NEXT:              stablehlo.return %[[MIN]] : tensor<f32>
+  %0 = sdy.reduce_scatter min [{}, {"x"}] %arg0 out_sharding=<@mesh_x_2_y_2_rs, [{"y"}, {"x"}]> : tensor<8x8xf32>
+  return %0 : tensor<8x8xf32>
+}
+
