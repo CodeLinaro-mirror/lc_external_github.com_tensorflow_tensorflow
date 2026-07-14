@@ -889,6 +889,69 @@ absl::Status LayoutAssignment::AddMandatoryConstraints(
       RETURN_IF_ERROR(SetInstructionLayout(
           best_branch_computation_layout.result_shape(), instruction,
           /*mandatory=*/true, /*dfs=*/true, /*allow_alias=*/false));
+    } else if (instruction->opcode() == HloOpcode::kAsyncStart) {
+      HloComputation* async_comp = instruction->async_wrapped_computation();
+      auto it = computation_layouts_.find(async_comp);
+      if (it != computation_layouts_.end()) {
+        LayoutConstraints* async_constraint = it->second.get();
+        ComputationLayout async_layout = async_constraint->computation_layout();
+        bool reset_needed = false;
+        for (int64_t i = 0; i < instruction->operand_count(); ++i) {
+          if (instruction->operand(i)->shape().IsArray() &&
+              instruction->operand(i)->shape().has_layout() &&
+              async_layout.parameter_layout(i).shape().layout() !=
+                  instruction->operand(i)->shape().layout()) {
+            *async_layout.mutable_parameter_layout(i) =
+                ShapeLayout(instruction->operand(i)->shape());
+            reset_needed = true;
+          }
+        }
+        if (instruction->shape().IsTuple() &&
+            instruction->shape().tuple_shapes_size() > 1 &&
+            instruction->shape().tuple_shapes(1).IsArray() &&
+            instruction->shape().tuple_shapes(1).has_layout() &&
+            async_layout.result_layout().shape().layout() !=
+                instruction->shape().tuple_shapes(1).layout()) {
+          *async_layout.mutable_result_layout() =
+              ShapeLayout(instruction->shape().tuple_shapes(1));
+          reset_needed = true;
+        }
+        if (reset_needed) {
+          async_constraint->mutable_computation_constraint()
+              ->ResetComputationLayout(
+                  async_layout, current_priority_ + kNumberOfPropagationRounds,
+                  /*prop_result_layout=*/true,
+                  /*prop_parameter_layout=*/true);
+        }
+        for (int64_t i = 0; i < instruction->operand_count(); ++i) {
+          if (instruction->operand(i)->shape().IsArray() &&
+              async_layout.parameter_layout(i).shape().has_layout()) {
+            RETURN_IF_ERROR(SetOperandLayout(
+                async_layout.parameter_layout(i).shape(), instruction, i,
+                /*mandatory=*/true, /*dfs=*/true));
+          }
+        }
+        if (async_layout.result_layout().shape().has_layout() &&
+            instruction->shape().IsTuple() &&
+            instruction->shape().tuple_shapes_size() > 1) {
+          Shape result_tuple_shape = instruction->shape();
+          *ShapeUtil::GetMutableSubshape(&result_tuple_shape, {1}) =
+              async_layout.result_layout().shape();
+          RETURN_IF_ERROR(SetInstructionLayout(result_tuple_shape, instruction,
+                                               /*mandatory=*/true, /*dfs=*/true,
+                                               /*allow_alias=*/true));
+        }
+      }
+    } else if (instruction->opcode() == HloOpcode::kAsyncDone) {
+      HloInstruction* start = instruction->async_chain_start();
+      if (start != nullptr && start->shape().IsTuple() &&
+          start->shape().tuple_shapes_size() > 1 &&
+          start->shape().tuple_shapes(1).IsArray() &&
+          start->shape().tuple_shapes(1).has_layout()) {
+        RETURN_IF_ERROR(SetInstructionLayout(
+            start->shape().tuple_shapes(1), instruction,
+            /*mandatory=*/true, /*dfs=*/true, /*allow_alias=*/true));
+      }
     }
   }
   // Finally set the result layout to match ComputationLayout, if there is one.
