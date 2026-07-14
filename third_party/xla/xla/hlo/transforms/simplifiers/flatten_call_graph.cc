@@ -30,6 +30,14 @@ limitations under the License.
 #include "xla/util.h"
 
 namespace xla {
+
+bool FlattenCallGraph::SkipCloningForCalls(const HloComputation& computation) {
+  auto callers = computation.caller_instructions();
+  return absl::c_all_of(callers, [](const HloInstruction* caller) {
+    return caller->opcode() == HloOpcode::kCall;
+  });
+}
+
 absl::StatusOr<bool> FlattenCallGraph::RunImpl(
     HloModule* module,
     const absl::flat_hash_set<absl::string_view>& execution_threads) {

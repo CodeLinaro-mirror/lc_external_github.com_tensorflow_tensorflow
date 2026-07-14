@@ -19,6 +19,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 
+#include "absl/algorithm/container.h"
 #include "xla/tsl/platform/status_macros.h"
 #include "xla/comparison_util.h"
 #include "xla/hlo/ir/hlo_computation.h"
@@ -98,6 +99,10 @@ class FlattenCallGraphTest : public HloHardwareIndependentTestBase {
     FlattenCallGraph flatten;
     ASSIGN_OR_RETURN(bool result, flatten.Run(module));
     return result;
+  }
+
+  FlattenCallGraph CreateSkipCallsFlattenPass() {
+    return FlattenCallGraph(FlattenCallGraph::SkipCloningForCalls);
   }
 
   const Shape kScalarShape = ShapeUtil::MakeShape(F32, {});
@@ -1059,6 +1064,106 @@ ENTRY %main (a: f32[4096], b: f32[4096]) -> f32[4096] {
 
   EXPECT_TRUE(schedule.is_computation_scheduled(called_computation_0));
   EXPECT_TRUE(schedule.is_computation_scheduled(called_computation_1));
+}
+
+TEST_F(FlattenCallGraphTest, SkipCloningForCalls_NoCloningAllCallersAreKCalls) {
+  // Verify that if all callers are kCall, cloning is skipped.
+  std::string hlo_string = R"(
+HloModule AllCallersKCalls
+
+%shared_comp (param: f32[]) -> f32[] {
+  %param = f32[] parameter(0)
+  ROOT %neg = f32[] negate(%param)
+}
+
+// CHECK: ENTRY %main
+// CHECK: %call0 = f32[] call({{.*}}), to_apply=%shared_comp
+// CHECK: %call1 = f32[] call({{.*}}), to_apply=%shared_comp
+ENTRY %main (param: f32[]) -> (f32[], f32[]) {
+  %param = f32[] parameter(0)
+  %call0 = f32[] call(%param), to_apply=%shared_comp
+  %call1 = f32[] call(%param), to_apply=%shared_comp
+  ROOT %tuple = (f32[], f32[]) tuple(%call0, %call1)
+}
+  )";
+
+  // We expect no change because all callers are kCall and we configured the
+  // pass to skip cloning in this case.
+  RunAndFilecheckHloRewrite(hlo_string, CreateSkipCallsFlattenPass(),
+                            std::nullopt);
+}
+
+TEST_F(FlattenCallGraphTest, SkipCloningForCalls_MixedCallAndWhileCallers) {
+  // Verify that pathological sharing (same computation from while and calls) IS
+  // cloned for all calls when we use the custom handler that skips flattenning
+  // for calls.
+  std::string hlo_string = R"(
+HloModule MixedCallAndWhileCallers
+
+%while_cond (param: f32[]) -> pred[] {
+  %param = f32[] parameter(0)
+  %zero = f32[] constant(0.0)
+  ROOT %cmp = pred[] compare(%param, %zero), direction=GT
+}
+
+// CHECK-DAG: %shared_comp ({{.*}}) -> f32[]
+// CHECK-DAG: %shared_comp.clone ({{.*}}) -> f32[]
+// CHECK-DAG: %shared_comp.clone.1 ({{.*}}) -> f32[]
+%shared_comp (param: f32[]) -> f32[] {
+  %param = f32[] parameter(0)
+  ROOT %neg = f32[] negate(%param)
+}
+
+// CHECK: %while_caller
+// CHECK: ROOT %while = f32[] while({{.*}}), condition={{.*}}, body=%shared_comp
+%while_caller (param: f32[]) -> f32[] {
+  %param = f32[] parameter(0)
+  ROOT %while = f32[] while(%param), condition=%while_cond, body=%shared_comp
+}
+
+// CHECK: ENTRY %main
+// CHECK: %call0 = f32[] call({{.*}}), to_apply=%shared_comp.clone
+// CHECK: %call1 = f32[] call({{.*}}), to_apply=%shared_comp.clone.1
+ENTRY %main (param: f32[]) -> (f32[], f32[], f32[]) {
+  %param = f32[] parameter(0)
+  %call0 = f32[] call(%param), to_apply=%shared_comp
+  %call1 = f32[] call(%param), to_apply=%shared_comp
+  %while_res = f32[] call(%param), to_apply=%while_caller
+  ROOT %tuple = (f32[], f32[], f32[]) tuple(%call0, %call1, %while_res)
+}
+  )";
+
+  RunAndFilecheckHloRewrite(hlo_string, CreateSkipCallsFlattenPass());
+}
+
+TEST_F(FlattenCallGraphTest, SkipCloningForCalls_WhileHasSameCondAndBody) {
+  // Verify that pathological sharing (same cond and body from the same while)
+  // IS cloned for all calls when we use the custom handler that skips
+  // flattenning for calls.
+  // NOTE: It leaves the original %while_body dead. It is because when a
+  // computation is called multiple times by the same caller, the pass decides
+  // to clone it.
+  std::string hlo_string = R"(
+HloModule WhileHasSameCondAndBody
+
+// CHECK-DAG: %while_body ({{.*}}) -> pred[]
+// CHECK-DAG: %while_body.clone ({{.*}}) -> pred[]
+// CHECK-DAG: %while_body.clone.1 ({{.*}}) -> pred[]
+%while_body (param: pred[]) -> pred[] {
+  %param = pred[] parameter(0)
+  %constant = pred[] constant(false)
+  ROOT %compare = pred[] compare(%param, %constant), direction=EQ
+}
+
+// CHECK: ENTRY %main
+// CHECK: ROOT %while = pred[] while({{.*}}), condition=%while_body.clone.1, body=%while_body.clone
+ENTRY %main () -> pred[] {
+  %constant.1 = pred[] constant(false)
+  ROOT %while = pred[] while(%constant.1), condition=%while_body, body=%while_body
+}
+  )";
+
+  RunAndFilecheckHloRewrite(hlo_string, CreateSkipCallsFlattenPass());
 }
 
 }  // namespace
