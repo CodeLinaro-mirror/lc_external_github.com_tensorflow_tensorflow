@@ -172,7 +172,61 @@ absl::Status CommonPjRtClient::Linearize(
     absl::Span<uint8_t> dest, const void* data, PrimitiveType type,
     absl::Span<const int64_t> dims, absl::Span<const int64_t> byte_strides,
     const Layout& device_layout, absl::Span<const uint32_t> dynamic_sizes) {
-  return absl::UnimplementedError("Linearize not supported");
+  Shape device_shape = ShapeUtil::MakeShapeWithDenseLayout(
+      type, dims, device_layout.minor_to_major(), device_layout.tiles(),
+      device_layout.tail_padding_alignment_in_elements(),
+      device_layout.element_size_in_bits(), device_layout.memory_space(),
+      device_layout.split_configs());
+
+  PjRtDynamicShapeKind layout_kind =
+      GetDynamicShapeKind(device_layout.memory_space());
+  auto requirements =
+      PjRtShapeAndMetadataTransferRequirements::Get(device_shape, layout_kind);
+
+  if (dest.size() < requirements.size) {
+    return absl::InvalidArgumentError(
+        absl::StrFormat("Destination buffer size (%d) is too small for "
+                        "linearized data and metadata (%d)",
+                        dest.size(), requirements.size));
+  }
+
+  if (requirements.metadata_size > 0) {
+    if (dynamic_sizes.size() != dims.size()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("dynamic_sizes size (%d) must match dims size (%d) "
+                          "when metadata is required",
+                          dynamic_sizes.size(), dims.size()));
+    }
+    int32_t* metadata_dest =
+        reinterpret_cast<int32_t*>(dest.data() + requirements.metadata_offset);
+    for (int i = 0; i < dims.size(); ++i) {
+      metadata_dest[i] = dynamic_sizes[i];
+    }
+  }
+
+  absl::Span<uint8_t> array_dest =
+      dest.subspan(requirements.array_offset, requirements.array_size);
+
+  absl::InlinedVector<int64_t, 4> permutation(dims.size());
+  absl::c_reverse_copy(device_shape.layout().minor_to_major(),
+                       permutation.begin());
+  TransposePlan::Options options;
+  options.elem_size_in_bytes = primitive_util::ByteWidth(type);
+  options.dims = dims;
+  options.permutation = permutation;
+  options.input_striding = TransposePlan::Striding{byte_strides};
+
+  bool should_pack = device_layout.element_size_in_bits() != 0 &&
+                     device_layout.element_size_in_bits() <
+                         primitive_util::ByteWidth(type) * 8;
+  if (should_pack) {
+    options.dest_bits_per_element = primitive_util::BitWidth(type);
+  }
+  ASSIGN_OR_RETURN(std::shared_ptr<TransposePlan> transpose,
+                   GetTransposePlan(options));
+
+  transpose->Execute(data, array_dest.data());
+  return absl::OkStatus();
 }
 
 absl::StatusOr<PjRtDeviceEventRef> CommonPjRtClient::LinearizeIntoImpl(
