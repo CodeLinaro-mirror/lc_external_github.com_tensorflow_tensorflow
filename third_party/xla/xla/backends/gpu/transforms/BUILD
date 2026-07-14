@@ -1790,7 +1790,7 @@ cc_library(
         "//xla/hlo/ir:hlo",
         "//xla/hlo/pass:hlo_pass",
         "//xla/hlo/utils:hlo_query",
-        "//xla/service/gpu:triton_fusion_analysis",
+        "//xla/service:matmul_indexing_utils",
         "//xla/tsl/platform:errors",
         "//xla/tsl/platform:status_macros",
         "//xla/tsl/platform:statusor",
