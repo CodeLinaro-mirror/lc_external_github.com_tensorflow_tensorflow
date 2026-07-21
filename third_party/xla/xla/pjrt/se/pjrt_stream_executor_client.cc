@@ -97,6 +97,7 @@ limitations under the License.
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "xla/tsl/platform/status_macros.h"
+#include "riegeli/bytes/cord_reader.h"
 #include "riegeli/bytes/string_reader.h"
 #include "riegeli/bytes/string_writer.h"
 #include "xla/client/executable_build_options.h"
@@ -2375,36 +2376,12 @@ PjRtStreamExecutorClient::BuildPjRtExecutable(
       memory_spaces()[0]->kind());
 }
 
-namespace {
-absl::StatusOr<ExecutableAndOptionsProto> DeserializeExecutableAndOptionsProto(
-    absl::string_view serialized) {
-  ExecutableAndOptionsProto proto;
-  auto reader = std::make_unique<riegeli::StringReader<>>(serialized);
-  // The serialized string may be of the new SplitProto format (which allows
-  // executables larger than 2GB) or the legacy format which is just a regular
-  // proto.
-  ASSIGN_OR_RETURN(bool is_split_proto, IsSplitProto(*reader));
-  if (is_split_proto) {
-    RETURN_IF_ERROR(ReadSplitProto(std::move(reader), proto));
-    return proto;
-  }
-
-  if (serialized.size() > std::numeric_limits<int>::max()) {
-    return Internal("Proto is too large (>2GB)");
-  }
-  if (!proto.ParseFromString(serialized)) {
-    return Internal("Proto deserialization failed");
-  }
-
-  return proto;
-}
-}  // namespace
-
 absl::StatusOr<std::unique_ptr<PjRtExecutable>>
 PjRtStreamExecutorClient::DeserializeExecutable(
-    absl::string_view serialized, std::optional<CompileOptions> options) {
+    std::unique_ptr<riegeli::Reader> reader,
+    std::optional<CompileOptions> options) {
   ASSIGN_OR_RETURN(ExecutableAndOptionsProto proto,
-                   DeserializeExecutableAndOptionsProto(serialized));
+                   SerializedGpuExecutableFromReader(std::move(reader)));
   if (!proto.pjrt_client_name().empty() &&
       proto.pjrt_client_name() != kPjRtClientName) {
     return Internal(
@@ -2420,6 +2397,7 @@ PjRtStreamExecutorClient::DeserializeExecutable(
     ASSIGN_OR_RETURN(compile_options,
                      CompileOptions::FromProto(proto.compile_options()));
   }
+  RETURN_IF_ERROR(compile_options.ApplyAllOptionOverrides());
 
   tsl::profiler::TraceMe traceme(
       "PjRtStreamExecutorClient::DeserializeExecutable");
@@ -2433,9 +2411,32 @@ PjRtStreamExecutorClient::DeserializeExecutable(
   return BuildPjRtExecutable(std::nullopt, std::move(loaded), compile_options);
 }
 
+absl::StatusOr<std::unique_ptr<PjRtExecutable>>
+PjRtStreamExecutorClient::DeserializeExecutable(
+    absl::string_view serialized, std::optional<CompileOptions> options) {
+  return DeserializeExecutable(
+      std::make_unique<riegeli::StringReader<>>(serialized),
+      std::move(options));
+}
+
+absl::StatusOr<std::unique_ptr<PjRtExecutable>>
+PjRtStreamExecutorClient::DeserializeExecutable(
+    const absl::Cord& serialized, std::optional<CompileOptions> options) {
+  return DeserializeExecutable(
+      std::make_unique<riegeli::CordReader<>>(&serialized), std::move(options));
+}
+
 absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
 PjRtStreamExecutorClient::LoadSerializedExecutable(
     absl::string_view serialized, std::optional<CompileOptions> options,
+    const LoadOptions& load_options) {
+  ASSIGN_OR_RETURN(auto executable, DeserializeExecutable(serialized, options));
+  return LoadInternal(std::move(executable), /*dump=*/true);
+}
+
+absl::StatusOr<std::unique_ptr<PjRtLoadedExecutable>>
+PjRtStreamExecutorClient::LoadSerializedExecutable(
+    const absl::Cord& serialized, std::optional<CompileOptions> options,
     const LoadOptions& load_options) {
   ASSIGN_OR_RETURN(auto executable, DeserializeExecutable(serialized, options));
   return LoadInternal(std::move(executable), /*dump=*/true);
