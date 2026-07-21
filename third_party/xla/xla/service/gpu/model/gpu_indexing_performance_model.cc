@@ -658,7 +658,8 @@ GpuPerformanceModelWithIndexingAnalysis::EstimateRunTimeForTiledFusion(
 
     ASSIGN_OR_RETURN(experimental::TiledHloComputation tiled_hlo_computation,
                      experimental::TiledHloComputation::Tile(
-                         fusion_adaptor, std::move(tiling_space)));
+                         fusion_adaptor, std::move(tiling_space),
+                         /*simplify=*/false, /*sort=*/false));
     // TODO: b/511080616 - no need to check for emitter specific constraints?
     // Symbolic analysis below does not use device_info_.
     return EstimateRunTimeForTiledHloComputationImpl(
@@ -754,7 +755,8 @@ GpuPerformanceModelWithIndexingAnalysis::TryFindTopKBestTilingsForFusion(
           xla::xtile::GetPaddedTileSizes(tiling)));
 
       const absl::StatusOr<TiledHloComputation> tiled_computation =
-          TiledHloComputation::Tile(fusion_adaptor, std::move(tiling_space));
+          TiledHloComputation::Tile(fusion_adaptor, std::move(tiling_space),
+                                    /*simplify=*/false, /*sort=*/false);
       if (!tiled_computation.ok()) {
         // TODO: b/511080616 - GetValidTilings() must return only tilings that
         // can be tiled and we should treat all errors here as a failure.

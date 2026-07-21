@@ -1107,7 +1107,8 @@ FusionDecision CanTile(mlir::MLIRContext& mlir_context,
           "Failed to create tiling space: ", ts.status().message()));
     }
     auto tiled_computation =
-        ge::TiledHloComputation::Tile(fusion, std::move(ts.value()));
+        ge::TiledHloComputation::Tile(fusion, std::move(ts.value()),
+                                      /*simplify=*/false, /*sort=*/false);
     if (!tiled_computation.ok()) {
       return FusionDecision::Forbid(
           absl::StrCat("Fusion is not tileable with experimental tiling: ",

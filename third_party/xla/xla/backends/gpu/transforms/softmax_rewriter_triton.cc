@@ -460,7 +460,8 @@ absl::StatusOr<bool> CanSymbolicTileAnalysisTileDiamond(
     ASSIGN_OR_RETURN(std::unique_ptr<TilingSpace> tiling_space,
                      TilingSpace::Create(*fusion_adaptor, &mlir_context));
     absl::StatusOr<TiledHloComputation> tiled_computation_or =
-        TiledHloComputation::Tile(*fusion_adaptor, std::move(tiling_space));
+        TiledHloComputation::Tile(*fusion_adaptor, std::move(tiling_space),
+                                  /*simplify=*/false, /*sort=*/false);
     // We don't have concrete tile sizes here and don't validate Triton
     // constraints here.
     if (!tiled_computation_or.ok()) {

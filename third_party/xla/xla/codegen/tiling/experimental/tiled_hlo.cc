@@ -332,13 +332,15 @@ absl::InlinedVector<const HloInstruction*, 2> ToInstructions(
 // the fusion boundary to reconstruct the tiled HLO dependency graph and any
 // nested computation regions (e.g., reduction bodies or dot computations).
 //
-// The instructions in the returned region are sorted in def-before-use order.
+// The instructions in the returned region are sorted in def-before-use order if
+// `sort` is true.
 absl::StatusOr<TiledHloRegion> TiledHloComputation::CreateHloRegion(
     std::vector<std::unique_ptr<TiledHloInstruction>> roots,
     const HloFusionAdaptor& fusion, TilingSpace& tiling_space,
     absl::flat_hash_map<int64_t,
                         std::pair<const TiledHloInstruction*, Interval>>&
-        rt_symbol_to_tiled_hlo) {
+        rt_symbol_to_tiled_hlo,
+    bool sort) {
   std::vector<TiledHloInstruction*> worklist;
   OrderedTiledHloPtrSet tiled_hlo_instructions_set;
 
@@ -386,9 +388,10 @@ absl::StatusOr<TiledHloRegion> TiledHloComputation::CreateHloRegion(
         region_roots.push_back(std::move(tiled_operands[id]));
       }
 
-      ASSIGN_OR_RETURN(TiledHloRegion res,
-                       CreateHloRegion(std::move(region_roots), fusion,
-                                       tiling_space, rt_symbol_to_tiled_hlo));
+      ASSIGN_OR_RETURN(
+          TiledHloRegion res,
+          CreateHloRegion(std::move(region_roots), fusion, tiling_space,
+                          rt_symbol_to_tiled_hlo, sort));
       for (const auto& [i, id] : llvm::enumerate(region_root_ids)) {
         resolved_operands[id] = res.roots()[i];
       }
@@ -422,14 +425,18 @@ absl::StatusOr<TiledHloRegion> TiledHloComputation::CreateHloRegion(
   std::vector<std::unique_ptr<TiledHloInstruction>> tiled_hlo_instructions =
       tiled_hlo_instructions_set.ExtractData();
 
-  SortTiledHloInstructionsInPostOrder(tiled_hlo_instructions, canonical_roots);
+  if (sort) {
+    SortTiledHloInstructionsInPostOrder(tiled_hlo_instructions,
+                                        canonical_roots);
+  }
 
   return TiledHloRegion{std::move(tiled_hlo_instructions),
                         std::move(canonical_roots)};
 }
 
 /*static*/ absl::StatusOr<TiledHloComputation> TiledHloComputation::Tile(
-    const HloFusionAdaptor& fusion, std::unique_ptr<TilingSpace> tiling_space) {
+    const HloFusionAdaptor& fusion, std::unique_ptr<TilingSpace> tiling_space,
+    bool simplify, bool sort) {
   std::vector<std::unique_ptr<TiledHloInstruction>> tiled_roots;
   tiled_roots.reserve(fusion.GetRoots().size());
   for (const auto& [root, tile] :
@@ -440,23 +447,26 @@ absl::StatusOr<TiledHloRegion> TiledHloComputation::CreateHloRegion(
 
   absl::flat_hash_map<int64_t, std::pair<const TiledHloInstruction*, Interval>>
       rt_symbol_to_tiled_hlo;
-  ASSIGN_OR_RETURN(TiledHloRegion region,
-                   CreateHloRegion(std::move(tiled_roots), fusion,
-                                   *tiling_space, rt_symbol_to_tiled_hlo));
+  ASSIGN_OR_RETURN(
+      TiledHloRegion region,
+      CreateHloRegion(std::move(tiled_roots), fusion, *tiling_space,
+                      rt_symbol_to_tiled_hlo, sort));
 
-  std::function<void(TiledHloInstruction*)> simplify_instruction;
-  simplify_instruction = [&](TiledHloInstruction* instruction) {
-    class Tile tile = instruction->tile();
-    tile.Simplify();
-    instruction->set_tile(std::move(tile));
-    for (const auto& region : instruction->hlo_regions()) {
-      for (const auto& nested : region.instructions()) {
-        simplify_instruction(nested.get());
+  if (simplify) {
+    std::function<void(TiledHloInstruction*)> simplify_instruction;
+    simplify_instruction = [&](TiledHloInstruction* instruction) {
+      class Tile tile = instruction->tile();
+      tile.Simplify();
+      instruction->set_tile(std::move(tile));
+      for (const auto& region : instruction->hlo_regions()) {
+        for (const auto& nested : region.instructions()) {
+          simplify_instruction(nested.get());
+        }
       }
+    };
+    for (auto& instr : region.instructions()) {
+      simplify_instruction(instr.get());
     }
-  };
-  for (auto& instr : region.instructions()) {
-    simplify_instruction(instr.get());
   }
 
   return TiledHloComputation(std::move(tiling_space), std::move(region),

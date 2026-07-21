@@ -182,15 +182,17 @@ class TiledHloComputation {
  public:
   using InstructionType = TiledHloInstruction;
 
+  // Creates a tiled HLO computation from a fusion and a tiling space.
   static absl::StatusOr<TiledHloComputation> Tile(
-      const HloFusionAdaptor& fusion,
-      std::unique_ptr<TilingSpace> tiling_space);
+      const HloFusionAdaptor& fusion, std::unique_ptr<TilingSpace> tiling_space,
+      bool simplify = true, bool sort = true);
 
-  // Returns the symbolic tiled HLO instructions in def-before-use order.
+  // Returns the symbolic tiled HLO instructions. Instructions are sorted in
+  // def-before-use order if computation was created with sort = true.
   const TiledHloRegion& tiled_root_region() const { return region_; }
 
   // Returns an iterator range over the instructions in the computation in
-  // def-before-use order.
+  // def-before-use order (if computation was created with sort = true).
   tsl::gtl::iterator_range<UnwrappingIterator<
       std::vector<std::unique_ptr<TiledHloInstruction>>::const_iterator>>
   instructions() const {
@@ -258,7 +260,8 @@ class TiledHloComputation {
       const HloFusionAdaptor& fusion, TilingSpace& tiling_space,
       absl::flat_hash_map<int64_t,
                           std::pair<const TiledHloInstruction*, Interval>>&
-          rt_symbol_to_tiled_hlo);
+          rt_symbol_to_tiled_hlo,
+      bool sort);
 
   std::unique_ptr<TilingSpace> tiling_space_;
 

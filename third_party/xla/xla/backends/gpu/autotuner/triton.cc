@@ -364,7 +364,8 @@ bool TritonBackend::IsSupported(const HloInstruction& instr) {
         return false;
       }
       auto tiled_computation_or = experimental::TiledHloComputation::Tile(
-          *fusion_adaptor, std::move(ts.value()));
+          *fusion_adaptor, std::move(ts.value()), /*simplify=*/false,
+          /*sort=*/false);
       if (!tiled_computation_or.ok()) {
         VLOG(1) << "Fusion is not tileable with experimental tiling: "
                 << tiled_computation_or.status().message();

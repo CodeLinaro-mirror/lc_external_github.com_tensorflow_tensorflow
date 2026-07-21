@@ -957,7 +957,9 @@ ENTRY main {
     ASSERT_OK_AND_ASSIGN(
         experimental::TiledHloComputation tiled_hlo_computation,
         experimental::TiledHloComputation::Tile(*fusion_adaptor,
-                                                std::move(tiling_space)));
+                                                std::move(tiling_space),
+                                                /*simplify=*/false,
+                                                /*sort=*/false));
 
     num_warps = GpuPerformanceModelWithIndexingAnalysis::EstimateNumWarps(
         tiled_hlo_computation);
@@ -1031,7 +1033,9 @@ ENTRY main {
     ASSERT_OK_AND_ASSIGN(
         experimental::TiledHloComputation tiled_hlo_computation,
         experimental::TiledHloComputation::Tile(*fusion_adaptor,
-                                                std::move(tiling_space)));
+                                                std::move(tiling_space),
+                                                /*simplify=*/false,
+                                                /*sort=*/false));
 
     num_warps = GpuPerformanceModelWithIndexingAnalysis::EstimateNumWarps(
         tiled_hlo_computation);
