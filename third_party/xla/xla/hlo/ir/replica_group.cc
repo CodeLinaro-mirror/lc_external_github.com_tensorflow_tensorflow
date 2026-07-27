@@ -32,6 +32,7 @@ limitations under the License.
 #include "absl/strings/str_join.h"
 #include "absl/types/span.h"
 #include "xla/array.h"
+#include "xla/hlo/ir/hlo_print_options.h"
 #include "xla/hlo/ir/mesh_and_axis.h"
 #include "xla/hlo/ir/tile_assignment.h"
 #include "xla/printer.h"
@@ -296,15 +297,6 @@ void MeshAxesReplicaGroupList::Print(Printer* printer) const {
   printer->Append(ToString());
 }
 
-void MeshAxesReplicaGroupList::Print(Printer* printer,
-                                     bool print_full_replica_group_list) const {
-  if (print_full_replica_group_list) {
-    ToCollectiveDeviceList()->Print(printer, print_full_replica_group_list);
-    return;
-  }
-  Print(printer);
-}
-
 std::string MeshAxesReplicaGroupList::ToString() const {
   std::string rg_str = "";
   // Add the axes defining the replica group, using names from the mesh.
@@ -319,12 +311,110 @@ std::string MeshAxesReplicaGroupList::ToString() const {
   return rg_str;
 }
 
+void MeshAxesReplicaGroupList::Print(Printer* printer,
+                                     const HloPrintOptions& options) const {
+  if (options.print_full_replica_group_list()) {
+    ToCollectiveDeviceList()->Print(printer, options);
+    return;
+  }
+  if (options.print_replica_groups_without_subaxes()) {
+    CanonicalizeWithoutSubaxes().Print(printer);
+    return;
+  }
+  Print(printer);
+}
+
 std::string MeshAxesReplicaGroupList::ToString(
-    bool print_full_replica_group_list) const {
-  if (print_full_replica_group_list) {
-    return ToCollectiveDeviceList()->ToString(print_full_replica_group_list);
+    const HloPrintOptions& options) const {
+  if (options.print_full_replica_group_list()) {
+    return ToCollectiveDeviceList()->ToString(options);
+  }
+  if (options.print_replica_groups_without_subaxes()) {
+    return CanonicalizeWithoutSubaxes().ToString();
   }
   return ToString();
+}
+
+std::vector<std::string> MeshAxesReplicaGroupList::GenerateUniqueAxisNames(
+    const Mesh& mesh,
+    const absl::flat_hash_map<int64_t, ReshapeAndAggregateAxes>& dim_map) {
+  std::vector<std::string> initial_axes_names;
+  initial_axes_names.reserve(mesh.axis_sizes().size());
+
+  // Generate initial split names: X splits into X_0, X_1, ...
+  for (int64_t i = 0; i < mesh.axis_sizes().size(); ++i) {
+    std::string name = mesh.axis_names()[i];
+    auto it = dim_map.find(i);
+    if (it == dim_map.end() || it->second.reshape_dims.size() <= 1) {
+      initial_axes_names.push_back(name);
+    } else {
+      for (size_t j = 0; j < it->second.reshape_dims.size(); ++j) {
+        initial_axes_names.push_back(absl::StrCat(name, "_", j));
+      }
+    }
+  }
+
+  // Count occurrences of split names to identify naming conflicts.
+  absl::flat_hash_map<std::string, int> name_counts;
+  for (const std::string& name : initial_axes_names) {
+    name_counts[name]++;
+  }
+
+  // Resolve conflicts by adding lexicographic suffixes (X_1 -> X_1a, X_1b,...)
+  auto get_suffix = [](int index) -> std::string {
+    auto bijective_base26 = [](auto& self, int idx) -> std::string {
+      if (idx < 0) return "";
+      return self(self, idx / 26 - 1) + std::string(1, 'a' + (idx % 26));
+    };
+    return bijective_base26(bijective_base26, index);
+  };
+  std::vector<std::string> new_axes_names;
+  new_axes_names.reserve(initial_axes_names.size());
+  absl::flat_hash_set<std::string> final_seen_names;
+  absl::flat_hash_map<std::string, int> seen_counts;
+  for (const std::string& name : initial_axes_names) {
+    int index = (name_counts[name] == 1) ? -1 : seen_counts[name]++;
+    std::string unique_name;
+    while (true) {
+      unique_name = absl::StrCat(name, get_suffix(index));
+      if (final_seen_names.insert(unique_name).second) {
+        break;
+      }
+      index = (name_counts[name] == 1) ? (index + 1) : seen_counts[name]++;
+    }
+    new_axes_names.push_back(unique_name);
+  }
+  return new_axes_names;
+}
+
+MeshAxesReplicaGroupList MeshAxesReplicaGroupList::CanonicalizeWithoutSubaxes()
+    const {
+  // Compute the split dimensions and the new reduction axes indexing.
+  std::vector<int64_t> reindex_axis_sizes, reindexed_grouped_axes;
+  std::tie(reindex_axis_sizes, reindexed_grouped_axes) = ComputeReindexedAxes();
+  absl::flat_hash_map<int64_t, ReshapeAndAggregateAxes> dim_map =
+      GetDimToReshapeAndAggregateAxes();
+
+  // Generate unique names for the split axes.
+  std::vector<std::string> new_axes_names =
+      GenerateUniqueAxisNames(mesh_, dim_map);
+  std::vector<absl::string_view> new_axes_names_views;
+  new_axes_names_views.reserve(new_axes_names.size());
+  for (const auto& name : new_axes_names) {
+    new_axes_names_views.push_back(name);
+  }
+
+  // Construct the new mesh with split dimensions and updated names.
+  TileAssignment new_device_assignment =
+      mesh_.device_assignment().Reshape(reindex_axis_sizes);
+  Mesh new_mesh(new_device_assignment, new_axes_names_views);
+  std::vector<AxisRef> new_axes;
+  new_axes.reserve(reindexed_grouped_axes.size());
+  for (int64_t idx : reindexed_grouped_axes) {
+    new_axes.push_back(AxisRef(idx));
+  }
+
+  return MeshAxesReplicaGroupList(new_mesh, new_axes);
 }
 
 MeshAxesReplicaGroupListProto MeshAxesReplicaGroupList::ToProto() const {
@@ -389,10 +479,9 @@ std::string IotaReplicaGroupList::ToString() const {
 }
 
 std::string IotaReplicaGroupList::ToString(
-    bool print_full_replica_group_list) const {
-  if (print_full_replica_group_list) {
-    return CollectiveDeviceList(flattened_replica_groups())
-        .ToString(print_full_replica_group_list);
+    const HloPrintOptions& options) const {
+  if (options.print_full_replica_group_list()) {
+    return CollectiveDeviceList(flattened_replica_groups()).ToString(options);
   }
   return ToString();
 }
@@ -402,10 +491,9 @@ void IotaReplicaGroupList::Print(Printer* printer) const {
 }
 
 void IotaReplicaGroupList::Print(Printer* printer,
-                                 bool print_full_replica_group_list) const {
-  if (print_full_replica_group_list) {
-    CollectiveDeviceList(flattened_replica_groups())
-        .Print(printer, print_full_replica_group_list);
+                                 const HloPrintOptions& options) const {
+  if (options.print_full_replica_group_list()) {
+    CollectiveDeviceList(flattened_replica_groups()).Print(printer, options);
     return;
   }
   Print(printer);
@@ -465,20 +553,15 @@ CollectiveDeviceList::flattened_replica_groups() const {
 }
 
 std::string CollectiveDeviceList::ToString() const {
-  return ToString(/*print_full_replica_group_list=*/false);
-}
-
-std::string CollectiveDeviceList::ToString(
-    bool print_full_replica_group_list) const {
   return ReplicaGroupsToString(replica_groups());
 }
 
-void CollectiveDeviceList::Print(Printer* printer) const {
-  return Print(printer, /*print_full_replica_group_list=*/false);
+std::string CollectiveDeviceList::ToString(
+    const HloPrintOptions& options) const {
+  return ToString();
 }
 
-void CollectiveDeviceList::Print(Printer* printer,
-                                 bool print_full_replica_group_list) const {
+void CollectiveDeviceList::Print(Printer* printer) const {
   printer->Append("{");
   bool leading_comma = false;
   for (const ReplicaGroup& group : replica_groups()) {
@@ -486,6 +569,11 @@ void CollectiveDeviceList::Print(Printer* printer,
     leading_comma = true;
   }
   printer->Append("}");
+}
+
+void CollectiveDeviceList::Print(Printer* printer,
+                                 const HloPrintOptions& options) const {
+  Print(printer);
 }
 
 CollectiveDeviceListProto CollectiveDeviceList::ToProto() const {
