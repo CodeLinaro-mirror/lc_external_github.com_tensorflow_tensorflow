@@ -334,3 +334,42 @@ in order to share them with the XLA or Megascale team.
 **Note on Future Tooling:** Google is actively working on open-sourcing versions
 of diagnostic dashboards to provide a more streamlined experience for Cloud TPU
 customers to identify and diagnose stragglers. These will be available soon.
+
+Stragglers often manifest as outliers in key Megascale metrics. These key
+metrics include:
+
+- **kubernetes.io/container/multislice/network/dcn_transfer_latencies**:
+  Measures the round trip for a transfer. Outliers are often correlated with
+  faulty network hardware.
+- **kubernetes.io/container/multislice/network/dcn_inbound_transfer_latencies**:
+  Measures the one-way latency for a transfer. Similar to the preceding metric,
+  outliers here are also correlated with faulty network hardware.
+- **kubernetes.io/container/multislice/accelerator/compute_latencies**:
+  Measures the time it takes to compute a reduction. Outliers are correlated
+  with CPU and memory (e.g., DIMM) issues.
+
+These metrics are most useful when grouped by hosts as shown in the [dashboard
+examples](#using-the-dashboards) below. Once a host is identified, it can be
+outkasted or de-preferred.
+
+### Using the Dashboards
+
+#### DCN (Data Center Network) Transfer Latencies
+
+The figure shows an example of an outlier in the network transfer latency
+metric.
+
+![this](./images/outlier_dcn_transfer_latencies.png)
+
+In this example, `test5-slice-job-1-0` is an outlier and is a candidate to be
+outkasted.
+
+#### DCN (Data Center Network) Inbound Transfer Latencies
+
+This figure shows an example of an outlier in the inbound transfer latency
+metric.
+
+![this](./images/outlier_dcn_inbound_transfer_latencies.png)
+
+In this example, `test2-slice-job-1-0` is the outlier and is a candidate to be
+outkasted.
