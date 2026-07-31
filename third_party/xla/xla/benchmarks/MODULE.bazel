@@ -1,0 +1,3 @@
+module(name="xla_benchmarks")
+
+bazel_dep(name = "jax", version = "0.11.0")

@@ -49,6 +49,7 @@ _DEFAULT_BAZEL_OPTIONS = dict(
 _KW_ONLY_IF_PYTHON310 = {"kw_only": True} if sys.version_info >= (3, 10) else {}
 _XLA_DEFAULT_TARGET_PATTERNS = (
     "//xla/...",
+    "-//xla/benchmarks/...",
     "//build_tools/...",
     "@tsl//tsl/...",
 )
