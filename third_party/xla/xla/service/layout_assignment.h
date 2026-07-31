@@ -986,6 +986,9 @@ class LayoutAssignment : public HloModulePass {
   // ClearAddedConstraints.
   std::vector<const LayoutConstraint*> added_constraints_;
   int64_t current_priority_ = LayoutConstraint::kBeginningPriority;
+
+  bool IsWhileLoopCopyDisabled(const HloInstruction* instruction) const;
+  absl::flat_hash_set<const HloComputation*> copy_disabled_while_computations_;
 };
 
 }  // namespace xla
