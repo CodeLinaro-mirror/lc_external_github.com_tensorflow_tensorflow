@@ -20,6 +20,7 @@ limitations under the License.
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -671,9 +672,17 @@ class Subgraph {
                                        int& last_inserted_execution_index);
 
   // Inlines the composite nodes that have not been taken by a delegate.
-  TfLiteStatus InlineCompositeNodes();
+  using CompositeFilter =
+      std::function<bool(const TfLiteNode*, const TfLiteRegistration*)>;
+  TfLiteStatus InlineCompositeNodes(CompositeFilter filter = nullptr);
 
  private:
+  static TfLiteStatus InlineCompositeNodesWrapper(
+      TfLiteContext* context,
+      bool (*filter)(TfLiteContext*, const TfLiteNode*,
+                     const TfLiteRegistration*, void*),
+      void* user_data);
+
 #ifndef DOXYGEN_SKIP
   friend class tflite::impl::InterpreterBuilder;
   friend class tflite::async::AsyncSubgraph;

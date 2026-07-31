@@ -2130,6 +2130,7 @@ TfLiteStatus Subgraph::SwitchToDelegateContext() {
     context_.GetNodeAndRegistration = GetNodeAndRegistration;
     context_.ReplaceNodeSubsetsWithDelegateKernels =
         ReplaceNodeSubsetsWithDelegateKernels;
+    context_.InlineCompositeNodes = InlineCompositeNodesWrapper;
     context_.GetExecutionPlan = GetExecutionPlan;
     context_.PreviewDelegatePartitioning = PreviewDelegatePartitioning;
     context_.AcquireSubgraphContext = AcquireSubgraphContext;
@@ -2152,6 +2153,11 @@ TfLiteStatus Subgraph::SwitchToKernelContext() {
            const TfLiteIntArray* nodes_to_replace, TfLiteDelegate* delegate) {
           return ForbiddenContextFunction(context);
         };
+    context_.InlineCompositeNodes =
+        [](TfLiteContext* context,
+           bool (*filter)(TfLiteContext*, const TfLiteNode*,
+                          const struct TfLiteRegistration*, void*),
+           void* user_data) { return ForbiddenContextFunction(context); };
     context_.GetExecutionPlan = [](struct TfLiteContext* context,
                                    TfLiteIntArray**) {
       return ForbiddenContextFunction(context);
@@ -2400,7 +2406,7 @@ TfLiteStatus Subgraph::ReplaceNodeWithSubgraph(
   return kTfLiteOk;
 }
 
-TfLiteStatus Subgraph::InlineCompositeNodes() {
+TfLiteStatus Subgraph::InlineCompositeNodes(CompositeFilter filter) {
   // Checks if there are composite nodes in the current execution plan.
   // NOLINTNEXTLINE: absl not allowed.
   std::unordered_set<int> composite_nodes_execution_indices;
@@ -2409,7 +2415,9 @@ TfLiteStatus Subgraph::InlineCompositeNodes() {
     for (const int i : execution_plan_) {
       auto& [node, reg] = nodes_and_registration_[i];
       if (reg.builtin_code == kTfLiteBuiltinStablehloComposite) {
-        composite_nodes_execution_indices.insert(i);
+        if (filter == nullptr || filter(&node, &reg)) {
+          composite_nodes_execution_indices.insert(i);
+        }
       }
     }
     return !composite_nodes_execution_indices.empty();
@@ -2443,6 +2451,22 @@ TfLiteStatus Subgraph::InlineCompositeNodes() {
   }
 
   return kTfLiteOk;
+}
+
+TfLiteStatus Subgraph::InlineCompositeNodesWrapper(
+    TfLiteContext* context,
+    bool (*filter)(TfLiteContext*, const TfLiteNode*, const TfLiteRegistration*,
+                   void*),
+    void* user_data) {
+  auto* subgraph = reinterpret_cast<Subgraph*>(context->impl_);
+  if (filter == nullptr) {
+    return subgraph->InlineCompositeNodes(nullptr);
+  }
+  auto cpp_filter = [context, filter, user_data](
+                        const TfLiteNode* node, const TfLiteRegistration* reg) {
+    return filter(context, node, reg, user_data);
+  };
+  return subgraph->InlineCompositeNodes(cpp_filter);
 }
 
 bool Subgraph::HasDelegates() { return !delegates_applied_.empty(); }

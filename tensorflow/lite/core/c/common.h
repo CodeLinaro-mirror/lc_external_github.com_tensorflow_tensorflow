@@ -951,6 +951,14 @@ typedef struct TfLiteContext {
       struct TfLiteContext*, struct TfLiteRegistration registration,
       const TfLiteIntArray* nodes_to_replace, struct TfLiteDelegate* delegate);
 
+  /// Inline specific composite nodes.
+  ///
+  /// WARNING: This is an experimental interface that is subject to change.
+  TfLiteStatus (*InlineCompositeNodes)(
+      struct TfLiteContext*,
+      bool (*filter)(struct TfLiteContext*, const TfLiteNode*,
+                     const struct TfLiteRegistration*, void* user_data),
+      void* user_data);
   /// Number of threads that are recommended to subsystems like gemmlowp and
   /// eigen.
   int recommended_num_threads;

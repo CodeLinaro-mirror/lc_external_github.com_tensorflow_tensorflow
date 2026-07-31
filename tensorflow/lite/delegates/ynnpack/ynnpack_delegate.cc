@@ -508,7 +508,31 @@ class YNNPackDelegate : public SimpleDelegateInterface {
     return false;
   }
 
-  TfLiteStatus Initialize(TfLiteContext* context) override { return kTfLiteOk; }
+  // There is an issue with composite ops: if we leave composite ops we don't
+  // support in the graph, TFlite will undo delegates, inline the composite ops,
+  // and then redo-delegation. This is expensive, and also somehow causes
+  // a performance issue at invocation time too (not just delegation). To avoid
+  // this, we need to inline all the composite ops we don't support first.
+  // TODO: b/541012735 - This might break other delegates that would have
+  // supported the composite op without inlining.
+  static bool ShouldInlineComposite(TfLiteContext* context,
+                                    const TfLiteNode* node,
+                                    const TfLiteRegistration* reg, void*) {
+    if (IsRuntimeBmm(reg, node) &&
+        IsRuntimeBatchedMatMulSupported(reg, node, context) == kTfLiteOk) {
+      // Don't inline this supported runtime_bmm.
+      return false;
+    }
+    return true;
+  }
+
+  TfLiteStatus Initialize(TfLiteContext* context) override {
+    if (context->InlineCompositeNodes != nullptr) {
+      TF_LITE_ENSURE_STATUS(context->InlineCompositeNodes(
+          context, ShouldInlineComposite, nullptr));
+    }
+    return kTfLiteOk;
+  }
 
   const char* Name() const override {
     static constexpr char kName[] = "YNNPackDelegate";
