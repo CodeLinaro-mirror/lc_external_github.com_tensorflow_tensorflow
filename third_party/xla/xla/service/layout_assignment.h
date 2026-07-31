@@ -775,6 +775,50 @@ class LayoutAssignment : public HloModulePass {
       ChannelLayoutConstraints* channel_constraints,
       LayoutConstraints* constraints);
 
+  // Adds constraints for instructions that define values with pre-existing
+  // layouts.
+  absl::Status AddInstructionLayoutConstraints(
+      ChannelLayoutConstraints* channel_constraints,
+      LayoutConstraints* constraints);
+
+  absl::Status AddInfeedConstraints(HloInstruction* instruction);
+  absl::Status AddOutfeedConstraints(HloInstruction* instruction);
+  absl::Status AddParameterConstraints(HloInstruction* instruction,
+                                       LayoutConstraints* constraints);
+  absl::Status AddCollectiveConstraints(HloInstruction* instruction);
+  absl::Status AddCrossModuleAllReduceConstraints(
+      HloInstruction* instruction,
+      ChannelLayoutConstraints* channel_constraints);
+
+  // Adds constraints for instructions that call or interact with
+  // sub-computations.
+  absl::Status AddSubcomputationLayoutConstraints(
+      LayoutConstraints* constraints);
+
+  absl::Status AddCallConstraints(HloInstruction* instruction);
+  absl::Status AddWhileConstraints(HloInstruction* instruction,
+                                   LayoutConstraints* constraints);
+  absl::Status AddConditionalConstraints(HloInstruction* instruction);
+  absl::Status AddAsyncStartConstraints(HloInstruction* instruction);
+  absl::Status AddAsyncDoneConstraints(HloInstruction* instruction,
+                                       LayoutConstraints* constraints);
+
+  // Reconciles the parameter layouts of an async computation with the actual
+  // operand layouts of the async operation instruction. Returns true if any
+  // parameter layout was updated/reset.
+  bool ReconcileAsyncParameterLayouts(const HloInstruction* instruction,
+                                      ComputationLayout* async_layout);
+
+  // Reconciles the result layout of an async computation with the inferred
+  // result array layout from the async operation instruction. Returns true if
+  // the result layout was updated/reset.
+  bool ReconcileAsyncResultLayout(const HloInstruction* instruction,
+                                  ComputationLayout* async_layout);
+  // Sets the computation result layout based on constraints and
+  // sub-computations.
+  absl::Status AddComputationResultLayoutConstraints(
+      LayoutConstraints* constraints);
+
   // Constrains layouts for custom calls that have specific layout requirements.
   absl::Status AddCustomCallConstraints(LayoutConstraints* constraints);
 

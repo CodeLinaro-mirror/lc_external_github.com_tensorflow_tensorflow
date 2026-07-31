@@ -670,393 +670,463 @@ absl::Status ResetMemorySpaceInLayout(ShapeLayout& mutable_shape_layout) {
 
 }  // namespace
 
-absl::Status LayoutAssignment::AddMandatoryConstraints(
+absl::Status LayoutAssignment::AddInfeedConstraints(
+    HloInstruction* instruction) {
+  // Infeed layouts must match the layout of the original inserted
+  // instruction.
+  // TODO(b/31425034): Change infeeds to be more like parameters, with
+  // shapes in the ComputationLayout.
+  return SetInstructionLayout(instruction->shape(), instruction,
+                              /*mandatory=*/true, /*dfs=*/true,
+                              /*allow_alias=*/false);
+}
+
+absl::Status LayoutAssignment::AddOutfeedConstraints(
+    HloInstruction* instruction) {
+  return SetOperandLayout(instruction->outfeed_shape(), instruction, 0,
+                          /*mandatory=*/true, /*dfs=*/true);
+}
+
+absl::Status LayoutAssignment::AddParameterConstraints(
+    HloInstruction* instruction, LayoutConstraints* constraints) {
+  // Allow some parameter/result layouts to be unset in the entry computation.
+  // Parameter layouts must match the respective layout in ComputationLayout, if
+  // there is one.
+  if (reverse_computation_order_ ||
+      (constraints->computation()->IsEntryComputation() &&
+       entry_computation_layout_->AnyLayoutSet()) ||
+      (conditional_mismatch_.count(constraints->computation()) == 0 &&
+       constraints->computation_constraint().parameter_layout_is_set())) {
+    ShapeLayout parameter_layout =
+        constraints->computation_layout().parameter_layout(
+            instruction->parameter_number());
+    if (parameter_layout.AnyLayoutIsSet()) {
+      // Clear out memory space in layout. Host offloader will do the analysis
+      // later.
+      RETURN_IF_ERROR(ResetMemorySpaceInLayout(parameter_layout));
+      Shape param_shape = parameter_layout.shape();
+      RETURN_IF_ERROR(SetInstructionLayout(param_shape, instruction));
+      if (reverse_computation_order_) {
+        RETURN_IF_ERROR(
+            PropagateParameterLayoutToUsers(instruction, param_shape, this));
+      }
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddCollectiveConstraints(
+    HloInstruction* instruction) {
+  RETURN_IF_ERROR(SetInstructionLayout(instruction->shape(), instruction));
+  for (int64_t i = 0; i < instruction->operand_count(); ++i) {
+    CHECK(instruction->shape().IsArray() ||
+          (instruction->shape().IsTuple() &&
+           instruction->shape().tuple_shapes().size() > i));
+    const Shape& shape = instruction->shape().IsTuple()
+                             ? instruction->shape().tuple_shapes(i)
+                             : instruction->shape();
+    RETURN_IF_ERROR(SetOperandLayout(shape, instruction, i,
+                                     /*mandatory=*/true, /*dfs=*/true));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddCrossModuleAllReduceConstraints(
+    HloInstruction* instruction,
+    ChannelLayoutConstraints* channel_constraints) {
+  auto get_channel_constraints = [&](const HloInstruction* inst) {
+    return IsHostSendRecv(inst) ? &host_channel_constraints_
+                                : channel_constraints;
+  };
+  CHECK(get_channel_constraints(instruction))
+      << "Multi-module layout assignment requires ChannelLayoutConstraints";
+  int64_t channel_id = instruction->channel_id().value();
+  if (!get_channel_constraints(instruction)->IsChannelConstrained(channel_id)) {
+    return absl::OkStatus();
+  }
+  // TODO(b/68493863): Change to use SetOperandLayout().
+  const Shape& buffer_shape = instruction->operand(0)->shape();
+  TF_RET_CHECK(buffer_shape.IsArray());
+  Shape new_buffer_shape =
+      get_channel_constraints(instruction)
+          ->LayoutShapeForChannel(buffer_shape, channel_id);
+  return SetInstructionLayout(new_buffer_shape, instruction);
+}
+
+absl::Status LayoutAssignment::AddInstructionLayoutConstraints(
     ChannelLayoutConstraints* channel_constraints,
     LayoutConstraints* constraints) {
-  VLOG(2) << "Adding mandatory layout constraints to computation "
-          << constraints->computation()->name();
-
-  auto get_channel_constraints = [&](const HloInstruction* instruction) {
-    return IsHostSendRecv(instruction) ? &host_channel_constraints_
-                                       : channel_constraints;
-  };
-
   // Constrain layouts of instructions which define values with pre-existing
   // layouts.
   for (auto* instruction : constraints->computation()->instructions()) {
-    if (instruction->opcode() == HloOpcode::kInfeed) {
-      // Infeed layouts must match the layout of the original inserted
-      // instruction.
-      // TODO(b/31425034): Change infeeds to be more like parameters, with
-      // shapes in the ComputationLayout.
-      RETURN_IF_ERROR(SetInstructionLayout(instruction->shape(), instruction,
-                                           /*mandatory=*/true, /*dfs=*/true,
-                                           /*allow_alias=*/false));
-    } else if (instruction->opcode() == HloOpcode::kOutfeed) {
-      // Constrain the input to the Outfeed instruction to be the expected
-      // layout of the Outfeed.
-      RETURN_IF_ERROR(SetOperandLayout(instruction->outfeed_shape(),
-                                       instruction, 0,
+    switch (instruction->opcode()) {
+      case HloOpcode::kInfeed:
+        RETURN_IF_ERROR(AddInfeedConstraints(instruction));
+        break;
+      case HloOpcode::kOutfeed:
+        RETURN_IF_ERROR(AddOutfeedConstraints(instruction));
+        break;
+      case HloOpcode::kParameter:
+        RETURN_IF_ERROR(AddParameterConstraints(instruction, constraints));
+        break;
+      default:
+        if (IsLayoutConstrainedCollective(instruction)) {
+          RETURN_IF_ERROR(AddCollectiveConstraints(instruction));
+        } else if (instruction->IsCrossModuleAllReduce() &&
+                   !instruction->GetModule()
+                        ->config()
+                        .use_spmd_partitioning()) {
+          RETURN_IF_ERROR(AddCrossModuleAllReduceConstraints(
+              instruction, channel_constraints));
+        }
+        break;
+    }
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddCallConstraints(HloInstruction* instruction) {
+  auto it = computation_layouts_.find(instruction->to_apply());
+  if (it == computation_layouts_.end()) {
+    return absl::OkStatus();
+  }
+  const ComputationLayout& called_computation_layout =
+      it->second->computation_layout();
+  auto result_shape = UnShardedShape(
+      instruction, called_computation_layout.result_layout().shape(), -1);
+  RETURN_IF_ERROR(SetInstructionLayout(result_shape, instruction));
+  TF_RET_CHECK(instruction->operand_count() ==
+               called_computation_layout.parameter_count());
+  for (int64_t i = 0; i < instruction->operand_count(); ++i) {
+    auto operand_shape = UnShardedShape(
+        instruction, called_computation_layout.parameter_layout(i).shape(), i);
+    RETURN_IF_ERROR(SetOperandLayout(operand_shape, instruction, i,
+                                     /*mandatory=*/true, /*dfs=*/true));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddWhileConstraints(
+    HloInstruction* instruction, LayoutConstraints* constraints) {
+  if (computation_layouts_.find(instruction->while_body()) ==
+      computation_layouts_.end()) {
+    return absl::OkStatus();
+  }
+  HloComputation* body = instruction->while_body();
+  HloComputation* condition = instruction->while_condition();
+  const HloInstruction* init = instruction->operand(0);
+  ComputationLayoutConstraint* body_constraint =
+      mutable_computation_constraints(body)->mutable_computation_constraint();
+  ComputationLayout body_layout = body_constraint->computation_layout();
+  ComputationLayoutConstraint* condition_constraint =
+      mutable_computation_constraints(condition)
+          ->mutable_computation_constraint();
+  ComputationLayout condition_layout =
+      condition_constraint->computation_layout();
+
+  CHECK_EQ(1, instruction->operand_count());
+  CHECK_EQ(1, body->num_parameters());
+  CHECK_EQ(1, condition->num_parameters());
+  DCHECK(ShapeUtil::Compatible(body_layout.result_shape(),
+                               body_layout.parameter_shape(0)));
+  DCHECK(ShapeUtil::Compatible(body_layout.result_shape(),
+                               condition_layout.parameter_shape(0)));
+  DCHECK(ShapeUtil::Compatible(body_layout.result_shape(), init->shape()));
+
+  if (body_layout.result_layout() != body_layout.parameter_layout(0)) {
+    VLOG(2) << "Reset %while body parameter layout: body=" << body->name()
+            << " while=" << instruction->name()
+            << " shape=" << body_layout.result_layout().ToString();
+    *body_layout.mutable_parameter_layout(0) = body_layout.result_layout();
+    body_constraint->ResetComputationLayout(
+        body_layout, current_priority_ + kNumberOfPropagationRounds,
+        /*prop_result_layout=*/true,
+        /*prop_parameter_layout=*/true);
+  }
+  if (condition_layout.parameter_layout(0) != body_layout.parameter_layout(0)) {
+    VLOG(2) << "Reset %while condition parameter layout: cond="
+            << condition->name() << " while=" << instruction->name()
+            << " shape=" << body_layout.parameter_layout(0).ToString();
+    *condition_layout.mutable_parameter_layout(0) =
+        body_layout.parameter_layout(0);
+    condition_constraint->ResetComputationLayout(
+        condition_layout, current_priority_ + kNumberOfPropagationRounds,
+        /*prop_result_layout=*/true, /*prop_parameter_layout=*/true);
+  }
+
+  RETURN_IF_ERROR(SetOperandLayout(body_layout.result_shape(), instruction, 0));
+  return SetInstructionLayout(body_layout.result_shape(), instruction);
+}
+
+absl::Status LayoutAssignment::AddConditionalConstraints(
+    HloInstruction* instruction) {
+  if (computation_layouts_.find(instruction->branch_computation(0)) ==
+      computation_layouts_.end()) {
+    return absl::OkStatus();
+  }
+  int64_t largest_branch = -1;
+  int64_t largest_instruction_count = 0;
+  for (int j = 0; j < instruction->branch_count(); ++j) {
+    const int64_t instruction_count =
+        instruction->branch_computation(j)->instruction_count();
+    if (instruction_count > largest_instruction_count &&
+        !ShapeUtil::IsEmptyTuple(instruction->operand(j + 1)->shape())) {
+      largest_branch = j;
+      largest_instruction_count = instruction_count;
+    }
+  }
+  if (largest_branch == -1) {
+    largest_branch = 0;
+  }
+  const ComputationLayout& best_branch_computation_layout =
+      mutable_computation_constraints(
+          instruction->branch_computation(largest_branch))
+          ->computation_layout();
+  for (int k = 0; k < instruction->branch_count(); ++k) {
+    int j = (k + largest_branch) % instruction->branch_count();
+    TF_RET_CHECK(instruction->branch_computation(j)->num_parameters() == 1);
+    ComputationLayout branch_computation_layout =
+        mutable_computation_constraints(instruction->branch_computation(k))
+            ->computation_layout();
+    if (!branch_computation_layout.result_layout().MatchesLayoutInShape(
+            best_branch_computation_layout.result_layout().shape(),
+            /*minor_to_major_only=*/true)) {
+      *branch_computation_layout.mutable_result_layout() =
+          best_branch_computation_layout.result_layout();
+      conditional_mismatch_.try_emplace(instruction->branch_computation(k),
+                                        branch_computation_layout);
+    } else {
+      RETURN_IF_ERROR(SetOperandLayout(
+          branch_computation_layout.parameter_shape(0), instruction, k + 1,
+          /*mandatory=*/true, /*dfs=*/true));
+    }
+  }
+  RETURN_IF_ERROR(
+      SetOperandLayout(best_branch_computation_layout.parameter_shape(0),
+                       instruction, largest_branch + 1,
+                       /*mandatory=*/true, /*dfs=*/true));
+  return SetInstructionLayout(
+      best_branch_computation_layout.result_shape(), instruction,
+      /*mandatory=*/true, /*dfs=*/true, /*allow_alias=*/false);
+}
+
+// Inspects operands of the async operation `instruction` and reconciles their
+// array layouts with the parameter layouts defined in `async_layout`.
+// If any operand has an array layout that differs from the async computation's
+// corresponding parameter layout, updates `async_layout` in-place and flags
+// that a layout reset is needed.
+bool LayoutAssignment::ReconcileAsyncParameterLayouts(
+    const HloInstruction* instruction, ComputationLayout* async_layout) {
+  bool reset_needed = false;
+  for (int64_t i = 0; i < instruction->operand_count(); ++i) {
+    if (!async_layout->parameter_layout(i).LayoutIsSet()) {
+      continue;
+    }
+    Shape param_shape = instruction->operand(i)->shape();
+    bool param_reset = false;
+    ShapeUtil::ForEachSubshape(param_shape, [&](const Shape& subshape,
+                                                const ShapeIndex& index) {
+      if (!subshape.IsArray()) {
+        return;
+      }
+      auto operand_layout = InferArrayLayout(instruction->operand(i), index);
+      const Shape& async_subshape = ShapeUtil::GetSubshape(
+          async_layout->parameter_layout(i).shape(), index);
+      if (operand_layout.ok() && async_subshape.has_layout() &&
+          async_subshape.layout() != operand_layout.value()) {
+        *ShapeUtil::GetMutableSubshape(&param_shape, index)->mutable_layout() =
+            operand_layout.value();
+        param_reset = true;
+      }
+    });
+    if (param_reset) {
+      *async_layout->mutable_parameter_layout(i) = ShapeLayout(param_shape);
+      reset_needed = true;
+    }
+  }
+  return reset_needed;
+}
+
+// Inspects the result shape (tuple element 1) of the async operation
+// `instruction` and reconciles subshape array layouts with `async_layout`'s
+// result layout. If any subshape array layout differs, updates `async_layout`'s
+// result layout in-place and flags that a layout reset is needed.
+bool LayoutAssignment::ReconcileAsyncResultLayout(
+    const HloInstruction* instruction, ComputationLayout* async_layout) {
+  if (!instruction->shape().IsTuple() ||
+      instruction->shape().tuple_shapes().size() <= 1 ||
+      !async_layout->result_layout().LayoutIsSet()) {
+    return false;
+  }
+  Shape result_shape = instruction->shape().tuple_shapes(1);
+  bool subshape_reset = false;
+  ShapeUtil::ForEachSubshape(result_shape, [&](const Shape& subshape,
+                                               const ShapeIndex& index) {
+    if (!subshape.IsArray()) {
+      return;
+    }
+    ShapeIndex full_index = index;
+    full_index.push_front(1);
+
+    auto result_layout = InferArrayLayout(instruction, full_index);
+    const Shape& async_subshape =
+        ShapeUtil::GetSubshape(async_layout->result_layout().shape(), index);
+    if (result_layout.ok() && async_subshape.has_layout() &&
+        async_subshape.layout() != result_layout.value()) {
+      *ShapeUtil::GetMutableSubshape(&result_shape, index)->mutable_layout() =
+          result_layout.value();
+      subshape_reset = true;
+    }
+  });
+  if (subshape_reset) {
+    *async_layout->mutable_result_layout() = ShapeLayout(result_shape);
+    return true;
+  }
+  return false;
+}
+
+// Sets layout constraints for async start operations. Reconciles parameter
+// and result layouts between the caller and the async computation, resets
+// the sub-computation layout if discrepancies were found, and sets mandatory
+// layout constraints on operands and instruction result shapes.
+absl::Status LayoutAssignment::AddAsyncStartConstraints(
+    HloInstruction* instruction) {
+  HloComputation* async_comp = instruction->async_wrapped_computation();
+  if (async_comp == nullptr) {
+    return absl::OkStatus();
+  }
+  auto it = computation_layouts_.find(async_comp);
+  if (it == computation_layouts_.end()) {
+    return absl::OkStatus();
+  }
+  LayoutConstraints* async_constraint = it->second.get();
+  ComputationLayout async_layout = async_constraint->computation_layout();
+
+  bool param_reset = ReconcileAsyncParameterLayouts(instruction, &async_layout);
+  bool result_reset = ReconcileAsyncResultLayout(instruction, &async_layout);
+
+  if (param_reset || result_reset) {
+    async_constraint->mutable_computation_constraint()->ResetComputationLayout(
+        async_layout, current_priority_ + kNumberOfPropagationRounds,
+        /*prop_result_layout=*/true,
+        /*prop_parameter_layout=*/true);
+  }
+
+  for (int64_t i = 0; i < instruction->operand_count(); ++i) {
+    if (async_layout.parameter_layout(i).LayoutIsSet()) {
+      RETURN_IF_ERROR(SetOperandLayout(async_layout.parameter_layout(i).shape(),
+                                       instruction, i,
                                        /*mandatory=*/true, /*dfs=*/true));
-    } else if (instruction->opcode() == HloOpcode::kParameter) {
-      if (reverse_computation_order_ ||
-          (constraints->computation()->IsEntryComputation() &&
-           entry_computation_layout_->AnyLayoutSet()) ||
-          (conditional_mismatch_.count(constraints->computation()) == 0 &&
-           constraints->computation_constraint().parameter_layout_is_set())) {
-        ShapeLayout parameter_layout =
-            constraints->computation_layout().parameter_layout(
-                instruction->parameter_number());
-        // Allow some parameter/result layouts to be unset in the entry
-        // computation.
-        if (parameter_layout.AnyLayoutIsSet()) {
-          // Clear out memory space in layout. Host offloader will do the
-          // analysis later.
-          RETURN_IF_ERROR(ResetMemorySpaceInLayout(parameter_layout));
-          // Parameter layouts must match the respective layout in
-          // ComputationLayout, if there is one.
-          Shape param_shape = parameter_layout.shape();
-          RETURN_IF_ERROR(SetInstructionLayout(param_shape, instruction));
-          if (reverse_computation_order_) {
-            RETURN_IF_ERROR(PropagateParameterLayoutToUsers(instruction,
-                                                            param_shape, this));
-          }
-        }
-      }
-    } else if (IsLayoutConstrainedCollective(instruction)) {
-      RETURN_IF_ERROR(SetInstructionLayout(instruction->shape(), instruction));
-      for (int64_t i = 0; i < instruction->operand_count(); ++i) {
-        CHECK(instruction->shape().IsArray() ||
-              instruction->shape().IsTuple() &&
-                  instruction->shape().tuple_shapes().size() > i);
-        const Shape& shape = instruction->shape().IsTuple()
-                                 ? instruction->shape().tuple_shapes(i)
-                                 : instruction->shape();
-        RETURN_IF_ERROR(SetOperandLayout(shape, instruction, i,
-                                         /*mandatory=*/true, /*dfs=*/true));
-      }
-    } else if (instruction->IsCrossModuleAllReduce() &&
-               !instruction->GetModule()->config().use_spmd_partitioning()) {
-      CHECK(get_channel_constraints(instruction))
-          << "Multi-module layout assignment requires ChannelLayoutConstraints";
-      int64_t channel_id = instruction->channel_id().value();
-      if (!get_channel_constraints(instruction)
-               ->IsChannelConstrained(channel_id)) {
-        continue;
-      }
-      // TODO(b/68493863): Change to use SetOperandLayout().
-      const Shape& buffer_shape = instruction->operand(0)->shape();
-      TF_RET_CHECK(buffer_shape.IsArray());
-      Shape new_buffer_shape =
-          get_channel_constraints(instruction)
-              ->LayoutShapeForChannel(buffer_shape, channel_id);
-      RETURN_IF_ERROR(SetInstructionLayout(new_buffer_shape, instruction));
     }
   }
+  if (async_layout.result_layout().LayoutIsSet() &&
+      instruction->shape().IsTuple() &&
+      instruction->shape().tuple_shapes_size() > 1 &&
+      ShapeUtil::Compatible(instruction->shape().tuple_shapes(1),
+                            async_layout.result_layout().shape())) {
+    Shape result_tuple_shape = instruction->shape();
+    *ShapeUtil::GetMutableSubshape(&result_tuple_shape, {1}) =
+        async_layout.result_layout().shape();
+    RETURN_IF_ERROR(SetInstructionLayout(
+        result_tuple_shape, instruction,
+        /*mandatory=*/
+        async_constraint->computation_constraint().result_layout_is_set(),
+        /*dfs=*/true,
+        /*allow_alias=*/true));
+  }
+  return absl::OkStatus();
+}
 
-  // Constrain layouts of instructions which call computations which have
-  // already been assigned layouts. Instructions which call computations in a
-  // parallel element-wise context (eg, map or reduce) do not need layout
-  // constraints because they operate on scalars.
+absl::Status LayoutAssignment::AddAsyncDoneConstraints(
+    HloInstruction* instruction, LayoutConstraints* constraints) {
+  HloInstruction* start = instruction->async_chain_start();
+  if (start == nullptr || start->async_wrapped_computation() == nullptr) {
+    return absl::OkStatus();
+  }
+  auto it = computation_layouts_.find(start->async_wrapped_computation());
+  if (it == computation_layouts_.end()) {
+    return absl::OkStatus();
+  }
+  LayoutConstraints* async_constraint = it->second.get();
+  ComputationLayout async_layout = async_constraint->computation_layout();
+  bool reset_needed = false;
+  if (constraints->computation()->IsEntryComputation() &&
+      instruction == constraints->computation()->root_instruction() &&
+      entry_computation_layout_->result_layout().AnyLayoutIsSet()) {
+    if (!async_layout.result_layout().MatchesLayoutInShape(
+            entry_computation_layout_->result_layout().shape(),
+            /*minor_to_major_only=*/true)) {
+      *async_layout.mutable_result_layout() =
+          entry_computation_layout_->result_layout();
+      reset_needed = true;
+    }
+  } else if (async_layout.result_layout().LayoutIsSet()) {
+    Shape s = instruction->shape();
+    bool shape_reset = false;
+    ShapeUtil::ForEachSubshape(
+        s, [&](const Shape& subshape, const ShapeIndex& index) {
+          if (!subshape.IsArray()) {
+            return;
+          }
+          auto done_layout = InferArrayLayout(instruction, index);
+          const Shape& async_subshape = ShapeUtil::GetSubshape(
+              async_layout.result_layout().shape(), index);
+          if (done_layout.ok() && async_subshape.has_layout() &&
+              async_subshape.layout() != done_layout.value()) {
+            *ShapeUtil::GetMutableSubshape(&s, index)->mutable_layout() =
+                done_layout.value();
+            shape_reset = true;
+          }
+        });
+    if (shape_reset) {
+      *async_layout.mutable_result_layout() = ShapeLayout(s);
+      reset_needed = true;
+    }
+  }
+  if (reset_needed) {
+    async_constraint->mutable_computation_constraint()->ResetComputationLayout(
+        async_layout, current_priority_ + kNumberOfPropagationRounds,
+        /*prop_result_layout=*/true,
+        /*prop_parameter_layout=*/true);
+  }
+  if (async_layout.result_layout().LayoutIsSet()) {
+    RETURN_IF_ERROR(SetInstructionLayout(
+        async_layout.result_layout().shape(), instruction,
+        /*mandatory=*/reset_needed ||
+            async_constraint->computation_constraint().result_layout_is_set(),
+        /*dfs=*/true, /*allow_alias=*/true));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddSubcomputationLayoutConstraints(
+    LayoutConstraints* constraints) {
   for (auto* instruction : constraints->computation()->instructions()) {
-    if (instruction->opcode() == HloOpcode::kCall &&
-        computation_layouts_.find(instruction->to_apply()) !=
-            computation_layouts_.end()) {
-      // kCall instruction operands and output must match the ComputationLayout
-      // of the called computation.
-      const ComputationLayout& called_computation_layout =
-          FindOrDie(computation_layouts_, instruction->to_apply())
-              ->computation_layout();
-      auto result_shape = UnShardedShape(
-          instruction, called_computation_layout.result_layout().shape(), -1);
-      RETURN_IF_ERROR(SetInstructionLayout(result_shape, instruction));
-      TF_RET_CHECK(instruction->operand_count() ==
-                   called_computation_layout.parameter_count());
-      for (int64_t i = 0; i < instruction->operand_count(); ++i) {
-        auto operand_shape = UnShardedShape(
-            instruction, called_computation_layout.parameter_layout(i).shape(),
-            i);
-        RETURN_IF_ERROR(SetOperandLayout(operand_shape, instruction, i,
-                                         /*mandatory=*/true, /*dfs=*/true));
-      }
-    } else if (instruction->opcode() == HloOpcode::kWhile &&
-               computation_layouts_.find(instruction->while_body()) !=
-                   computation_layouts_.end()) {
-      // Layout of input and output of kWhile instruction must be equal and must
-      // match both input and output of body computation. Also, the input of
-      // condition computation must match kWhile layout.
-      //
-      // If DFS propagation resulted in inconsistent layouts (e.g., body
-      // parameter != body root), we reset them to be consistent and increase
-      // their constraint priority for subsequent rounds.
-      HloComputation* body = instruction->while_body();
-      HloComputation* condition = instruction->while_condition();
-      const HloInstruction* init = instruction->operand(0);
-      ComputationLayoutConstraint* body_constraint =
-          mutable_computation_constraints(body)
-              ->mutable_computation_constraint();
-      ComputationLayout body_layout = body_constraint->computation_layout();
-      ComputationLayoutConstraint* condition_constraint =
-          mutable_computation_constraints(condition)
-              ->mutable_computation_constraint();
-      ComputationLayout condition_layout =
-          condition_constraint->computation_layout();
-
-      // Check a few invariants irrespective of layout.
-      CHECK_EQ(1, instruction->operand_count());
-      CHECK_EQ(1, body->num_parameters());
-      CHECK_EQ(1, condition->num_parameters());
-      DCHECK(ShapeUtil::Compatible(body_layout.result_shape(),
-                                   body_layout.parameter_shape(0)));
-      DCHECK(ShapeUtil::Compatible(body_layout.result_shape(),
-                                   condition_layout.parameter_shape(0)));
-      DCHECK(ShapeUtil::Compatible(body_layout.result_shape(), init->shape()));
-
-      if (body_layout.result_layout() != body_layout.parameter_layout(0)) {
-        VLOG(2) << "Reset %while body parameter layout: body=" << body->name()
-                << " while=" << instruction->name()
-                << " shape=" << body_layout.result_layout().ToString();
-        *body_layout.mutable_parameter_layout(0) = body_layout.result_layout();
-        body_constraint->ResetComputationLayout(
-            body_layout, current_priority_ + kNumberOfPropagationRounds,
-            /*prop_result_layout=*/true,
-            /*prop_parameter_layout=*/true);
-      }
-      if (condition_layout.parameter_layout(0) !=
-          body_layout.parameter_layout(0)) {
-        VLOG(2) << "Reset %while condition parameter layout: cond="
-                << condition->name() << " while=" << instruction->name()
-                << " shape=" << body_layout.parameter_layout(0).ToString();
-        *condition_layout.mutable_parameter_layout(0) =
-            body_layout.parameter_layout(0);
-        condition_constraint->ResetComputationLayout(
-            condition_layout, current_priority_ + kNumberOfPropagationRounds,
-            /*prop_result_layout=*/true, /*prop_parameter_layout=*/true);
-      }
-
-      // Constrain the output and the operand of the while instruction to match
-      // the computations.
-      RETURN_IF_ERROR(
-          SetOperandLayout(body_layout.result_shape(), instruction, 0));
-      RETURN_IF_ERROR(
-          SetInstructionLayout(body_layout.result_shape(), instruction));
-    } else if (instruction->opcode() == HloOpcode::kConditional &&
-               computation_layouts_.find(instruction->branch_computation(0)) !=
-                   computation_layouts_.end()) {
-      // Find the conditional branch with the most instructions and force all
-      // other computations to match that layout. A potentially better decision
-      // could count the number FLOPs or how constrained the layouts are.
-      //
-      // If branch layouts mismatch, we reset them to match the "best" branch
-      // and record the mismatch to trigger high-priority resets in subsequent
-      // rounds.
-      int64_t largest_branch = -1;
-      int64_t largest_instruction_count = 0;
-      for (int j = 0; j < instruction->branch_count(); ++j) {
-        const int64_t instruction_count =
-            instruction->branch_computation(j)->instruction_count();
-        if (instruction_count > largest_instruction_count &&
-            !ShapeUtil::IsEmptyTuple(instruction->operand(j + 1)->shape())) {
-          largest_branch = j;
-          largest_instruction_count = instruction_count;
-        }
-      }
-      if (largest_branch == -1) {
-        largest_branch = 0;
-      }
-      const ComputationLayout& best_branch_computation_layout =
-          mutable_computation_constraints(
-              instruction->branch_computation(largest_branch))
-              ->computation_layout();
-      for (int k = 0; k < instruction->branch_count(); ++k) {
-        // Visit the best branch first.
-        int j = (k + largest_branch) % instruction->branch_count();
-        TF_RET_CHECK(instruction->branch_computation(j)->num_parameters() == 1);
-        ComputationLayout branch_computation_layout =
-            mutable_computation_constraints(instruction->branch_computation(k))
-                ->computation_layout();
-        if (!branch_computation_layout.result_layout().MatchesLayoutInShape(
-                best_branch_computation_layout.result_layout().shape(),
-                /*minor_to_major_only=*/true)) {
-          *branch_computation_layout.mutable_result_layout() =
-              best_branch_computation_layout.result_layout();
-          conditional_mismatch_.try_emplace(instruction->branch_computation(k),
-                                            branch_computation_layout);
-        } else {
-          RETURN_IF_ERROR(SetOperandLayout(
-              branch_computation_layout.parameter_shape(0), instruction, k + 1,
-              /*mandatory=*/true, /*dfs=*/true));
-        }
-      }
-      RETURN_IF_ERROR(
-          SetOperandLayout(best_branch_computation_layout.parameter_shape(0),
-                           instruction, largest_branch + 1,
-                           /*mandatory=*/true, /*dfs=*/true));
-      RETURN_IF_ERROR(SetInstructionLayout(
-          best_branch_computation_layout.result_shape(), instruction,
-          /*mandatory=*/true, /*dfs=*/true, /*allow_alias=*/false));
-    } else if (instruction->opcode() == HloOpcode::kAsyncStart) {
-      // Async instructions must have matching layouts between the caller and
-      // the callee (async wrapped computation).
-      //
-      // If we detect mismatches, we reset the callee's layout to match the
-      // caller and raise the constraint priority for subsequent rounds.
-      HloComputation* async_comp = instruction->async_wrapped_computation();
-      auto it = computation_layouts_.find(async_comp);
-      if (it != computation_layouts_.end()) {
-        LayoutConstraints* async_constraint = it->second.get();
-        ComputationLayout async_layout = async_constraint->computation_layout();
-        bool reset_needed = false;
-        for (int64_t i = 0; i < instruction->operand_count(); ++i) {
-          if (async_layout.parameter_layout(i).LayoutIsSet()) {
-            Shape param_shape = instruction->operand(i)->shape();
-            bool param_reset = false;
-            ShapeUtil::ForEachSubshape(
-                param_shape,
-                [&](const Shape& subshape, const ShapeIndex& index) {
-                  if (!subshape.IsArray()) {
-                    return;
-                  }
-                  auto operand_layout =
-                      InferArrayLayout(instruction->operand(i), index);
-                  const Shape& async_subshape = ShapeUtil::GetSubshape(
-                      async_layout.parameter_layout(i).shape(), index);
-                  if (operand_layout.ok() && async_subshape.has_layout() &&
-                      async_subshape.layout() != operand_layout.value()) {
-                    *ShapeUtil::GetMutableSubshape(&param_shape, index)
-                         ->mutable_layout() = operand_layout.value();
-                    param_reset = true;
-                  }
-                });
-            if (param_reset) {
-              *async_layout.mutable_parameter_layout(i) =
-                  ShapeLayout(param_shape);
-              reset_needed = true;
-            }
-          }
-        }
-        if (instruction->shape().IsTuple() &&
-            instruction->shape().tuple_shapes_size() > 1 &&
-            async_layout.result_layout().LayoutIsSet()) {
-          Shape result_shape = instruction->shape().tuple_shapes(1);
-          bool subshape_reset = false;
-          ShapeUtil::ForEachSubshape(
-              result_shape,
-              [&](const Shape& subshape, const ShapeIndex& index) {
-                if (!subshape.IsArray()) {
-                  return;
-                }
-                ShapeIndex full_index = index;
-                full_index.push_front(1);
-
-                auto result_layout = InferArrayLayout(instruction, full_index);
-                const Shape& async_subshape = ShapeUtil::GetSubshape(
-                    async_layout.result_layout().shape(), index);
-                if (result_layout.ok() && async_subshape.has_layout() &&
-                    async_subshape.layout() != result_layout.value()) {
-                  *ShapeUtil::GetMutableSubshape(&result_shape, index)
-                       ->mutable_layout() = result_layout.value();
-                  subshape_reset = true;
-                }
-              });
-          if (subshape_reset) {
-            *async_layout.mutable_result_layout() = ShapeLayout(result_shape);
-            reset_needed = true;
-          }
-        }
-        if (reset_needed) {
-          async_constraint->mutable_computation_constraint()
-              ->ResetComputationLayout(
-                  async_layout, current_priority_ + kNumberOfPropagationRounds,
-                  /*prop_result_layout=*/true,
-                  /*prop_parameter_layout=*/true);
-        }
-        for (int64_t i = 0; i < instruction->operand_count(); ++i) {
-          if (async_layout.parameter_layout(i).LayoutIsSet()) {
-            RETURN_IF_ERROR(SetOperandLayout(
-                async_layout.parameter_layout(i).shape(), instruction, i,
-                /*mandatory=*/true, /*dfs=*/true));
-          }
-        }
-        if (async_layout.result_layout().LayoutIsSet() &&
-            instruction->shape().IsTuple() &&
-            instruction->shape().tuple_shapes_size() > 1 &&
-            ShapeUtil::Compatible(instruction->shape().tuple_shapes(1),
-                                  async_layout.result_layout().shape())) {
-          Shape result_tuple_shape = instruction->shape();
-          *ShapeUtil::GetMutableSubshape(&result_tuple_shape, {1}) =
-              async_layout.result_layout().shape();
-          RETURN_IF_ERROR(SetInstructionLayout(
-              result_tuple_shape, instruction,
-              /*mandatory=*/
-              async_constraint->computation_constraint().result_layout_is_set(),
-              /*dfs=*/true,
-              /*allow_alias=*/true));
-        }
-      }
-    } else if (instruction->opcode() == HloOpcode::kAsyncDone) {
-      HloInstruction* start = instruction->async_chain_start();
-      if (start != nullptr && start->async_wrapped_computation() != nullptr) {
-        auto it = computation_layouts_.find(start->async_wrapped_computation());
-        if (it != computation_layouts_.end()) {
-          LayoutConstraints* async_constraint = it->second.get();
-          ComputationLayout async_layout =
-              async_constraint->computation_layout();
-          bool reset_needed = false;
-          if (constraints->computation()->IsEntryComputation() &&
-              instruction == constraints->computation()->root_instruction() &&
-              entry_computation_layout_->result_layout().AnyLayoutIsSet()) {
-            if (!async_layout.result_layout().MatchesLayoutInShape(
-                    entry_computation_layout_->result_layout().shape(),
-                    /*minor_to_major_only=*/true)) {
-              *async_layout.mutable_result_layout() =
-                  entry_computation_layout_->result_layout();
-              reset_needed = true;
-            }
-          } else if (async_layout.result_layout().LayoutIsSet()) {
-            Shape s = instruction->shape();
-            bool shape_reset = false;
-            ShapeUtil::ForEachSubshape(s, [&](const Shape& subshape,
-                                              const ShapeIndex& index) {
-              if (!subshape.IsArray()) {
-                return;
-              }
-              auto done_layout = InferArrayLayout(instruction, index);
-              const Shape& async_subshape = ShapeUtil::GetSubshape(
-                  async_layout.result_layout().shape(), index);
-              if (done_layout.ok() && async_subshape.has_layout() &&
-                  async_subshape.layout() != done_layout.value()) {
-                *ShapeUtil::GetMutableSubshape(&s, index)->mutable_layout() =
-                    done_layout.value();
-                shape_reset = true;
-              }
-            });
-            if (shape_reset) {
-              *async_layout.mutable_result_layout() = ShapeLayout(s);
-              reset_needed = true;
-            }
-          }
-          if (reset_needed) {
-            async_constraint->mutable_computation_constraint()
-                ->ResetComputationLayout(
-                    async_layout,
-                    current_priority_ + kNumberOfPropagationRounds,
-                    /*prop_result_layout=*/true,
-                    /*prop_parameter_layout=*/true);
-          }
-          if (async_layout.result_layout().LayoutIsSet()) {
-            RETURN_IF_ERROR(SetInstructionLayout(
-                async_layout.result_layout().shape(), instruction,
-                /*mandatory=*/reset_needed ||
-                    async_constraint->computation_constraint()
-                        .result_layout_is_set(),
-                /*dfs=*/true, /*allow_alias=*/true));
-          }
-        }
-      }
+    switch (instruction->opcode()) {
+      case HloOpcode::kCall:
+        RETURN_IF_ERROR(AddCallConstraints(instruction));
+        break;
+      case HloOpcode::kWhile:
+        RETURN_IF_ERROR(AddWhileConstraints(instruction, constraints));
+        break;
+      case HloOpcode::kConditional:
+        RETURN_IF_ERROR(AddConditionalConstraints(instruction));
+        break;
+      case HloOpcode::kAsyncStart:
+        RETURN_IF_ERROR(AddAsyncStartConstraints(instruction));
+        break;
+      case HloOpcode::kAsyncDone:
+        RETURN_IF_ERROR(AddAsyncDoneConstraints(instruction, constraints));
+        break;
+      default:
+        break;
     }
   }
-  // Finally set the result layout to match ComputationLayout, if there is one.
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddComputationResultLayoutConstraints(
+    LayoutConstraints* constraints) {
   if (conditional_mismatch_.count(constraints->computation()) > 0) {
     VLOG(5) << "Setting mismatching conditional result:"
             << constraints->computation()->name() << "\n";
@@ -1079,6 +1149,27 @@ absl::Status LayoutAssignment::AddMandatoryConstraints(
       VLOG(2) << "Computation result layout is not set.\n";
     }
   }
+  return absl::OkStatus();
+}
+
+absl::Status LayoutAssignment::AddMandatoryConstraints(
+    ChannelLayoutConstraints* channel_constraints,
+    LayoutConstraints* constraints) {
+  VLOG(2) << "Adding mandatory layout constraints to computation "
+          << constraints->computation()->name();
+
+  // Phase 1: Add constraints for instructions with pre-existing / fixed
+  // layouts.
+  RETURN_IF_ERROR(
+      AddInstructionLayoutConstraints(channel_constraints, constraints));
+
+  // Phase 2: Add constraints for instructions interacting with
+  // sub-computations.
+  RETURN_IF_ERROR(AddSubcomputationLayoutConstraints(constraints));
+
+  // Phase 3: Finalize computation result layout.
+  RETURN_IF_ERROR(AddComputationResultLayoutConstraints(constraints));
+
   VLOG(4) << "Done adding mandatory constraints.";
   return absl::OkStatus();
 }
