@@ -754,7 +754,7 @@ HloInstructionIndexing ComputeInputToOutputReduceOpIndexing(
 IndexingMap ComposeIndexingMapsForWindow(
     absl::Span<const int64_t> input_dimensions,
     absl::Span<const int64_t> output_dimensions, const Window& window,
-    MLIRContext* mlir_context) {
+    MLIRContext* mlir_context, bool remove_unused_symbols = true) {
   size_t rank = input_dimensions.size();
   SmallVector<int64_t> window_dims, window_strides, window_dilations,
       base_dilations, padding;
@@ -773,7 +773,8 @@ IndexingMap ComposeIndexingMapsForWindow(
   }
   return ComposeWindowIndexingMap(input_dimensions, output_dimensions,
                                   window_dims, window_strides, window_dilations,
-                                  base_dilations, padding, mlir_context);
+                                  base_dilations, padding, mlir_context,
+                                  remove_unused_symbols);
 }
 
 // Indexing for reduce-window with dilations and non-trivial padding can be
@@ -835,7 +836,8 @@ HloInstructionIndexing ComputeOutputToInputConvolutionOpIndexing(
   // remapped to correspond to the correct output dimensions.
   IndexingMap input_spatial_indexing =
       ComposeIndexingMapsForWindow(input_spatial_sizes, output_spatial_sizes,
-                                   convolution->window(), mlir_context);
+                                   convolution->window(), mlir_context,
+                                   /*remove_unused_symbols=*/false);
   llvm::SmallVector<SymbolicExpr, 4> replacement_dims(spatial_rank);
   for (int i = 0; i < spatial_rank; ++i) {
     replacement_dims[i] =
@@ -859,6 +861,12 @@ HloInstructionIndexing ComputeOutputToInputConvolutionOpIndexing(
        input_spatial_indexing.GetSymbolicConstraints()) {
     input_constraints[key.ReplaceDims(replacement_dims, current_num_dims,
                                       new_num_dims, num_symbols)] = val;
+  }
+  std::vector<Interval> bounds = input_spatial_indexing.GetDimensionBounds();
+  for (int i = 0; i < spatial_rank; ++i) {
+    if (bounds[i].lower > 0 || bounds[i].upper < output_spatial_sizes[i] - 1) {
+      input_constraints[replacement_dims[i]] = bounds[i];
+    }
   }
 
   // Build symbolic expressions for kernel spatial and output dimensions.
@@ -926,8 +934,6 @@ HloInstructionIndexing ComputeOutputToInputConvolutionOpIndexing(
       SymbolicMap::Get(mlir_context, rank, input_symbols.size(), input_exprs),
       DimVarsFromTensorSizes(output_shape.dimensions()), input_symbols,
       /*rt_vars=*/{}, input_constraints);
-  // We may need to simplify and remove unused symbols again, as the input
-  // feature dimension size may be trivial.
   inputs_indexing.Simplify();
   inputs_indexing.RemoveUnusedSymbols();
 

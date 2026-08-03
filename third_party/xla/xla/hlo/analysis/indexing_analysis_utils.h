@@ -45,7 +45,8 @@ IndexingMap ComposeWindowIndexingMap(absl::Span<const int64_t> input_dims,
                                      absl::Span<const int64_t> window_dilations,
                                      absl::Span<const int64_t> base_dilations,
                                      absl::Span<const int64_t> padding,
-                                     mlir::MLIRContext* mlir_context);
+                                     mlir::MLIRContext* mlir_context,
+                                     bool remove_unused_symbols = true);
 
 // Creates an elementwise indexing for num_operands operands with the given
 // output shape. All operands use an identity mapping.

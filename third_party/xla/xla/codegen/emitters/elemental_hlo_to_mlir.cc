@@ -571,9 +571,44 @@ absl::StatusOr<SmallVector<Value, 1>> EmitDotLoop(
         ApplyIndexing(rhs_indexing_map, dim_values,
                       symbol_values.take_front(rhs_symbol_count), b);
 
-    ABSL_ASSIGN_OR_RETURN(Value lhs_value,
-                     GetSingleOperandValue(operand_provider, instr,
-                                           /*operand_index=*/0, lhs_indices));
+    mlir::Type lhs_element_type =
+        PrimitiveTypeToMlirType(instr->operand(0)->shape().element_type(), b);
+    Value lhs_value;
+    if (auto* conv = DynCast<HloConvolutionInstruction>(instr)) {
+      const auto& dnums = conv->convolution_dimension_numbers();
+      const Shape& input_shape = conv->operand(0)->shape();
+      Value is_in_bounds =
+          ConstantOp::create(b, b.getIntegerAttr(b.getI1Type(), 1));
+      Value zero = ConstantOp::create(b, b.getIndexAttr(0));
+      for (int64_t i = 0; i < dnums.input_spatial_dimensions_size(); ++i) {
+        int64_t spatial_dim = dnums.input_spatial_dimensions(i);
+        Value idx = lhs_indices[spatial_dim];
+        Value dim_size = ConstantOp::create(
+            b, b.getIndexAttr(input_shape.dimensions(spatial_dim)));
+        Value ge_zero = CmpIOp::create(b, CmpIPredicate::sge, idx, zero);
+        Value lt_size = CmpIOp::create(b, CmpIPredicate::slt, idx, dim_size);
+        Value in_bounds_i = AndIOp::create(b, ge_zero, lt_size);
+        is_in_bounds = AndIOp::create(b, is_in_bounds, in_bounds_i);
+      }
+      auto if_op = IfOp::create(b, mlir::TypeRange{lhs_element_type},
+                                is_in_bounds, true, true);
+      b.setInsertionPointToStart(if_op.getBody(0));
+      ABSL_ASSIGN_OR_RETURN(Value in_bounds_lhs,
+                       GetSingleOperandValue(operand_provider, instr,
+                                             /*operand_index=*/0, lhs_indices));
+      YieldOp::create(b, in_bounds_lhs);
+
+      b.setInsertionPointToStart(if_op.getBody(1));
+      Value zero_val = ConstantOp::create(b, b.getZeroAttr(lhs_element_type));
+      YieldOp::create(b, zero_val);
+
+      b.setInsertionPointAfter(if_op);
+      lhs_value = if_op.getResult(0);
+    } else {
+      ABSL_ASSIGN_OR_RETURN(lhs_value,
+                       GetSingleOperandValue(operand_provider, instr,
+                                             /*operand_index=*/0, lhs_indices));
+    }
     ABSL_ASSIGN_OR_RETURN(Value rhs_value,
                      GetSingleOperandValue(operand_provider, instr,
                                            /*operand_index=*/1, rhs_indices));
