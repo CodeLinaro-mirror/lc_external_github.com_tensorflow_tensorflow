@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "llvm/Support/ExtensibleRTTI.h"
 #include "xla/pjrt/pjrt_layout.h"
+#include "xla/python/ifrt/array_spec.h"
 #include "xla/python/ifrt/dtype.h"
 #include "xla/python/ifrt/layout.h"
 #include "xla/python/ifrt/shape.h"
@@ -83,6 +84,12 @@ class Array : public llvm::RTTIExtends<Array, Value> {
   virtual absl::StatusOr<std::shared_ptr<const xla::PjRtLayout>> pjrt_layout()
       const = 0;
   virtual LayoutRef layout() const = 0;
+  ArraySpec spec() const {
+    return ArraySpec{.dtype = dtype(),
+                     .shape = shape(),
+                     .sharding = shared_ptr_sharding(),
+                     .layout = pjrt_layout()};
+  }
 
   // Breaks an array up into per-device arrays. This is the elimination
   // counterpart of `Client::AssembleArrayFromSingleDeviceArrays()`.
