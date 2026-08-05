@@ -103,7 +103,7 @@ class Layout : public llvm::RTTIExtends<Layout, Serializable> {
   absl::StatusOr<LayoutProto> ToProto(
       SerDesVersion version = SerDesDefaultVersionAccessor::Get()) const {
     LayoutProto proto;
-    RETURN_IF_ERROR(ToProto(proto, version));
+    ABSL_RETURN_IF_ERROR(ToProto(proto, version));
     return proto;
   }
 
