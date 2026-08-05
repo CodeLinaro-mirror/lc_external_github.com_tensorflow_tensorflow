@@ -949,6 +949,22 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_test(
+    name = "gpu_module_plugin_test",
+    srcs = ["gpu_module_plugin_test.cc"],
+    tags = [
+        "no_windows",
+    ],
+    deps = [
+        ":gpu_module_plugin",
+        "//tensorflow/lite/acceleration/configuration:configuration_cc_proto",
+        "//tensorflow/lite/acceleration/configuration:configuration_fbs",
+        "//tensorflow/lite/acceleration/configuration:proto_to_flatbuffer",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
+)
+
 embedded_binary(
     name = "embedded_nnapi_sl_fake_impl",
     testonly = 1,
