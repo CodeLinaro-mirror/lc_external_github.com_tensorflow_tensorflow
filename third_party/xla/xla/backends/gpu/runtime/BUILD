@@ -2380,6 +2380,7 @@ cc_library(
         "//xla:xla_data_proto_cc",
         "//xla:xla_proto_cc",
         "//xla/backends/gpu/collectives:gpu_clique_key",
+        "//xla/backends/gpu/collectives:gpu_collectives",
         "//xla/backends/gpu/collectives:gpu_communicator",
         "//xla/backends/gpu/collectives:gxl_communicator",
         "//xla/backends/gpu/transforms/collectives:collective_ops_utils",
