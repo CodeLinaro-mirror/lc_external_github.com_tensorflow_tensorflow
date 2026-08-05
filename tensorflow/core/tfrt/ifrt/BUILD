@@ -405,6 +405,7 @@ cc_library(
         ":ifrt_loaded_variable_registry",
         ":ifrt_restore_tensor_registry",
         ":sharding_utils",
+        ":undonatable_buffer_converter",
         "//tensorflow/compiler/mlir/tfrt/transforms/ifrt:ifrt_types",
         "//tensorflow/core:framework",
         "//tensorflow/core/platform:context",
@@ -576,7 +577,6 @@ tf_cc_test(
 tf_cc_test(
     name = "undonatable_buffer_converter_test",
     srcs = ["undonatable_buffer_converter_test.cc"],
-    tags = ["no_oss"],
     deps = [
         ":sharding_utils",
         ":undonatable_buffer_converter",
@@ -709,8 +709,12 @@ tf_cc_test(
         "@tsl//tsl/platform:tstring",
         "@xla//xla:shape_util",
         "@xla//xla:xla_data_proto_cc",
+        "@xla//xla/pjrt:mlir_to_hlo",
         "@xla//xla/python/ifrt",
+        "@xla//xla/python/ifrt:test_util",
+        "@xla//xla/python/ifrt/hlo:hlo_program",
         "@xla//xla/python/pjrt_ifrt:tfrt_cpu_client_test_lib",
+        "@xla//xla/python/pjrt_ifrt:xla_ifrt",
         "@xla//xla/tsl/concurrency:future",
         "@xla//xla/tsl/framework:serving_device_selector",
         "@xla//xla/tsl/framework/test_util:mock_serving_device_selector",

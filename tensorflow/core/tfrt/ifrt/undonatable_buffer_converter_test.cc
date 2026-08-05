@@ -72,10 +72,10 @@ void VerifyUndonatableAndContentsMatch(xla::ifrt::Array* array,
     // ToLiteral/CopyToHostBuffer are Unimplemented on the undonatable buffer;
     // verify contents through the raw-buffer path. The raw buffer reference
     // must stay alive until the copy completes.
-    TF_ASSERT_OK(undonatable_buffer->GetReadyFuture().Await());
+    ASSERT_OK(undonatable_buffer->GetReadyFuture().Await());
     tensorflow::Tensor host_tensor(expected.dtype(), expected.shape());
     auto raw_buffer = undonatable_buffer->AcquireRawBufferRef("ConverterTest");
-    TF_ASSERT_OK(
+    ASSERT_OK(
         raw_buffer
             ->CopyRawDeviceToHost(host_tensor.data(), /*offset=*/0,
                                   /*transfer_size=*/host_tensor.TotalBytes())
@@ -94,7 +94,7 @@ TEST(UndonatableBufferConverterTest, ConvertsBuffersAndPreservesContents) {
   ASSERT_OK_AND_ASSIGN(auto array,
                        MakeTestArray(*client, input_tensor, thread_pool));
 
-  TF_ASSERT_OK(MakeArrayBuffersUndonatable(array.get()));
+  ASSERT_OK(MakeArrayBuffersUndonatable(array.get()));
   VerifyUndonatableAndContentsMatch(array.get(), input_tensor);
 }
 
@@ -108,8 +108,8 @@ TEST(UndonatableBufferConverterTest, SecondConversionIsANoOp) {
   ASSERT_OK_AND_ASSIGN(auto array,
                        MakeTestArray(*client, input_tensor, thread_pool));
 
-  TF_ASSERT_OK(MakeArrayBuffersUndonatable(array.get()));
-  TF_ASSERT_OK(MakeArrayBuffersUndonatable(array.get()));
+  ASSERT_OK(MakeArrayBuffersUndonatable(array.get()));
+  ASSERT_OK(MakeArrayBuffersUndonatable(array.get()));
   VerifyUndonatableAndContentsMatch(array.get(), input_tensor);
 }
 
