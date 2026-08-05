@@ -539,19 +539,6 @@ absl::StatusOr<Shape> LayoutModeToXlaShape(
   Shape result = unsharded_shape;
   LayoutUtil::ClearLayout(&result);
   LayoutMode::Mode mode = layout_mode.mode;
-  if (mode == LayoutMode::Mode::kAuto &&
-      memory_space == Layout::kHostMemorySpace) {
-    // Fall back to default layout mode so that the memory space is preserved,
-    // in order to prevent the
-    // CompileTimeHostOffloadOutputLocationMismatch error later.
-    LOG(WARNING) << "Auto layout mode is not supported for host memory "
-                    "space (memory space is part of Layout). Falling back to "
-                    "default layout mode. "
-                 << "unsharded_shape: " << unsharded_shape.ToString()
-                 << ", sharded_shape: " << sharded_shape.ToString()
-                 << ", memory_space: " << memory_space;
-    mode = LayoutMode::Mode::kDefault;
-  }
   switch (mode) {
     case LayoutMode::Mode::kDefault: {
       ABSL_ASSIGN_OR_RETURN(Shape layout,
@@ -565,7 +552,9 @@ absl::StatusOr<Shape> LayoutModeToXlaShape(
       break;
     }
     case LayoutMode::Mode::kAuto: {
-      // Don't set any layout on `result`.
+      if (memory_space != Layout::kDefaultMemorySpace) {
+        result.mutable_layout()->set_memory_space(memory_space);
+      }
       break;
     }
   }

@@ -214,6 +214,10 @@ Layout CreateDefaultLayoutForRank(int64_t num_dims) {
       return InvalidArgument("shape %s does not have a layout",
                              ShapeUtil::HumanString(shape));
     }
+    if (allow_missing_layouts && shape.layout().minor_to_major().empty() &&
+        !shape.dimensions().empty()) {
+      return absl::OkStatus();
+    }
     return ValidateLayoutForShape(shape.layout(), shape);
   }
   // Token, opaque, etc. shape.
@@ -399,6 +403,32 @@ Layout CreateDefaultLayoutForRank(int64_t num_dims) {
     return true;
   }
   return shape.has_layout();
+}
+
+/* static */ bool LayoutUtil::HasNonMemorySpaceLayout(const Shape& shape) {
+  if (shape.IsTuple()) {
+    return absl::c_all_of(shape.tuple_shapes(), [](const Shape& s) {
+      return HasNonMemorySpaceLayout(s);
+    });
+  }
+  if (!shape.IsArray()) {
+    return true;
+  }
+  return shape.has_layout() && (shape.dimensions().empty() ||
+                                !shape.layout().minor_to_major().empty());
+}
+
+/* static */ bool LayoutUtil::HasAnyNonMemorySpaceLayout(const Shape& shape) {
+  if (shape.IsTuple()) {
+    return absl::c_any_of(shape.tuple_shapes(), [](const Shape& s) {
+      return HasAnyNonMemorySpaceLayout(s);
+    });
+  }
+  if (!shape.IsArray()) {
+    return true;
+  }
+  return shape.has_layout() && (shape.dimensions().empty() ||
+                                !shape.layout().minor_to_major().empty());
 }
 
 /* static */ bool LayoutUtil::HasLayout(const ProgramShape& program_shape) {
