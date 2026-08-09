@@ -14,8 +14,10 @@ limitations under the License.
 ==============================================================================*/
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -28,6 +30,7 @@ limitations under the License.
 #include "absl/status/statusor.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -83,15 +86,36 @@ std::vector<Device*> GetNonAddressableDevices(Client* client) {
   return devices;
 }
 
-// Returns all addressable CPU devices in the client.
-std::vector<Device*> GetAddressableCpuDevices(Client* client) {
-  std::vector<Device*> cpu_devices;
-  for (const auto& device : client->GetAllDevices()) {
-    if (device->IsAddressable() && device->Kind() == "cpu") {
-      cpu_devices.push_back(device);
+// Returns all addressable devices in the client that can store strings.
+std::vector<Device*> GetAddressableDevicesForString(Client* client) {
+  std::string device_kind;
+  if (const char* env = getenv("IFRT_TEST_STRING_DEVICE_KIND")) {
+    device_kind = env;
+  } else {
+    device_kind = "cpu";
+  }
+
+  std::vector<Device*> devices;
+  if (device_kind == "default") {
+    for (const auto& device : client->addressable_devices()) {
+      devices.push_back(device);
+    }
+  } else {
+    for (const auto& device : client->GetAllDevices()) {
+      if (device->IsAddressable() && device->Kind() == device_kind) {
+        devices.push_back(device);
+      }
     }
   }
-  return cpu_devices;
+  return devices;
+}
+
+xla::ifrt::MemoryKind GetMemoryKindForString() {
+  const char* memory_kind = getenv("IFRT_TEST_STRING_MEMORY_KIND");
+  if (memory_kind == nullptr || memory_kind == absl::string_view()) {
+    return xla::ifrt::MemoryKind();
+  }
+  return xla::ifrt::MemoryKind(absl::string_view(memory_kind));
 }
 
 TEST(ArrayImplTest, MakeArrayFromHostBuffer) {
@@ -810,10 +834,10 @@ TEST(ArrayImplTest, MakeArraysFromHostBufferShardsWithLayout) {
 
 TEST(ArrayImplTest, MakeArrayFromHostBufferAndCopyToHostBufferWithString) {
   TF_ASSERT_OK_AND_ASSIGN(auto client, test_util::GetClient());
-  auto cpu_devices = GetAddressableCpuDevices(client.get());
-  if (cpu_devices.empty()) {
-    GTEST_SKIP()
-        << "This test is relevant only for clients with at least 1 CPU device";
+  auto string_devices = GetAddressableDevicesForString(client.get());
+  if (string_devices.empty()) {
+    GTEST_SKIP() << "This test is relevant only for clients with at least 1 "
+                    "device that can store strings";
   }
 
   DType dtype(DType::kString);
@@ -824,8 +848,9 @@ TEST(ArrayImplTest, MakeArrayFromHostBufferAndCopyToHostBufferWithString) {
     cords->push_back(absl::Cord(absl::StrCat("string-", k)));
   }
   void* data_ptr = static_cast<void*>(cords->data());
-  Device* device = cpu_devices.front();
-  ShardingRef sharding = SingleDeviceSharding::Create(device, MemoryKind());
+  Device* device = string_devices.front();
+  ShardingRef sharding =
+      SingleDeviceSharding::Create(device, GetMemoryKindForString());
   UserContextScope user_context_scope(test_util::MakeUserContext(100));
 
   TF_ASSERT_OK_AND_ASSIGN(
@@ -852,10 +877,10 @@ TEST(ArrayImplTest, MakeArrayFromHostBufferAndCopyToHostBufferWithString) {
 TEST(ArrayImplTest,
      MakeArraysFromHostBufferShardsAndCopyToHostBufferWithString) {
   TF_ASSERT_OK_AND_ASSIGN(auto client, test_util::GetClient());
-  auto cpu_devices = GetAddressableCpuDevices(client.get());
-  if (cpu_devices.size() < 2) {
-    GTEST_SKIP()
-        << "This test is relevant only for clients with at least 2 CPU devices";
+  auto string_devices = GetAddressableDevicesForString(client.get());
+  if (string_devices.size() < 2) {
+    GTEST_SKIP() << "This test is relevant only for clients with at least 2 "
+                    "devices that can store strings";
   }
 
   DType dtype(DType::kString);
@@ -877,11 +902,11 @@ TEST(ArrayImplTest,
   void* data_ptr1 = static_cast<void*>(cords1->data());
 
   absl::Span<Device* const> devices =
-      absl::MakeConstSpan(cpu_devices).subspan(0, 2);
+      absl::MakeConstSpan(string_devices).subspan(0, 2);
   TF_ASSERT_OK_AND_ASSIGN(DeviceListRef device_list,
                           client->MakeDeviceList(devices));
   ShardingRef sharding =
-      ConcreteEvenSharding::Create(device_list, MemoryKind(), shape,
+      ConcreteEvenSharding::Create(device_list, GetMemoryKindForString(), shape,
                                    shard_shape, /*is_fully_replicated=*/false);
 
   std::vector<Client::MakeArraysFromHostBufferShardsSpec> specs;
