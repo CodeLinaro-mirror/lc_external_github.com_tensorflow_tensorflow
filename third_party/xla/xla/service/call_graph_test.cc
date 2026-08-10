@@ -850,5 +850,69 @@ TEST_F(CallGraphTest, ExecutionThread) {
   }
 }
 
+TEST_F(CallGraphTest, IsFlatForWhiles) {
+  {
+    // A single while loop with separate condition and body -> Flat.
+    auto module = CreateNewVerifiedModule();
+    HloComputation* cond =
+        module->AddEmbeddedComputation(MakeConditionComputation());
+    HloComputation* body =
+        module->AddEmbeddedComputation(MakeScalarComputation());
+    HloComputation::Builder builder(TestName());
+    HloInstruction* param = builder.AddInstruction(
+        HloInstruction::CreateParameter(0, kScalarShape, "param"));
+    builder.AddInstruction(
+        HloInstruction::CreateWhile(kScalarShape, cond, body, param));
+    module->AddEntryComputation(builder.Build());
+
+    std::unique_ptr<CallGraph> call_graph = CallGraph::Build(module.get());
+    EXPECT_TRUE(call_graph->IsFlatForWhiles());
+  }
+
+  {
+    // A while body shared by two while instructions -> Not Flat.
+    auto module = CreateNewVerifiedModule();
+    HloComputation* cond =
+        module->AddEmbeddedComputation(MakeConditionComputation());
+    HloComputation* body =
+        module->AddEmbeddedComputation(MakeScalarComputation());
+    HloComputation::Builder builder(TestName());
+    HloInstruction* param = builder.AddInstruction(
+        HloInstruction::CreateParameter(0, kScalarShape, "param"));
+    HloInstruction* while1 = builder.AddInstruction(
+        HloInstruction::CreateWhile(kScalarShape, cond, body, param));
+    builder.AddInstruction(
+        HloInstruction::CreateWhile(kScalarShape, cond, body, while1));
+    module->AddEntryComputation(builder.Build());
+
+    std::unique_ptr<CallGraph> call_graph = CallGraph::Build(module.get());
+    EXPECT_FALSE(call_graph->IsFlatForWhiles());
+  }
+
+  {
+    // A while loop where body and condition are the same computation -> Not
+    // Flat.
+    auto module = CreateNewVerifiedModule();
+    Shape pred_shape = ShapeUtil::MakeShape(PRED, {});
+    HloComputation::Builder cond_body_builder(TestName() + ".CondAndBody");
+    HloInstruction* p0 = cond_body_builder.AddInstruction(
+        HloInstruction::CreateParameter(0, pred_shape, "p0"));
+    cond_body_builder.AddInstruction(
+        HloInstruction::CreateUnary(pred_shape, HloOpcode::kNot, p0));
+    HloComputation* cond_and_body =
+        module->AddEmbeddedComputation(cond_body_builder.Build());
+
+    HloComputation::Builder builder(TestName());
+    HloInstruction* param = builder.AddInstruction(
+        HloInstruction::CreateParameter(0, pred_shape, "param"));
+    builder.AddInstruction(HloInstruction::CreateWhile(
+        pred_shape, cond_and_body, cond_and_body, param));
+    module->AddEntryComputation(builder.Build());
+
+    std::unique_ptr<CallGraph> call_graph = CallGraph::Build(module.get());
+    EXPECT_FALSE(call_graph->IsFlatForWhiles());
+  }
+}
+
 }  // namespace
 }  // namespace xla

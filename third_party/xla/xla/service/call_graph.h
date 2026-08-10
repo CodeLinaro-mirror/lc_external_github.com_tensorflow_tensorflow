@@ -328,6 +328,11 @@ class CallGraph {
   // FlattenCallGraph.
   bool IsFlattened() const;
 
+  // Returns whether the call graph is flat for while loops. All while body and
+  // condition computations must be called by exactly one instruction which is
+  // a kWhile, and while bodies and conditions must be separate computations.
+  bool IsFlatForWhiles() const;
+
   // Returns a vector of instructions calling the passed computation.
   // (Often a vector of size 1.)
   std::vector<HloInstruction*> GetComputationCallers(

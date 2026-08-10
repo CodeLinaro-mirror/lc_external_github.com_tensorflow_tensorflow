@@ -423,6 +423,36 @@ bool CallGraph::IsFlattened() const {
   return true;
 }
 
+bool CallGraph::IsFlatForWhiles() const {
+  for (const CallGraphNode& node : nodes_) {
+    for (const CallSite& callsite : node.callsites()) {
+      if (callsite.instruction()->opcode() == HloOpcode::kWhile) {
+        HloComputation* body = callsite.instruction()->while_body();
+        HloComputation* cond = callsite.instruction()->while_condition();
+
+        if (body == cond) {
+          return false;
+        }
+
+        const CallGraphNode& body_node = GetNode(body);
+        if (body_node.caller_callsites().size() != 1 ||
+            body_node.caller_callsites()[0].instruction()->opcode() !=
+                HloOpcode::kWhile) {
+          return false;
+        }
+
+        const CallGraphNode& cond_node = GetNode(cond);
+        if (cond_node.caller_callsites().size() != 1 ||
+            cond_node.caller_callsites()[0].instruction()->opcode() !=
+                HloOpcode::kWhile) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 std::vector<HloInstruction*> CallGraph::GetComputationCallers(
     const HloComputation* c) const {
   std::vector<HloInstruction*> callers;

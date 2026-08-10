@@ -1421,6 +1421,11 @@ absl::StatusOr<bool> WhileLoopAllReduceCodeMotion::RunImpl(
   std::unique_ptr<CallGraph> call_graph =
       CallGraph::Build(module, execution_threads);
 
+  if (require_flat_while_call_graph_ && !call_graph->IsFlatForWhiles()) {
+    return absl::Status(absl::StatusCode::kFailedPrecondition,
+                        "The call graph should be flat on while loops.");
+  }
+
   // In case of MPMD, all-reduces might be cross-module and should preserve
   // their channel ID. Do not move all-reduces in this case since the channel
   // ID might be changed.
