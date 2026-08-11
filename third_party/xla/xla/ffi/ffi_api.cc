@@ -22,7 +22,12 @@ limitations under the License.
 #include <utility>
 #include <variant>
 
+#include "absl/base/config.h"  // IWYU pragma: keep
 #include "absl/base/optimization.h"
+
+#if defined(ABSL_HAVE_MEMORY_SANITIZER)
+#include <sanitizer/msan_interface.h>
+#endif
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/numeric/bits.h"
@@ -144,12 +149,23 @@ static absl::StatusCode ToStatusCode(XLA_FFI_Error_Code errc) {
   } while (false)
 
 static XLA_FFI_Error* XLA_FFI_Error_Create(XLA_FFI_Error_Create_Args* args) {
+#if defined(ABSL_HAVE_MEMORY_SANITIZER)
+  if (args != nullptr) {
+    __msan_unpoison(args, sizeof(args->struct_size));
+    size_t unpoison_size = std::min<size_t>(args->struct_size, sizeof(*args));
+    __msan_unpoison(args, unpoison_size);
+    if (args->message != nullptr) {
+      __msan_unpoison_string(args->message);
+    }
+  }
+#endif
+
   XLA_FFI_RETURN_IF_ERROR(ActualStructSizeIsGreaterOrEqual(
       "XLA_FFI_Error_Create", XLA_FFI_Error_Create_Args_STRUCT_SIZE,
       args->struct_size));
 
-  return new XLA_FFI_Error{
-      absl::Status(ToStatusCode(args->errc), args->message)};
+  return new XLA_FFI_Error{absl::Status(
+      ToStatusCode(args->errc), absl::NullSafeStringView(args->message))};
 }
 
 namespace {
