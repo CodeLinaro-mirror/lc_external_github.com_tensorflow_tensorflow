@@ -1146,13 +1146,16 @@ ENTRY main {
 
   int64_t collective_resource =
       ResourceTypeToIndex(GpuResourceType::kGpuAsyncStreamCollectives);
-  auto start_resources =
-      async_tracker.GetResourcesFromInstruction(*group_start);
+  std::vector<ResourcePair> start_resources(
+      async_tracker.GetResourcesFromInstruction(*group_start).begin(),
+      async_tracker.GetResourcesFromInstruction(*group_start).end());
   ASSERT_EQ(start_resources.size(), 1);
   EXPECT_EQ(start_resources[0].first, collective_resource);
   EXPECT_EQ(start_resources[0].second, ResourceUsageType::kResourceRelease);
 
-  auto done_resources = async_tracker.GetResourcesFromInstruction(*group_done);
+  std::vector<ResourcePair> done_resources(
+      async_tracker.GetResourcesFromInstruction(*group_done).begin(),
+      async_tracker.GetResourcesFromInstruction(*group_done).end());
   ASSERT_EQ(done_resources.size(), 1);
   EXPECT_EQ(done_resources[0].first, collective_resource);
   EXPECT_EQ(done_resources[0].second, ResourceUsageType::kResourceOccupy);
