@@ -1093,22 +1093,8 @@ TEST_F(TilePropagationTest, CanPropagateToInputOfScanOp) {
 
   // Create a tile for a scalar carry output (output_index = 1)
   Tile tile_carry = GetTestTile(*tiling_space, {});
-  ASSERT_OK_AND_ASSIGN(
-      auto tiled_operands_carry,
-      PropagateTileToInput(*tiling_space, *scan, tile_carry, 1));
-
-  EXPECT_THAT(tiled_operands_carry, MatchToString(R"(
-    0) (tid_0)
-         -> offsets []
-            sizes []
-            strides []
-            upper bounds []
-    1) (tid_0)
-         -> offsets []
-            sizes []
-            strides []
-            upper bounds []
-  )"));
+  EXPECT_THAT(PropagateTileToInput(*tiling_space, *scan, tile_carry, 1),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST_F(TilePropagationTest, CanPropagateToOutputOfScanOp) {
