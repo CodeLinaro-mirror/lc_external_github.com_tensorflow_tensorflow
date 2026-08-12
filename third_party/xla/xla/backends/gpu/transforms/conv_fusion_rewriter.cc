@@ -39,6 +39,7 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_opcode.h"
+#include "xla/primitive_util.h"
 #include "xla/service/gpu/backend_configs.pb.h"
 #include "xla/service/gpu/ir_emission_utils.h"
 #include "xla/shape.h"
@@ -143,8 +144,19 @@ std::pair<HloInstruction*, HloInstruction*> TryFuseConvolutionPrologue(
       device_info.gpu_compute_capability().cuda_compute_capability();
   auto is_fusable_convert = [cuda_cc](const HloInstruction* hlo) {
     // CuDNN only supports convert fusions starting from Ampere.
-    return cuda_cc != nullptr && cuda_cc->IsAtLeastAmpere() &&
-           hlo->opcode() == HloOpcode::kConvert && hlo->user_count() == 1;
+    if (cuda_cc == nullptr || !cuda_cc->IsAtLeastAmpere() ||
+        hlo->opcode() != HloOpcode::kConvert || hlo->user_count() != 1) {
+      return false;
+    }
+    PrimitiveType src_type = hlo->operand(0)->shape().element_type();
+    PrimitiveType dst_type = hlo->shape().element_type();
+    if (primitive_util::IsF8Type(src_type)) {
+      return dst_type == F32 || dst_type == F16 || dst_type == BF16;
+    }
+    if (primitive_util::Is8BitIntegralType(src_type)) {
+      return dst_type == S32;
+    }
+    return false;
   };
 
   // Only fuse the prologue converts when both conv operands have one and
