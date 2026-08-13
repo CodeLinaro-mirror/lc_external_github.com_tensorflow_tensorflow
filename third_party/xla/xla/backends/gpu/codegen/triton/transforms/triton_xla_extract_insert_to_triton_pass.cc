@@ -73,16 +73,6 @@ namespace xtriton = ::xla::gpu::triton;
 
 namespace {
 
-bool HasBroadcastConsumer(Operation* op) {
-  llvm::SetVector<Operation*> slice;
-  mlir::getForwardSlice(op, &slice);
-  for (Operation* sliced_op : slice) {
-    if (llvm::isa<triton::BroadcastOp>(sliced_op)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 PointerType GetTensorPtrType(Type type) {
   return PointerType::get(
@@ -158,12 +148,18 @@ bool CanUseTma(Operation* op, bool allow_tma, int num_stages,
     return false;
   }
 
-  // TODO(b/421858850): CUDA_ERROR_MISALIGNED_ADDRESS errors are
-  // happening for some cases when pipelining stages are > 2. The pattern
-  // observed is that these happen in the presence of a broadcast.
-  // This is a temporary solution. We should remove this once we have a fix for
-  // the error.
-  if (num_stages > 2 && HasBroadcastConsumer(op)) {
+  const int64_t element_byte_size =
+      pointer.getType().getPointeeType().getIntOrFloatBitWidth() / 8;
+
+  // TMA requires shared memory per-stage allocations to be 128-byte aligned.
+  // When pipelining across multiple stages in Triton, tile allocations that are
+  // not a multiple of 128 bytes (such as small 1D broadcast vectors) lead to
+  // misaligned addresses or pipeliner crashes (b/421858850, b/545031850).
+  int64_t tile_byte_size = element_byte_size;
+  for (int64_t dim : tile_shape) {
+    tile_byte_size *= dim;
+  }
+  if (tile_byte_size % 128 != 0) {
     return false;
   }
 
@@ -180,9 +176,6 @@ bool CanUseTma(Operation* op, bool allow_tma, int num_stages,
   auto canonicalize_status = CanonicalizeTileStrides(canonical_tile_strides,
                                                      tile_shape, original_shape,
                                                      /*validate=*/false);
-
-  uint64_t element_byte_size =
-      pointer.getType().getPointeeType().getIntOrFloatBitWidth() / 8;
 
   auto tma_compatibilty_status = stream_executor::gpu::IsTmaCompatible(
       absl::MakeSpan(original_shape.data(), original_shape.size()),

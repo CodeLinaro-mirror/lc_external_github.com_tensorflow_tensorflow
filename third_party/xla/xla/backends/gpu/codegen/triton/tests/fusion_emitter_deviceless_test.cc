@@ -427,5 +427,47 @@ INSTANTIATE_TEST_SUITE_P(
           primitive_util::LowercasePrimitiveTypeName(info.param));
     });
 
+TEST_F(TritonEmitterDevicelessTest,
+       Sub128ByteTileBroadcastCompilesWithoutPipelinerCrash) {
+  constexpr absl::string_view kHloText = R"(
+gemm_fusion_dot.23_computation {
+  parameter_0.13 = f16[546,4,512]{2,1,0} parameter(0)
+  parameter_1.13 = f16[4,512]{1,0} parameter(1)
+  broadcast.238 = f16[546,4,512]{2,1,0} broadcast(parameter_1.13), dimensions={1,2}
+  add.491 = f16[546,4,512]{2,1,0} add(parameter_0.13, broadcast.238)
+  constant_503 = f16[] constant(0)
+  broadcast.239 = f16[546,4,512]{2,1,0} broadcast(constant_503), dimensions={}
+  max.119 = f16[546,4,512]{2,1,0} maximum(add.491, broadcast.239)
+  parameter_2.3 = f16[4,512,512]{2,1,0} parameter(2)
+  ROOT dot.37 = f32[4,546,512]{2,1,0} dot(max.119, parameter_2.3), lhs_batch_dims={1}, lhs_contracting_dims={2}, rhs_batch_dims={0}, rhs_contracting_dims={1}, backend_config={"sizes":["32"]}
+}
+
+ENTRY entry {
+  p0 = f16[546,4,512]{2,1,0} parameter(0)
+  p1 = f16[4,512]{1,0} parameter(1)
+  p2 = f16[4,512,512]{2,1,0} parameter(2)
+  ROOT fusion = f32[4,546,512]{2,1,0} fusion(p0, p1, p2), kind=kCustom, calls=gemm_fusion_dot.23_computation,
+    backend_config={"fusion_backend_config":{"kind":"__triton_nested_gemm_fusion","block_level_fusion_config":{"num_warps":"4","output_tiles":[{"sizes":["1","64","32"]}],"num_ctas":1,"num_stages":2,"is_tma_allowed":true,"is_warp_specialization_allowed":false,"waves_per_eu":0,"num_tiles_per_pid":0}}}
+})";
+
+  ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> module,
+                       ParseAndReturnVerifiedModule(kHloText));
+  const auto* fusion = Cast<HloFusionInstruction>(
+      module->entry_computation()->root_instruction());
+  const se::DeviceDescription dev_info = TestGpuDeviceInfo::B200SXMDeviceInfo();
+  const llvm::Triple triple(nvptx::TargetTriple());
+  const std::string data_layout = nvptx::DataLayout();
+  mlir::MLIRContext mlir_context;
+  RegisterSymbolicExprStorage(&mlir_context);
+  ASSERT_OK_AND_ASSIGN(const auto gpu_backend_config,
+                       fusion->backend_config<GpuBackendConfig>());
+  EXPECT_OK(TritonWrapper("test_fn", *fusion,
+                          se::CudaComputeCapability::Blackwell(), dev_info,
+                          BlockLevelParameters::FromBlockLevelFusionConfig(
+                              gpu_backend_config.fusion_backend_config()
+                                  .block_level_fusion_config()),
+                          triple, data_layout, mlir_context));
+}
+
 }  // namespace
 }  // namespace xla::gpu
